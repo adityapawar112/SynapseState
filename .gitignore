@@ -1,0 +1,76 @@
+# ==============================================================================
+# SynapseState Monorepo Git Ignore
+# ==============================================================================
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Go
+bin/
+dist/
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# Node.js & TypeScript
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+*.tsbuildinfo
+.turbo/
+build/
+
+# Rust & Cargo (for napi-rs native addon in sdk/node)
+target/
+Cargo.lock.d/
+**/*.node
+
+# FlatBuffers Generated Artifacts (unless intentionally committed)
+*.bfbs
+
+# Kubernetes, Helm & Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+charts/*/charts/
+charts/*/tmp/
+
+# SynapseState Runtime & Testing Artifacts
+/synapse/
+arena.*.bin
+*.bin
+*.prof
+*.pprof
+coverage.txt
+coverage.html
+scratch/
+tmp/
+.temp/
+
+# Environment and Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+kubeconfig*
