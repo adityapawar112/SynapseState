@@ -70,7 +70,9 @@ To eliminate split-brain states and reconcile competing configuration sources, S
 1. **Git Repository (Authoritative Desired Baseline):** The authoritative system of record for all steady-state feature configurations, variant weights, and targeting rules.
 2. **Kubernetes API & Custom Resources (Cluster Projection):** GitOps controllers (ArgoCD or Flux v2) project Git declarations into cluster-level `FeatureFlagGroup` Custom Resources. The Synapse Operator watches these resources via Controller-Runtime Informers.
 3. **PostgreSQL 16+ (Derived System State & Immutable Audit Ledger):** Stores relational snapshots of valid configurations, active and historic emergency leases, API credentials, and an append-only audit trail. PostgreSQL is derived from Git for steady-state flags, but serves as the primary system of record for emergency leases and audit histories.
-4. **gRPC Invalidation & Delta Stream (Real-Time Propagation Bus):** The control plane maintains long-lived HTTP/2 gRPC streaming connections directly to all Pod sidecar agents. Changes committed to PostgreSQL are broadcast across control-plane replicas via PostgreSQL `LISTEN`/`NOTIFY` and streamed to agents.
+4. **gRPC Invalidation & Delta Stream (Real-Time Propagation Bus):** The control plane maintains long-lived HTTP/2 gRPC streaming connections directly to all Pod sidecar agents. To respect PostgreSQL's hard 8,000-byte `NOTIFY` payload ceiling, database triggers broadcast a lightweight metadata pointer:
+$$\text{Payload} = \{\text{"generation"}: G, \text{"group\_id"}: \text{"..."}, \text{"action"}: \text{"UPDATE"}, \text{"commit\_sha"}: \text{"..."}\}$$
+Control plane replicas receive this notification, hydrate the compiled FlatBuffer delta from PostgreSQL (or memory cache), and broadcast the delta to connected sidecar agents over mTLS gRPC.
 5. **Shared Memory Arena (Immutable Runtime Snapshot):** An immutable FlatBuffers binary (`arena.bin`) mapped into workload process memory via `mmap(2)` with `PROT_READ`.
 
 ### System Component Interactions
@@ -176,6 +178,28 @@ $$\text{sizeLimit} = (1 + 2) \times 16\text{ MB} = 48\text{ MB}$$
 
 * **Update Coalescing Window:**
 To prevent memory pressure during rapid Git updates, the agent coalesces non-emergency updates within a configurable 25ms batching window. Emergency leases bypass this window and trigger immediate compilation.
+
+### 5.4 Reader Crash Defenses & Cross-Platform Adapter Architecture
+
+* **Reader Crash & Panics Recovery Protocol:**
+In-process evaluations execute under a strict decrement guard:
+```go
+func (p *Provider) Evaluate(ctx context.Context, flagKey string) (EvaluationResult, error) {
+    mapping := p.acquireActiveMapping()
+    defer mapping.Release() // atomic.AddInt64(&mapping.refCount, -1)
+    return p.engine.EvaluateDirect(mapping.data, flagKey)
+}
+```
+If a reader thread abnormally terminates or panics without releasing a refcount, the superseded mapping remains pinned. To prevent unbounded memory leaks:
+1. **Generational Sweep:** The sidecar agent logs a warning if a superseded generation retains non-zero readers for $> 60\text{ seconds}$.
+2. **Telemetry Anomaly Metric:** SDKs emit `synapse_leaked_reader_refcount_total` counter via OpenTelemetry when an unmap sweep detects a stale refcount.
+3. **Hard Cap:** A process cannot retain more than 3 concurrent generations. The oldest generation is unmapped with an error log if the ceiling is reached.
+
+* **Cross-Platform & Developer Environment Abstraction:**
+While production Kubernetes workloads strictly utilize Linux POSIX `mmap(2)` via `golang.org/x/sys/unix`, developer environments on macOS and Windows cannot execute direct Linux `/dev/shm` mounts.
+SynapseState defines a storage interface seam (`pkg/engine/mmap_adapter.go`):
+* **Linux (Production Target):** Uses native POSIX `mmap(PROT_READ)` with `MAP_SHARED` backed by `/synapse/arena.bin`.
+* **Windows / macOS (Local Development Fallback):** Uses OS-specific memory-mapped files (`syscall.CreateFileMapping` on Windows, standard `mmap` on Darwin) or in-memory byte buffers for automated unit and conformance test suites without requiring a Linux VM.
 
 ---
 
@@ -557,27 +581,107 @@ Under Kubernetes native sidecar semantics, the application container does not st
 
 
 
-### 11.2 Phased Delivery Roadmap
+### 11.2 Phased Delivery Roadmap & Granular Milestones
 
-* **Phase 1: Vertical Slice Data Plane (Weeks 1 to 6):**
-* Core FlatBuffers schema compiler, epoch/refcount reader reclamation, and atomic file swap engine.
-* Go OpenFeature SDK with zero hot-path allocations on native pointer dereferences.
-* Cross-runtime test vectors and benchmark validation on bare-metal hardware.
+#### Phase 1: Vertical Slice Data Plane (Weeks 1 to 6)
+* **Milestone 1.1: Canonical FlatBuffers Schema & Code Generation Pipeline**
+  * Target: `schema/arena.fbs` -> `pkg/buffer/`
+  * Artifacts: Canonical FlatBuffers schema defining `FlagArena`, `FlagRecord`, `TargetingRule`, `RolloutSplit`, and `EmergencyOverride`. Automated `flatc` code generation flags.
+  * Invariant: Little-endian 64-bit aligned binary representation; zero-copy offset decoding.
+* **Milestone 1.2: Deterministic Rule Engine & MurmurHash3 Bucketing**
+  * Target: `pkg/engine/`
+  * Artifacts: Binary search over lexicographically sorted flags, priority rule evaluator, and unsigned 32-bit MurmurHash3 bucketing (`[0..9999]`).
+  * Invariant: `0 B/op` heap allocation on native evaluation path; $p99 \le 0.8\text{ µs}$.
+* **Milestone 1.3: Sidecar File Swap Daemon & tmpfs Memory Manager**
+  * Target: `cmd/synapse-agent/`
+  * Artifacts: Local arena compilation, atomic `rename(2)` swap protocol, UID 10001 (RW) / 10002 (RO) permissions, and generation file pruning.
+* **Milestone 1.4: OpenFeature Go Provider with Lock-Free Epoch Reclamation**
+  * Target: `sdk/go/`
+  * Artifacts: `ArenaMapping` atomic refcount lifecycle, `inotify` watcher with 25ms timer fallback, string view vs copy semantics.
+  * Invariant: Zero `SIGSEGV` or use-after-unmap during continuous concurrent writes.
+* **Milestone 1.5: Conformance Matrix & Invariant Benchmark Harness**
+  * Target: `tests/conformance/`, `tests/chaos/`
+  * Artifacts: 50+ golden test vectors covering all operators (`Equals`, `SemverGte`, `In`, etc.) and write-storm benchmark (100 swaps/s @ 500k evals/s).
 
+#### Phase 2: Emergency Overrides & Control Plane (Weeks 7 to 12)
+* **Milestone 2.1: PostgreSQL Ledger & Pointer-Based NOTIFY Event Bus**
+  * Target: `cmd/synapse-control/`, `deploy/migrations/`
+  * Artifacts: Append-only audit ledger, relational generation tables, and lightweight metadata pointer `LISTEN`/`NOTIFY` bus (< 8000 bytes).
+* **Milestone 2.2: gRPC Delta Streaming Engine with mTLS**
+  * Target: `cmd/synapse-control/`, `pkg/grpc/`
+  * Artifacts: Long-lived HTTP/2 gRPC streaming connections, reconnect backoff, and generation delta compilation.
+* **Milestone 2.3: Ed25519 Dual-Control Signing & Monotonic Expiration Engine**
+  * Target: `pkg/crypto/`, `cmd/synapse-cli/`
+  * Artifacts: RFC 8785 canonical JSON serializer, Ed25519 issuer + approver verification, local monotonic deadline enforcement, and break-glass CLI commands.
+* **Milestone 2.4: Fleet ACK Aggregator & Straggler Pod Detection**
+  * Target: `cmd/synapse-control/`
+  * Artifacts: In-memory acknowledgment bitmap tracking applied generation per pod with max 10s straggler alerts.
 
-* **Phase 2: Emergency Overrides & Control Plane (Weeks 7 to 12):**
-* Control plane API with PostgreSQL persistence, gRPC delta streaming, and PostgreSQL `LISTEN`/`NOTIFY`.
-* Dual-control Ed25519 signing pipeline, local monotonic expiration enforcement, and break-glass CLI workflows.
-* Fleet acknowledgment tracking with straggler pod detection.
+#### Phase 3: Kubernetes Operator & Node.js Native SDK (Weeks 13 to 18)
+* **Milestone 3.1: Controller-Runtime Operator & CRD Reconciler**
+  * Target: `cmd/synapse-operator/`, `pkg/apis/`
+  * Artifacts: CRD controllers for `FeatureFlagGroup` and `EmergencyLease`, ArgoCD/Flux prune-prevention annotations.
+* **Milestone 3.2: Mutating Admission Webhook for Native Sidecar Injection**
+  * Target: `cmd/synapse-operator/webhook/`
+  * Artifacts: Automated injection of Kubernetes 1.29+ native sidecar containers with startup probes and `/synapse` memory volume mounts.
+* **Milestone 3.3: Node.js OpenFeature SDK via Rust napi-rs Addon**
+  * Target: `sdk/node/`
+  * Artifacts: Rust native addon compiled with `napi-rs`, exposing zero-copy pointer dereferences to Node.js V8 runtime ($p99 \le 5.0\text{ µs}$).
+* **Milestone 3.4: Production Helm Charts & E2E GitOps Verification**
+  * Target: `deploy/helm/`
+  * Artifacts: Multi-replica control plane charts, PostgreSQL high-availability configuration, and automated ArgoCD sync tests.
 
+#### Phase 4: Telemetry Ingestion & Autonomous Code Pruning (Weeks 19 to 24)
+* **Milestone 4.1: OpenTelemetry Metric Collector & Aggregation Pipeline**
+  * Target: `cmd/synapse-purger/collector/`
+  * Artifacts: Aggregation of evaluation counters by key, variant, and reason code over 30-day sliding observation windows ($\tau \ge 30\text{ days}$).
+* **Milestone 4.2: Quiescence Index ($Q$) Engine with Error Ceilings**
+  * Target: `cmd/synapse-purger/quiescence/`
+  * Artifacts: Mathematical evaluation of $Q(f, \tau) = 1.0$, $\le 0.01$ error rate ceilings, multi-cluster invariance, and candidate qualification.
+* **Milestone 4.3: Semantic AST Pruning Engine**
+  * Target: `cmd/synapse-purger/ast/`
+  * Artifacts: Semantic code analyzers (`ts-morph` for TypeScript and `go/types` for Go) inlining dominant variants and deleting dead conditional branches.
+* **Milestone 4.4: Two-Phase Deletion & Draft PR Automated Remediation**
+  * Target: `cmd/synapse-purger/pr/`
+  * Artifacts: Automated GitHub Draft PR submission with evaluation telemetry proofs and 7-day post-merge configuration cleanup.
 
-* **Phase 3: Kubernetes Operator & Node.js Native SDK (Weeks 13 to 18):**
-* Controller-Runtime operator reconciling sharded `FeatureFlagGroup` Custom Resources.
-* Mutating webhook for automated native sidecar injection and tmpfs volume mounting.
-* Node.js OpenFeature SDK utilizing `napi-rs` with prebuilt binaries for Linux x64 and arm64.
+---
 
+### 11.3 Monorepo Toolchain & Build Automation
 
-* **Phase 4: Telemetry Ingestion & Autonomous Code Pruning (Weeks 19 to 24):**
-* OpenTelemetry evaluation metric ingestion pipeline tracking standardized semantic conventions.
-* Quiescence Index ($Q$) engine with error-rate ceilings, multi-cluster invariance, and demo replay tooling.
-* AST pruning engine (`ts-morph` and `go/types`) generating verified Draft Pull Requests against the fixture corpus.
+SynapseState leverages a unified task runner (`Taskfile.yml`) to orchestrate polyglot compilation and continuous testing:
+
+```yaml
+version: '3'
+
+tasks:
+  flatc:
+    desc: Compile FlatBuffers schema into Go and Rust bindings
+    cmds:
+      - flatc --go --go-namespace buffer -o pkg/buffer schema/arena.fbs
+      - flatc --rust -o sdk/node/native/src/schema schema/arena.fbs
+
+  test:unit:
+    desc: Run unit tests across all Go packages
+    cmds:
+      - go test -race -v ./pkg/... ./cmd/... ./sdk/go/...
+
+  bench:engine:
+    desc: Execute zero-copy evaluation benchmarks
+    cmds:
+      - go test -benchmem -run=^$$ -bench=BenchmarkEvaluateDirect ./pkg/engine/...
+
+  lint:
+    desc: Run linters across Go and TypeScript
+    cmds:
+      - golangci-lint run ./...
+      - npx biome check sdk/node/
+```
+
+### 11.4 Acceptance Criteria & Quality Gates
+
+1. **Compilation Cleanliness:** Zero warnings under `golangci-lint`, `cargo clippy`, and TypeScript strict mode.
+2. **Deterministic Conformance:** Identical evaluation outcomes across Go and Node.js for 100% of test vectors in `tests/conformance/`.
+3. **Zero-Allocation Hot Path:** Zero bytes allocated per evaluation op in `BenchmarkEvaluateDirect`.
+4. **Race-Detector Cleanliness:** Zero warnings under `go test -race ./...` under write-storm concurrency.
+5. **No Regressions on Rollback:** Verified monotonic deadline enforcement rejecting prior generation updates.
