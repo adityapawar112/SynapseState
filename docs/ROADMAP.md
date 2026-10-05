@@ -1,58 +1,82 @@
 # Wayfinder Delivery Roadmap: SynapseState
 
-> **Status:** Active Roadmap (Post-Pivot v3.0)  
-> **Charter:** [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md)  
-> **Architecture:** [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md)  
+> **Status:** Active Wayfinder Map (Post-Pivot v3.0)  
+> **Guiding Charter:** [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md)  
+> **Architecture Specification:** [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md)  
 > **Product Definition:** [PRODUCT.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/PRODUCT.md)  
+> **Domain Glossary:** [GLOSSARY.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/GLOSSARY.md)  
 > **System Boundaries & Limitations:** [docs/limitations.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/limitations.md)
 
 ---
 
-## 1. Destination & North Star
+## 1. Destination
 
-SynapseState delivers a production-grade, self-hosted **incident-safety and lifecycle governance layer for OpenFeature**. It adds signed, auto-expiring emergency overrides that reconcile back to Git, and telemetry-driven, compiler-verified code retirement pull requests for dead feature flags.
-
-The delivery plan is organized into **sequenced, demonstrable phases**. Each phase concludes with working code, automated verification, and demonstrable evidence.
+A production-grade, self-hosted **incident-safety and lifecycle governance layer for OpenFeature** where Node.js microservices evaluate feature flags locally with zero network syscalls on the hot path, protected by signed, auto-expiring emergency overrides (break-glass leases) that reconcile to Git, and telemetry-driven, compiler-verified cleanup PRs for dead feature flags.
 
 ---
 
-## 2. Phased Delivery Map
+## 2. Notes
+
+* **Core Ecosystem:** Pure TypeScript / Node.js monorepo (`packages/lease`, `packages/sdk`, `packages/cli`, `packages/conformance`, `apps/control-api`, `apps/purger`, `apps/dashboard`, `apps/demo-shop`).
+* **Evaluation Strategy:** Delegated entirely to underlying OpenFeature providers (such as flagd in-process with file source, or plain JSON) wrapped via `OverrideProvider`.
+* **State Synchronization:** Direct HTTP polling with `ETag` conditional caching (5s interval with jitter) from application SDKs to the Control API; no sidecars or Unix domain sockets.
+* **Standing Preferences:** Safety over coverage, fail-static SDK behavior, evidence before claims, and strict kill criteria.
+* **Skills Every Session Should Consult:** `wayfinder`, `test-driven-development`, `verification-before-completion`, `codebase-design`.
+
+---
+
+## 3. Decisions So Far
+
+* [ADR 0005: Delegate Evaluation to Existing OpenFeature Providers](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0005-delegate-evaluation-to-existing-openfeature-providers.md): Sits atop standard OpenFeature providers via `OverrideProvider` wrapper rather than building a custom evaluator or rollout DSL.
+* [ADR 0006: HTTP Polling with ETag over In-Pod Sidecar IPC](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0006-http-polling-with-etag-over-sidecar-ipc.md): Direct SDK polling with conditional `304 Not Modified` caching replaces mutating webhooks, sidecar daemons (`synapse-agent`), and intra-pod UDS sockets.
+* [ADR 0007: Operator-Signed Leases with Pinned Keyset and Git Promotion](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0007-operator-signed-leases-with-pinned-keyset-and-git-promotion.md): Leases signed with operator Ed25519 keys and validated against a Git-pinned keyset; GitHub PR review serves as dual-control second approval.
+* [ADR 0008: TypeScript Monorepo Unification](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0008-typescript-monorepo-unification.md): Unified single-language ecosystem across SDK, CLI, Control API, Purger, and Next.js Dashboard.
+* [ADR 0009: Refusal-by-Default AST Refactoring for Code Retirement](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0009-refusal-by-default-ast-refactoring-for-code-retirement.md): Safety-first `ts-morph` refactoring for literal keys with Refusal Reports and pre-flight compiler (`tsc --noEmit`), linter, and test checks.
+
+---
+
+## 4. Delivery Phasing & Gantt Map
 
 Estimates assume part-time engineering (10 to 15 focused hours per week).
 
 ```mermaid
 gantt
     title SynapseState Delivery Phasing
-    dateFormat  YYYY-MM-DD
+    dateFormat YYYY-MM-DD
+    axisFormat %m/%d
     section MVP
-    Phase 1: Foundation (Core SDK & Lease)     :done, p1, 2026-10-06, 14d
-    Phase 2: Deploy (Control API & k3s)         :active, p2, after p1, 14d
-    Phase 3: Observe (Observability & SLOs)     :p3, after p2, 14d
-    Phase 4: Incident Loop (CLI & Git PRs)      :p4, after p3, 14d
-    section Lifecycle & UI
-    Phase 5: Purger (AST Refactoring)          :p5, after p4, 14d
-    Phase 6: Dashboard & Attribution           :p6, after p5, 14d
+    Phase 1 - Foundation and Core SDK       :done, p1, 2026-10-06, 14d
+    Phase 2 - Deploy Control API on k3s     :active, p2, after p1, 14d
+    Phase 3 - Observe and SLO Verification  :p3, after p2, 14d
+    Phase 4 - Incident Loop and Git PRs     :p4, after p3, 14d
+    section Lifecycle and UI
+    Phase 5 - Purger and AST Refactoring    :p5, after p4, 14d
+    Phase 6 - Dashboard and Attribution     :p6, after p5, 14d
     section Extensions
-    Phase 7: Optional (GitOps / Second Provider):p7, after p6, 21d
+    Phase 7 - Optional GitOps and Providers :p7, after p6, 21d
 ```
+
+---
+
+## 5. Frontier & Phased Milestones
 
 ### Phase 1: Cryptographic Foundation & In-Process SDK (Weeks 1 – 2)
 **Deliverable:** Monorepo scaffolding, CI pipelines, Dockerfiles, `packages/lease`, `packages/sdk`, and language-neutral conformance suite.
 
-* **1.1 Monorepo Workspace & Build Orchestration:**
-  * Configure npm/pnpm workspaces for `packages/*` and `apps/*`.
-  * Establish GitHub Actions CI: linting, formatting (`prettier`), type-checking, and tests.
+* **1.1 Monorepo Workspace & Build Scaffolding (`packages/*`, `apps/*`):**
+  * Configure npm/pnpm workspaces for shared dependencies and TypeScript project references.
+  * Establish GitHub Actions CI: linting, formatting (`prettier`), type-checking, and unit tests.
 * **1.2 Cryptographic Lease Core (`packages/lease`):**
-  * RFC 8785 JSON canonicalization.
+  * Deterministic RFC 8785 JSON canonicalization.
   * Ed25519 signing and verification with domain separation (`"synapsestate/lease/v1\n"`).
-  * Dual-clock expiration validation logic (`min(wall_expiry, mono_expiry)`).
+  * Dual-clock expiration validation logic: $\min(\text{wall\_expiry}, \text{mono\_expiry})$.
 * **1.3 OpenFeature In-Process SDK (`packages/sdk`):**
-  * `OverrideProvider`: Implements OpenFeature `Provider` interface; wraps any delegate provider (e.g., flagd file source or plain JSON).
-  * In-memory lease cache with thread-safe pointer references.
-  * Fail-safe exception shielding: any internal error falls through to the delegate provider.
+  * `OverrideProvider`: Implements OpenFeature `Provider` interface; wraps any delegate provider.
+  * In-memory verified lease map with thread-safe pointer references.
+  * Fail-safe exception shielding: any internal error catches, increments metrics, and delegates to the underlying provider.
   * `TelemetryHook`: Zero-context `after`/`finally` hook recording `(flag_key, variant, reason)`.
 * **1.4 Golden Test Conformance Suite (`packages/conformance`):**
-  * Test vectors covering valid signatures, tampered payloads, unknown `kid`, wall-clock expiry, monotonic expiry, future-dating, and clock-skew tolerance.
+  * Language-neutral test vectors covering valid signatures, tampered payloads, unknown `kid`, wall-clock expiry, monotonic expiry, future-dating, and clock-skew tolerance.
 * **Definition of Done:** 100% green CI; full conformance vector coverage; zero dependencies on native C/Rust binaries.
 
 ---
@@ -159,7 +183,7 @@ gantt
 
 ---
 
-## 3. Non-Negotiable Kill Criteria
+## 6. Non-Negotiable Kill Criteria
 
 To prevent scope creep and maintain strict project delivery:
 1. **Infrastructure Over Features:** If Phase 2 (deployment on k3s via Terraform and Helm) is not live by the end of Week 4, stop adding features. If not live by Week 6, **cut the Dashboard and the Purger**. *Cut features, never infrastructure.*
@@ -168,7 +192,33 @@ To prevent scope creep and maintain strict project delivery:
 
 ---
 
-## 4. Scripted 90-Second Demo
+## 7. Not Yet Specified (Fog of War)
+
+These decisions represent in-scope areas that depend on earlier milestone learnings and will graduate to formal decision tickets as the frontier advances:
+
+* **Open Question 1 (Metadata Reason Convention):** Finalize the exact OpenFeature resolution reason string and metadata structure (`reason: "OVERRIDE"` vs `"CACHED"`) after auditing the latest OpenFeature specification updates during Phase 1.
+* **Open Question 2 (TTL Bounds Calibration):** Establish the final default values for `MAX_TTL` (30m vs 60m) and `SKEW_TOLERANCE` (30s vs 60s) following initial clock-skew injection drills in Phase 3.
+* **Open Question 3 (PostgreSQL K8s Packaging):** Decide in a dedicated ADR between deploying PostgreSQL via a standard Bitnami Helm chart versus the CloudNativePG Kubernetes operator on k3s.
+* **Open Question 4 (Audit Checkpoint Anchor Target):** Select the permanent external anchoring target for signed audit checkpoints: an isolated, branch-protected Git repository branch vs. an S3 bucket with Object Lock enabled.
+* **Open Question 5 (Cloud Provider Selection):** Select the specific cloud VM provider (e.g. Hetzner, AWS, GCP, Scaleway) based on current pricing and free-tier terms before provisioning Phase 2 Terraform manifests.
+
+---
+
+## 8. Out of Scope
+
+Work ruled permanently beyond this destination; closed and excluded from the frontier:
+
+* **Custom Flag Evaluation Engine:** Building rule evaluation, context segmenters, or MurmurHash3 bucketing. Evaluation is strictly delegated to OpenFeature providers.
+* **Client-Side / Mobile SDKs:** Browser, iOS, or Android SDK distribution. Internal keysets and rulesets never egress to untrusted environments.
+* **Web Administrative Flag Authoring:** A web UI for creating or editing flag definitions. Git is the sole source of truth for baseline configurations.
+* **In-Pod Sidecar Daemons & Sockets:** Injecting sidecar containers (`synapse-agent`) or maintaining UDS socket streaming in pods. SDKs poll the Control API directly over HTTPS with `ETag`.
+* **Autonomous Direct-to-Master Code Merges:** The purger and promotion pipelines open Pull Requests only; direct merges without human review are prohibited.
+* **Multi-Region / Multi-Cluster HA:** Operating multi-master geo-distributed control planes in v1.
+* **Microbenchmark Theater:** Claiming unsubstantiated nanosecond latency records. We publish only measured wrapper overhead compared against bare delegate providers.
+
+---
+
+## 9. Scripted 90-Second Demo
 
 1. **Baseline Operation:** The `demo-shop` application is running in k3s. Grafana shows steady transaction rates and zero 5xx errors.
 2. **Trigger Incident:** Simulate a bad release merged behind flag `checkout-v2`. Latency spikes, and the Alertmanager burn-rate alert fires.
@@ -191,7 +241,7 @@ To prevent scope creep and maintain strict project delivery:
 
 ---
 
-## 5. Engineering Portfolio & Competency Evidence Map
+## 10. Engineering Portfolio & Competency Evidence Map
 
 | Engineering Dimension | Artifact & Implementation | Verifiable Proof |
 |---|---|---|

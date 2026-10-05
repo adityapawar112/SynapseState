@@ -58,23 +58,23 @@ When an alert fires, the first diagnostic question an on-call SRE asks is: *"Wha
 
 ```mermaid
 flowchart LR
-    subgraph Personas
-        SRE[On-Call SRE]
-        DEV[Backend Developer]
-        MGR[Platform Owner / Manager]
+    subgraph Personas ["User Personas"]
+        SRE["On-Call SRE"]
+        DEV["Backend Developer"]
+        MGR["Platform Owner / Manager"]
     end
 
-    subgraph Surfaces
-        CLI[synapse CLI]
-        PR[GitHub Draft PRs]
-        DASH[Read-Mostly Dashboard]
-        ALERT[Alertmanager Webhooks]
+    subgraph Surfaces ["Primary Surfaces"]
+        CLI["synapse CLI"]
+        PR["GitHub Draft PRs"]
+        DASH["Read-Mostly Dashboard"]
+        ALERT["Alertmanager Webhooks"]
     end
 
-    SRE -->|Signs leases & promotes| CLI
-    SRE -->|Inspects suspects| ALERT
-    DEV -->|Reviews cleanup diffs| PR
-    MGR -->|Monitors active leases & debt| DASH
+    SRE -->|"Signs leases & promotes"| CLI
+    SRE -->|"Inspects suspects"| ALERT
+    DEV -->|"Reviews cleanup diffs"| PR
+    MGR -->|"Monitors active leases & debt"| DASH
 ```
 
 ### Persona Matrix

@@ -44,51 +44,51 @@ SynapseState provides an incident-safety, governance, and automated lifecycle la
 
 ```mermaid
 flowchart TD
-    subgraph GitOps [Git Repository: Authoritative Baseline]
-        GitRepo[flags.yaml registry\nTrusted public keyset\nKubernetes manifests]
+    subgraph GitOps ["Git Repository (Authoritative Baseline)"]
+        GitRepo["flags.yaml registry<br/>Trusted public keyset<br/>Kubernetes manifests"]
     end
 
-    subgraph OperatorSurface [Operator Workstation]
-        CLI[synapse-cli\nSigns leases with Ed25519 private key]
+    subgraph OperatorSurface ["Operator Workstation"]
+        CLI["synapse-cli<br/>Signs leases with Ed25519 private key"]
     end
 
-    subgraph GovernancePlane [Synapse Governance Plane: k3s]
-        ControlAPI[Control API (Node.js/TS)\nLeases · Revocations · Registry Sync\nTelemetry Rollups · Hash-Chained Audit Log]
-        Postgres[(PostgreSQL 16\nLeases · State · Audit)]
+    subgraph GovernancePlane ["Synapse Governance Plane (k3s)"]
+        ControlAPI["Control API (Node.js/TS)<br/>Leases, Revocations, Registry Sync<br/>Telemetry Rollups, Hash-Chained Audit Log"]
+        Postgres[("PostgreSQL 16<br/>Leases, State, Audit")]
         ControlAPI <--> Postgres
     end
 
-    subgraph Workload [Application Pod: k3s / Production]
-        ConfigMap[Mounted ConfigMap:\nFlag definitions & pinned keyset]
-        subgraph AppProcess [Application Process: Node.js Runtime]
-            OF[OpenFeature Client]
-            OP[OverrideProvider\nIn-memory verified lease map]
-            DP[Delegate Provider\ne.g., flagd in-process / JSON file]
-            TH[TelemetryHook\nBatched metric aggregator]
+    subgraph Workload ["Application Pod (k3s / Production)"]
+        ConfigMap["Mounted ConfigMap:<br/>Flag definitions & pinned keyset"]
+        subgraph AppProcess ["Application Process (Node.js Runtime)"]
+            OF["OpenFeature Client"]
+            OP["OverrideProvider<br/>In-memory verified lease map"]
+            DP["Delegate Provider<br/>(e.g., flagd in-process / JSON file)"]
+            TH["TelemetryHook<br/>Batched metric aggregator"]
             
             OF --> OP
-            OP -->|Active valid lease| OP
-            OP -->|No lease / Error| DP
-            OF -.->|after / finally| TH
+            OP -->|"Active valid lease"| OP
+            OP -->|"No lease / Error"| DP
+            OF -.->|"after / finally"| TH
         end
-        ConfigMap -->|Mount file| DP
-        ConfigMap -->|Mount pinned keyset| OP
+        ConfigMap -->|"Mount file"| DP
+        ConfigMap -->|"Mount pinned keyset"| OP
     end
 
-    subgraph Observability [Cluster Observability]
-        Prom[Prometheus]
-        Graf[Grafana]
-        Alert[Alertmanager]
+    subgraph Observability ["Cluster Observability"]
+        Prom["Prometheus"]
+        Graf["Grafana"]
+        Alert["Alertmanager"]
     end
 
-    CLI -->|POST /v1/leases (signed payload)| ControlAPI
-    GitRepo -.->|ConfigMap sync| ConfigMap
-    ControlAPI -->|Open promote PR / Webhook sync| GitRepo
-    OP -->|Poll GET /v1/sdk/state (ETag)| ControlAPI
-    TH -->|POST /v1/telemetry/batches| ControlAPI
-    ControlAPI -->|Metrics / Annotations| Prom
-    AppProcess -->|Metrics| Prom
-    Alert -->|Webhook (suspect ranking)| ControlAPI
+    CLI -->|"POST /v1/leases (signed payload)"| ControlAPI
+    GitRepo -.->|"ConfigMap sync"| ConfigMap
+    ControlAPI -->|"Open promote PR / Webhook sync"| GitRepo
+    OP -->|"Poll GET /v1/sdk/state (ETag)"| ControlAPI
+    TH -->|"POST /v1/telemetry/batches"| ControlAPI
+    ControlAPI -->|"Metrics / Annotations"| Prom
+    AppProcess -->|"Metrics"| Prom
+    Alert -->|"Webhook (suspect ranking)"| ControlAPI
 ```
 
 ---
@@ -185,9 +185,9 @@ sequenceDiagram
     API-->>CLI: 201 Created (Lease ID: 01J...)
     
     SDK->>API: GET /v1/sdk/state (Next poll)
-    API-->>SDK: 200 OK [Lease payload + sig]
+    API-->>SDK: 200 OK (Lease payload + sig)
     Note over SDK: Local verification against pinned keyset<br/>Set monotonic & wall deadlines<br/>Atomic update to active lease map
-    Note over SDK: All subsequent flag checks evaluate to 'false' in memory
+    Note over SDK: All subsequent flag checks evaluate to false in memory
 ```
 
 ### 4.3 Git Reconciliation & Promotion Flow
@@ -319,7 +319,7 @@ When the Control API is unreachable:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ACTIVE: Valid Ed25519 Signature\nINSERT leases
+    [*] --> ACTIVE: Valid Ed25519 Signature / INSERT lease
     ACTIVE --> PROMOTED: PR Merged / Drift Detected
     ACTIVE --> REVOKED: Operator Signed Revocation
     ACTIVE --> SUPERSEDED: Newer signed lease with --supersede
@@ -459,31 +459,31 @@ CREATE TABLE api_tokens (
 
 ```mermaid
 flowchart TD
-    subgraph SignalQualification [1. Qualification Engine]
-        UsageDB[(flag_usage_daily)]
-        SvcDB[(services)]
-        Rule{Candidate Rule Check:\n1. class == 'release'\n2. Single variant for >= 30 days\n3. 100% service coverage\n4. No active lease/promotion}
+    subgraph SignalQualification ["1. Qualification Engine"]
+        UsageDB[("flag_usage_daily")]
+        SvcDB[("services")]
+        Rule{"Candidate Rule Check:<br/>1. class == release<br/>2. Single variant >= 30 days<br/>3. 100% service coverage<br/>4. No active lease/promotion"}
         UsageDB --> Rule
         SvcDB --> Rule
     end
 
-    subgraph ASTRefactoring [2. AST Refactoring Pipeline (ts-morph)]
-        Rule -->|Qualified Candidate| Clone[Clone Target App Repository]
-        Clone --> Scan[Scan AST for Literal Flag Keys]
-        Scan --> Pattern{Pattern Supported?}
-        Pattern -->|Yes| Rewrite[Inline winning branch\nDelete dead code\nPrune unused imports]
-        Pattern -->|No / Ambiguous| Refuse[Emit Refusal Report]
+    subgraph ASTRefactoring ["2. AST Refactoring Pipeline (ts-morph)"]
+        Rule -->|"Qualified Candidate"| Clone["Clone Target App Repository"]
+        Clone --> Scan["Scan AST for Literal Flag Keys"]
+        Scan --> Pattern{"Pattern Supported?"}
+        Pattern -->|"Yes"| Rewrite["Inline winning branch<br/>Delete dead code<br/>Prune unused imports"]
+        Pattern -->|"No / Ambiguous"| Refuse["Emit Refusal Report"]
     end
 
-    subgraph VerificationGate [3. Pre-Flight Verification Gate]
-        Rewrite --> TypeCheck[tsc --noEmit]
-        Rewrite --> Linter[npm run lint]
-        Rewrite --> Tests[npm test]
+    subgraph VerificationGate ["3. Pre-Flight Verification Gate"]
+        Rewrite --> TypeCheck["tsc --noEmit"]
+        Rewrite --> Linter["npm run lint"]
+        Rewrite --> Tests["npm test"]
     end
 
-    subgraph Output [4. Output Action]
-        TypeCheck & Linter & Tests -->|All Passed| PR[Open GitHub Draft PR\nAttach telemetry evidence]
-        Refuse --> Report[Publish Refusal Report to Issue / Log]
+    subgraph OutputAction ["4. Output Action"]
+        TypeCheck & Linter & Tests -->|"All Passed"| PR["Open GitHub Draft PR<br/>Attach telemetry evidence"]
+        Refuse --> Report["Publish Refusal Report to Issue / Log"]
     end
 ```
 
