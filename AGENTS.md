@@ -1,7 +1,7 @@
 # AGENTS.md — SynapseState Engineering Charter & Operating Guide
 
 > **Target Audience:** All AI agents, pair programmers, and human contributors operating in `synapsestate/synapsestate`.
-> **Primary Specification:** [docs/SpecDoc.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/SpecDoc.md) (v1.2.0-GA-SPEC)
+> **Primary Specification:** [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md) & [PRODUCT.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/PRODUCT.md)
 
 ---
 
@@ -12,9 +12,8 @@ SynapseState delivers a self-hosted, distributed runtime configuration and featu
 ### Core Non-Goals (Hard System Boundaries)
 - **NO Client-Side / Web / Mobile:** Internal rulesets never egress to untrusted browsers or devices.
 - **NO Web Administrative UI:** Operations are strictly declarative (GitOps via CRDs) and operational via `synapse-cli`.
-- **NO Serverless / Ephemeral:** Platforms without POSIX `/dev/shm` mounts and daemon lifecycles are out of scope.
-- **NO Node-Level DaemonSets:** Sharing memory across pods violates Kubernetes Pod Security Standards.
-- **NO In-Engine Container Sandboxing:** Automated code remediation (`synapse-purger`) submits Draft PRs verified by existing CI.
+- **NO Per-Evaluation Socket Calls:** Application SDKs never make network or socket roundtrips to evaluate a flag.
+- **NO Unverified Autonomous Merges:** Automated code remediation (`synapse-purger`) submits Draft PRs verified by compiler checks and repository tests.
 
 ---
 
@@ -22,12 +21,12 @@ SynapseState delivers a self-hosted, distributed runtime configuration and featu
 
 Every code modification and pull request MUST adhere to these non-negotiable invariants:
 
-1. **Zero-Copy Hot Path:** The evaluation path in the native Go engine and Rust N-API core must perform direct pointer dereference over mapped FlatBuffers memory. **Zero heap allocations (`0 B/op`)** on steady-state evaluations.
-2. **Atomic File Swaps:** Never write or mutate `/synapse/arena.bin` in place. Always compile to `/synapse/arena.<generation>.bin` and swap using atomic POSIX `rename(2)`.
-3. **Epoch-Based Reader Reclamation:** Never use time-based unmap grace periods. Readers must atomically acquire and release `ArenaMapping.refCount`. An arena is only unmapped (`munmap`) when its `refCount` drops to zero.
+1. **Zero-Hop Hot Path:** The evaluation path in the native Go engine and TypeScript SDK must evaluate directly from language-native memory with atomic reference swaps. **Zero network syscalls** on steady-state evaluations.
+2. **In-Pod Sidecar Multiplexing:** The `synapse-agent` sidecar maintains the sole upstream connection per pod and pushes delta updates over local IPC only when configurations change.
+3. **Immutable Snapshot Swaps & Runtime GC:** Never mutate active ruleset objects in place. All updates compile into an immutable snapshot and swap atomically. Superseded snapshots are reclaimed by the language runtime's garbage collector. Zero manual memory unmapping.
 4. **Strict Source-of-Truth Hierarchy:**
-   $$\text{Git Baseline} \longrightarrow \text{K8s CRDs} \longrightarrow \text{PostgreSQL Ledger} \longrightarrow \text{gRPC Streaming} \longrightarrow \text{Shared Memory Arena}$$
-5. **Dual-Control Cryptographic Leases:** Emergency overrides require two independent Ed25519 signatures (issuer + approver) over RFC 8785 canonical JSON with local monotonic expiration deadlines.
+   $$\text{Git Baseline} \longrightarrow \text{K8s CRDs} \longrightarrow \text{PostgreSQL Ledger} \longrightarrow \text{gRPC Streaming} \longrightarrow \text{Local IPC Stream} \longrightarrow \text{In-Process Heap}$$
+5. **Tiered Cryptographic Leases:** Immediate break-glass overrides require one Ed25519 signature with a mandatory 30-minute expiration. Permanent overrides require dual-control authorization (issuer + approver) or an automated Git merge.
 6. **Boundary Discipline:** Isolate all input validation, sanitization, and parsing at system boundaries (K8s Admission Webhook, CLI flags, gRPC endpoints). Internal engine functions must remain pure.
 
 ---
@@ -39,33 +38,35 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 ├── cmd/
 │   ├── synapse-control/     # Go control plane daemon (gRPC stream, PostgreSQL ledger, CRD sync)
 │   ├── synapse-operator/    # K8s Controller-Runtime operator (FeatureFlagGroup, mutating webhook)
-│   ├── synapse-agent/       # Go sidecar daemon (FlatBuffers compilation, atomic rename, inotify)
-│   ├── synapse-cli/         # SRE CLI (Ed25519 dual-control signing, break-glass)
+│   ├── synapse-agent/       # Go sidecar daemon (pod multiplexer, local UDS streaming, disk snapshot)
+│   ├── synapse-cli/         # SRE CLI (Ed25519 break-glass signing, lease management)
 │   └── synapse-purger/      # Quiescence engine & AST refactoring tool (go/types, ts-morph)
 ├── pkg/
 │   ├── apis/                # Kubernetes CRD structs and OpenAPI validation schemas
-│   ├── buffer/              # FlatBuffers canonical schema (schema/arena.fbs) & generated Go bindings
-│   ├── crypto/              # Ed25519 dual-control signing, RFC 8785 canonicalization
-│   └── engine/              # Zero-copy rule evaluation & MurmurHash3 unsigned 32-bit bucketing
+│   ├── protocol/            # Protobuf delta schemas & generated Go/TypeScript bindings
+│   ├── crypto/              # Ed25519 signing, RFC 8785 canonicalization
+│   └── engine/              # In-process rule evaluation & MurmurHash3 unsigned 32-bit bucketing
 ├── sdk/
-│   ├── go/                  # OpenFeature Go Provider reading /synapse/arena.bin via unix.Mmap
-│   └── node/                # OpenFeature Node.js Provider wrapping Rust addon via napi-rs
+│   ├── go/                  # OpenFeature Go Provider with atomic pointer swaps
+│   └── node/                # Pure TypeScript OpenFeature Node.js Provider
 ├── deploy/
 │   ├── manifests/           # Base CRD manifests (FeatureFlagGroup, EmergencyLease)
 │   └── helm/                # Production Helm charts
 ├── tests/
-│   ├── conformance/         # Cross-runtime test vectors (Go vs Node vs Rust)
-│   ├── chaos/               # Fault injection (unmap safety, network partitions, crash loops)
+│   ├── conformance/         # Cross-runtime test vectors (Go vs Node.js)
+│   ├── chaos/               # Fault injection (network partitions, sidecar crashes, reconnect loops)
 │   └── fixtures/            # Test repositories for AST pruning validation
 └── docs/
-    └── SpecDoc.md           # Authoritative system specification
+    ├── ARCHITECTURE.md      # Authoritative system architecture
+    ├── ROADMAP.md           # Phased Wayfinder delivery roadmap
+    └── adr/                 # Architectural Decision Records
 ```
 
 ---
 
 ## 4. Active Skills & Agent Workflows
 
-The workspace is configured with 29 active skills located in [`.agents/skills/`](file:///c:/Users/adity/Desktop/Projects/SynapseState/.agents/skills):
+The workspace is configured with active skills located in [`.agents/skills/`](file:///c:/Users/adity/Desktop/Projects/SynapseState/.agents/skills):
 
 | Phase / Workflow | Recommended Skills to Invoke |
 |---|---|
@@ -84,9 +85,9 @@ All code touching the evaluation path must be validated against continuous bench
 
 | Boundary | Target SLO | Conditions |
 |---|---|---|
-| **Native Go Engine** | $p99 \le 0.8\text{ µs}$ | Direct pointer dereference, 0 heap allocs |
-| **Public Go OpenFeature SDK** | $p99 \le 2.0\text{ µs}$ | Includes `ResolutionDetails` allocation |
-| **Public Node.js OpenFeature SDK** | $p99 \le 5.0\text{ µs}$ | Crossing `napi-rs` boundary |
+| **Native Go Engine** | $p99 \le 0.5\text{ µs}$ | Direct in-memory lookup, 0 heap allocs on evaluation |
+| **Public Go OpenFeature SDK** | $p99 \le 1.0\text{ µs}$ | Includes `ResolutionDetails` allocation |
+| **Public Node.js OpenFeature SDK** | $p99 \le 1.0\text{ µs}$ | Pure V8 in-memory lookup, zero FFI overhead |
 | **Intra-Cluster EEL Propagation** | $p99 \le 50\text{ ms}$ | API acceptance to verified memory swap across $\ge 99\%$ of 100 pods |
 | **Straggler Pod Detection** | $\text{Max} \le 10\text{ s}$ | Alerting non-acknowledging pods |
 
@@ -94,6 +95,6 @@ All code touching the evaluation path must be validated against continuous bench
 
 ## 6. Git & Commit Guidelines
 
-- **Format:** Conventional Commits (`feat(engine): ...`, `fix(agent): ...`, `perf(buffer): ...`, `docs: ...`).
+- **Format:** Conventional Commits (`feat(engine): ...`, `fix(agent): ...`, `perf(protocol): ...`, `docs: ...`).
 - **Tracer Bullets:** Every commit and PR must leave the repository in a compile-clean, green-test state.
 - **Evidence Before Claims:** Always run tests and benchmarks, pasting raw outputs in PR descriptions.

@@ -8,9 +8,9 @@ Closes #
 - [ ] Respects explicit non-goals (no Web UI, no Bayesian funnels, no in-process mutations)
 
 ## Systems Invariants & Architecture Checklist
-- [ ] **Zero-Copy Hot Path:** Zero heap allocations on the flag evaluation path (`p99 <= 0.8µs native`).
-- [ ] **Reader Safety:** Uses `ArenaMapping` atomic refcount epoch reclamation; no time-based unmap assumptions.
-- [ ] **Atomic Swaps:** All arena updates write to `arena.<gen>.bin` and use `rename(2)` to swap `arena.bin`.
+- [ ] **Zero-Hop Hot Path:** Zero network syscalls on evaluation path (`p99 <= 0.5µs native`, `p99 <= 1.0µs Node.js`).
+- [ ] **In-Process Safety:** Uses lock-free atomic pointer swaps; zero mutex locks on the evaluation path.
+- [ ] **Immutable Snapshot Swaps:** Updates compile into immutable ruleset snapshots; no in-place mutation.
 - [ ] **Security:** RFC 8785 canonicalization and Ed25519 signatures verified for all lease/override paths.
 - [ ] **Boundary Discipline:** Input validation strictly isolated to ingress/webhooks; engine logic remains pure.
 

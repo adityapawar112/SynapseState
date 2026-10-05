@@ -13,4 +13,4 @@
    - Never commit directly to `main` without automated test passes.
 
 3. **Traceability**:
-   - Every feature commit must trace to a ticket or spec section in `docs/SpecDoc.md`.
+   - Every feature commit must trace to a ticket or spec section in `docs/ARCHITECTURE.md` or `docs/SpecDoc.md`.

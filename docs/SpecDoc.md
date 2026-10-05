@@ -1,477 +1,232 @@
-# Product Specification Document (PRD): SynapseState
+# Product specification document: SynapseState
 
-**Document Version:** 1.2.0-GA-SPEC
+**Document version:** 2.0.0-GA-SPEC
 
-**Engineering Classification:** Cloud-Native Distributed Systems & Runtime Configuration Infrastructure
+**Engineering classification:** Cloud-native distributed systems and runtime configuration infrastructure
 
-**Primary Language Ecosystem:** Go Monorepo (`synapsestate/synapsestate`) with Polyglot SDK Packages
+**Primary language ecosystem:** Go monorepo (`synapsestate/synapsestate`) with polyglot SDK packages
 
-**Licensing Baseline:** 100% Permissive Open Source — Apache 2.0 (Core Engine, Operator, Agent, SDKs)
+**Licensing baseline:** 100% permissive open source (Apache 2.0)
 
 ---
 
-## 1. Document Control, Revision History & Scope
+## 1. Document control, revision history and scope
 
-### 1.1 Revision History
+### 1.1 Revision history
 
-* **v1.0.0-DRAFT:** Initial systems design sketch covering dual-plane GitOps, shared-memory sidecars, and automated cleanup.
+* **v1.0.0-DRAFT:** Initial systems design sketch covering dual-plane GitOps and shared-memory sidecars.
 * **v1.1.0-REV:** Addressed architectural scope; introduced single Go control plane, RFC 8785 canonical leasing, formal Quiescence Index ($Q$), and sharded Kubernetes CRDs.
-* **v1.2.0-GA-SPEC (Current):** Addressed reader unmap safety, lease lifecycle gaps, schema mismatches, and cold-start availability:
-* Replaced time-based unmap with atomic reader epoch/refcount reclamation; defined SDK string lifetime contracts and bounded tmpfs cgroup memory budgeting.
-* Replaced single-point Valkey dependency with direct gRPC delta streaming over mTLS; added native PostgreSQL `LISTEN`/`NOTIFY` control-plane synchronization.
-* Extended emergency leases to require dual-control Ed25519 cryptographic signatures; added local monotonic clock deadlines, break-glass Kubernetes API fallbacks, and updated ArgoCD/Flux prune-prevention annotations.
+* **v1.2.0-GA-SPEC:** Added reader unmap safety, lease lifecycle gaps, schema mismatches, and cold-start availability.
+* **v2.0.0-GA-SPEC (Current):** Architectural pivot to Sidecar-Multiplexed In-Process Data Plane:
+  * Replaced POSIX shared memory (`mmap` + FlatBuffers) with sidecar delta streaming over local Unix Domain Sockets into language-native heap memory.
+  * Eliminated Node.js N-API FFI overhead and process crash hazards (`SIGSEGV`/`SIGBUS`).
+  * Replaced strict dual-control requirement with Tiered Emergency Leases (single-operator break-glass with 30-minute TTL for MTTE < 30 seconds, promoted via dual control or Git merge).
+  * Added flag lifecycle taxonomy (`release`, `experiment`, `killswitch`, `permission`) and pre-flight compiler type-checks/unit-test verification to `synapse-purger`.
+  * Removed native C/Rust compilation toolchain from the Node.js SDK; implemented `sdk/node` in pure TypeScript.
 
-
-* Synchronized the FlatBuffers binary schema with CRD capabilities: added multi-variant rollout splits, `float64` types, typed rule operators, and deterministic unsigned 32-bit MurmurHash3 bucketing.
-* Corrected Quiescence formula notation; added multi-cluster invariance constraints, partial failure/error ceilings, and scoped AST parsing to `go/types` and `ts-morph` over a testable fixture corpus.
-* Established deterministic cold-start initialization using Kubernetes 1.29+ native sidecar containers and local snapshot fallbacks.
-
-
-
-### 1.2 Target System Boundaries (v1.0 Release Scope)
+### 1.2 Target system boundaries (v2.0 release scope)
 
 SynapseState delivers a self-hosted, distributed runtime configuration and feature flag platform optimized for high-throughput, latency-critical microservices running in Kubernetes clusters.
 
-The v1.0 release targets server-side microservices running in Go and Node.js (via native N-API bindings). Additional runtimes (Rust, Java, Python) are roadmapped for subsequent minor releases.
+The v2.0 release targets server-side microservices running in Go and Node.js (pure TypeScript). Additional runtimes (Rust, Java, Python) are roadmapped for subsequent minor releases.
 
-### 1.3 Explicit Non-Goals (Out of Scope for v1.0)
+### 1.3 Explicit non-goals (out of scope for v2.0)
 
-* **Client-Side, Single-Page (SPA), and Mobile Applications:** Excluded by design. Distributing internal rulesets to untrusted browsers or devices leaks business heuristics and breaks the zero-context-egress privacy guarantee.
-* **Serverless / Ephemeral Execution Environments:** Excluded. Environments such as AWS Lambda, Google Cloud Run, or Cloudflare Workers lack persistent local POSIX shared-memory mounts (`/dev/shm`), background daemon lifecycles, and `inotify` file primitives.
-* **Node-Level DaemonSet Mode:** Excluded. Cross-pod memory sharing requires `hostPath` or `hostIPC` volumes, which violate Kubernetes Pod Security Standards (Restricted profile) and create cross-tenant memory isolation vulnerabilities.
-* **Bayesian / Multi-Armed Bandit Experimentation:** Excluded. SynapseState does not calculate statistical p-values, conversion funnels, or dynamic multi-variant traffic re-allocations.
-* **Graphical Administrative Web UI:** Excluded. Operations in v1.0 are strictly declarative (GitOps via CRDs) and operational (Synapse CLI).
-* **In-Engine Container Sandbox Execution:** Excluded. The remediation engine does not run arbitrary container builds or manage Docker/Kata daemons. Automated code changes are submitted as Draft Pull Requests verified by the target repository's existing CI pipeline.
+* **Client-side, single-page (SPA), and mobile applications:** Excluded by design. Distributing internal rulesets to untrusted browsers or devices leaks business heuristics and breaks the zero-context-egress privacy guarantee.
+* **Per-evaluation network or socket round-trips:** Excluded. Unlike proxy sidecars, the application SDK never makes network or socket round-trips to evaluate a flag.
+* **Graphical administrative web UI:** Excluded. Operations in v2.0 are strictly declarative (GitOps via CRDs) and operational (Synapse CLI).
+* **Unverified autonomous code commits:** Excluded. Automated code changes are submitted as Draft Pull Requests verified by compiler checks and repository tests.
 
 ---
 
-## 2. Competitive Positioning Matrix & Honest Performance Accounting
+## 2. Competitive positioning matrix
 
 Performance figures for external projects reflect published benchmark ranges and standard in-process memory architectures. Figures for SynapseState represent strict engineering Target Service Level Objectives (SLOs) enforced during continuous automated benchmarking.
 
-| Evaluation Dimension | flagd / OpenFeature Operator | Flipt (Git-Engine Mode) | Unleash (Self-Hosted OSS) | LaunchDarkly Enterprise | SynapseState v1.0 Architecture |
+| Evaluation dimension | flagd / OpenFeature Operator | Flipt (Git-engine mode) | Unleash (Self-hosted OSS) | LaunchDarkly Enterprise | SynapseState v2.0 architecture |
 | --- | --- | --- | --- | --- | --- |
-| **Data Plane IPC** | Localhost TCP / Unix Domain Socket (gRPC) | HTTP / gRPC loopback sidecar | In-process SDK cache or Unleash Edge | In-process SDK cache or Relay Proxy | **POSIX Shared Memory (`mmap`) via atomic `rename(2)**` |
-| **Hot-Path P99 Latency (Go)** | 800 µs – 3,200 µs (Sidecar mode); < 1 µs (In-process mode) | 700 µs – 2,800 µs (Loopback sidecar) | < 1 µs (In-process SDK cache) | < 1 µs (In-process SDK cache) | **Target: < 0.8 µs (Native Engine); < 2.0 µs (Public SDK)** |
-| **Hot-Path Memory IPC Cost** | Socket buffers, gRPC serialization per eval | Socket buffers, HTTP JSON serialization | Zero (In-process heap cache) | Zero (In-process heap cache) | **Zero syscalls; direct FlatBuffer pointer dereference** |
-| **Emergency Mitigation Speed** | Blocked by K8s API event loop | Blocked by Git PR/commit cycle (3–10 min) | Web UI edit (Immediate; bypasses Git) | Web UI edit (Immediate; bypasses Git) | **Target: < 50 ms intra-cluster; signed dual-control leases** |
-| **GitOps Drift Defense** | K8s CRD authoritative | Git repository authoritative | Not GitOps-native (Database authoritative) | Not GitOps-native (SaaS DB authoritative) | **Git-authoritative with signed lease overlays + automated PR back-sync** |
-| **Stale Flag Cleanup** | Unaddressed (OTel emission only) | Unaddressed (Manual removal) | UI stale markers; automation paywalled | UI stale markers; manual code PR required | **Telemetry-verified AST pruning via Draft PRs** |
-| **Licensing Stability** | Apache 2.0 | Open Core (Enterprise features paywalled) | Unleash Edge OSS reaches EOL Dec 31, 2026 | Proprietary SaaS with connection/seat billing | **100% Permissive Open Source (Apache 2.0)** |
-
-*Note on Latency and Architecture:* When configured in pure in-process caching mode, existing tools like LaunchDarkly and Unleash achieve sub-microsecond evaluations. SynapseState's performance advantage applies specifically against proxy- and sidecar-based topologies (such as flagd sidecars or Flipt proxies), while avoiding the duplicate polyglot memory overhead incurred when each language runtime maintains its own in-memory cache.
+| **Data plane IPC** | Localhost TCP / Unix domain socket per check | HTTP / gRPC loopback sidecar per check | In-process SDK cache or Unleash Edge | In-process SDK cache or Relay Proxy | **Local UDS delta stream on change; in-process heap cache on check** |
+| **Hot-path P99 latency (Node.js)** | 200 µs – 1,500 µs (Socket IPC) | 700 µs – 3,000 µs (HTTP IPC) | 10 – 30 ns (In-process V8 heap) | 10 – 30 ns (In-process V8 heap) | **Target: 10 – 25 ns (Pure TypeScript, zero FFI)** |
+| **Hot-path P99 latency (Go)** | 150 µs – 800 µs (Socket IPC) | 700 µs – 2,800 µs (Loopback sidecar) | < 1.0 µs (In-process heap) | < 1.0 µs (In-process heap) | **Target: < 0.5 µs (Native Go Engine)** |
+| **Hot-path memory IPC cost** | Socket buffers, gRPC serialization per eval | Socket buffers, HTTP JSON serialization | Duplicate outbound connections per process | Duplicate outbound connections per process | **Zero socket calls on check; lightweight in-process heap cache** |
+| **Process crash hazard** | Low (Socket timeouts) | Low (HTTP errors) | None (Pure managed runtime) | None (Pure managed runtime) | **None (Pure managed runtime, zero memory-mapping faults)** |
+| **Emergency mitigation speed** | Blocked by K8s API event loop | Blocked by Git PR/commit cycle (3–10 min) | Web UI edit (Immediate; bypasses Git) | Web UI edit (Immediate; bypasses Git) | **Target: < 30 s via signed break-glass lease; dual-control promotion** |
+| **GitOps drift defense** | K8s CRD authoritative | Git repository authoritative | Not GitOps-native (Database authoritative) | Not GitOps-native (SaaS DB authoritative) | **Git-authoritative with signed lease overlays + automated PR back-sync** |
+| **Stale flag cleanup** | Unaddressed (OTel emission only) | Unaddressed (Manual removal) | UI stale markers; automation paywalled | UI stale markers; manual code PR required | **Guarded AST pruning with compiler type checks and test validation** |
+| **Licensing stability** | Apache 2.0 | Open Core (Enterprise features paywalled) | Unleash Edge OSS reaches EOL Dec 31, 2026 | Proprietary SaaS with connection/seat billing | **100% Permissive Open Source (Apache 2.0)** |
 
 ---
 
-## 3. Source-of-Truth Hierarchy & Control-Plane Architecture
+## 3. Source-of-truth hierarchy and control-plane architecture
 
 To eliminate split-brain states and reconcile competing configuration sources, SynapseState defines a strict, unidirectional source-of-truth hierarchy:
 
-1. **Git Repository (Authoritative Desired Baseline):** The authoritative system of record for all steady-state feature configurations, variant weights, and targeting rules.
-2. **Kubernetes API & Custom Resources (Cluster Projection):** GitOps controllers (ArgoCD or Flux v2) project Git declarations into cluster-level `FeatureFlagGroup` Custom Resources. The Synapse Operator watches these resources via Controller-Runtime Informers.
-3. **PostgreSQL 16+ (Derived System State & Immutable Audit Ledger):** Stores relational snapshots of valid configurations, active and historic emergency leases, API credentials, and an append-only audit trail. PostgreSQL is derived from Git for steady-state flags, but serves as the primary system of record for emergency leases and audit histories.
-4. **gRPC Invalidation & Delta Stream (Real-Time Propagation Bus):** The control plane maintains long-lived HTTP/2 gRPC streaming connections directly to all Pod sidecar agents. To respect PostgreSQL's hard 8,000-byte `NOTIFY` payload ceiling, database triggers broadcast a lightweight metadata pointer:
-$$\text{Payload} = \{\text{"generation"}: G, \text{"group\_id"}: \text{"..."}, \text{"action"}: \text{"UPDATE"}, \text{"commit\_sha"}: \text{"..."}\}$$
-Control plane replicas receive this notification, hydrate the compiled FlatBuffer delta from PostgreSQL (or memory cache), and broadcast the delta to connected sidecar agents over mTLS gRPC.
-5. **Shared Memory Arena (Immutable Runtime Snapshot):** An immutable FlatBuffers binary (`arena.bin`) mapped into workload process memory via `mmap(2)` with `PROT_READ`.
-
-### System Component Interactions
-
-* **Steady-State GitOps Flow:**
-* SRE or Developer merges configuration change into the Git repository.
-* ArgoCD or Flux reconciles Git state into Kubernetes `FeatureFlagGroup` Custom Resources.
-* The Synapse Operator validates manifests via an Admission Webhook and updates the PostgreSQL ledger.
-* The Synapse Control Plane compiles the new generation, assigns a monotonically increasing Generation ID, and streams the delta to connected agents over gRPC.
-* The agent writes the binary FlatBuffer payload into a memory-backed volume and atomically swaps the active file.
-* Workload SDKs detect the updated generation and read the new flag state directly from memory.
-
-
-* **Emergency Incident Flow:**
-* SRE executes `synapse emergency-lease create` via the CLI.
-* SRE and an independent Approver provide cryptographic Ed25519 signatures over the canonical lease envelope.
-* The Control Plane validates signatures, commits the lease to PostgreSQL, and broadcasts the override across the gRPC stream.
-* Agents receive the lease, write an updated arena snapshot to shared memory, and return an acknowledgment containing the applied generation ID.
-* The Control Plane initiates automated Git convergence by opening a Pull Request against the Git baseline.
-
-
+1. **Git repository (authoritative desired baseline):** The authoritative system of record for all steady-state feature configurations, variant weights, and targeting rules.
+2. **Kubernetes API and custom resources (cluster projection):** GitOps controllers (ArgoCD or Flux v2) project Git declarations into cluster-level `FeatureFlagGroup` Custom Resources. The Synapse Operator watches these resources via Controller-Runtime Informers.
+3. **PostgreSQL 16+ (derived system state and immutable audit ledger):** Stores relational snapshots of valid configurations, active and historic emergency leases, API credentials, and an append-only audit trail. Database triggers emit lightweight metadata pointers over `LISTEN`/`NOTIFY` when rows update.
+4. **Upstream gRPC delta stream (real-time propagation bus):** Control plane replicas broadcast binary deltas over mTLS gRPC connections directly to pod sidecar agents.
+5. **Local IPC delta stream (pod multiplexer):** The `synapse-agent` sidecar maintains a single upstream connection per pod and pushes parsed deltas over a local Unix domain socket (`/var/run/synapse/synapse.sock`) to application processes only when state changes.
+6. **In-process heap cache (runtime evaluation):** Application SDKs store compiled rules in language-native heap memory (V8 Map in Node.js, `sync.Map` or atomic pointer in Go). Flag evaluations execute in 10 to 25 nanoseconds.
 
 ---
 
-## 4. Threat Model & Security Architecture (STRIDE Analysis)
+## 4. Threat model and security architecture (STRIDE analysis)
 
-| Threat Category | Target Boundary | Specific Attack Vector | SynapseState Architectural Mitigation |
+| Threat category | Target boundary | Specific attack vector | SynapseState architectural mitigation |
 | --- | --- | --- | --- |
-| **Spoofing** | Operator to Control Plane | Unauthorized actor submits an emergency override to disable authentication or safety checks. | Mandatory OIDC JWT verification. Production leases require dual-control authorization: two independent Ed25519 signatures (issuer and approver) validated directly against a trusted public key set. |
-| **Tampering** | Control Plane to Agent | Intermediary network hop modifies configuration deltas or injects forced variants. | Deltas and emergency leases are serialized using RFC 8785 (JSON Canonicalization Scheme) and signed with Ed25519. Agents verify signatures locally against a public-key `ConfigMap`. |
-| **Repudiation** | Emergency Override Actions | An operator denies triggering an operational kill switch during an outage. | Signed lease envelopes contain immutable operator IDs, approver IDs, nonces, and incident ticket references. Records are written to an append-only PostgreSQL ledger with revoked `UPDATE`/`DELETE` grants. |
-| **Information Disclosure** | Workload Process Context | User IDs, email addresses, and demographic attributes leak upstream during evaluation. | Targeting context never leaves the local process memory. SDKs perform all rule evaluations and MurmurHash3 bucketing locally. Telemetry exports only aggregated counters (`key`, `variant`, `reason`). |
-| **Tampering / Corruption** | Workload Container to Agent | Compromised application process attempts to overwrite or corrupt the shared-memory arena. | The shared tmpfs volume is mounted with `readOnly: true` in the application container. The Linux kernel enforces memory protection via `mmap(PROT_READ)` and returns `EROFS` on write attempts. |
-| **Elevation of Privilege** | Code Remediation Worker | Malicious repository injection or CI container breakout via automated code cleanup. | The purger executes no build scripts, runs no containers, and requests no CI privileges. It uses scoped Git credentials to submit Draft Pull Requests, leaving verification to the repository's native CI. |
+| **Spoofing** | Operator to Control Plane | Unauthorized actor submits an emergency override. | Mandatory OIDC JWT verification. Break-glass leases require Ed25519 digital signatures verified against trusted public key sets. |
+| **Tampering** | Control Plane to Agent | Intermediary network hop modifies configuration deltas. | Deltas and emergency leases serialize using RFC 8785 (JSON Canonicalization Scheme) and sign with Ed25519. Agents verify signatures locally against a public-key ConfigMap. |
+| **Repudiation** | Emergency Override Actions | An operator denies triggering an operational kill switch during an outage. | Signed lease envelopes contain immutable operator IDs, nonces, and incident ticket references recorded in an append-only PostgreSQL ledger. |
+| **Information Disclosure** | Workload Process Context | User IDs, email addresses, and demographic attributes leak upstream during evaluation. | Targeting context never leaves process memory. SDKs perform all rule evaluations and MurmurHash3 bucketing locally. Telemetry exports only aggregated counters (`key`, `variant`, `reason`). |
+| **Tampering / Corruption** | Workload Container to Agent | Compromised application process attempts to corrupt configuration state. | Communication occurs over a local Unix domain socket mounted via an intra-pod volume. Workload processes cannot write to the agent's internal configuration state. |
+| **Elevation of Privilege** | Code Remediation Worker | Malicious repository injection or CI container breakout via automated code cleanup. | The purger executes no build scripts, runs no privileged containers, and requests no CI write permissions. It submits Draft Pull Requests verified by the repository's native CI. |
 
 ---
 
-## 5. Data Plane: Zero-Copy Shared Memory Engine & Safe Reader Contract
+## 5. Data plane: sidecar streaming and in-process heap synchronization
 
-### 5.1 Memory Layout, Inode Preservation & Atomic File Replacement
+### 5.1 Local transport and socket permissions
 
-The shared-memory data plane uses a memory-backed volume (`emptyDir: { medium: Memory }`) mounted at `/synapse` in the Pod:
+The data plane uses a standard intra-pod volume mounted at `/var/run/synapse`:
+* **Sidecar Agent:** Creates and listens on Unix domain socket `/var/run/synapse/synapse.sock`.
+* **Application SDK:** Connects to the local socket upon initialization.
 
-* **Agent Permissions:** Read-Write (`readOnly: false`), running under dedicated UID `10001`.
-* **Application Permissions:** Read-Only (`readOnly: true`), running under dedicated UID `10002`.
+### 5.2 Handshake protocol and streaming deltas
 
-To eliminate reader/writer races and avoid torn reads, the agent treats all binary arena files as immutable artifacts:
+1. When an application process starts, the SDK establishes a connection to the local socket and sends a handshake frame requesting the active generation snapshot.
+2. The sidecar responds with the complete configuration state.
+3. The socket remains open. When upstream configuration updates arrive, the sidecar pushes compact Protobuf deltas containing only modified or deleted flag rules.
 
-1. The agent compiles the incoming flag configuration into a new generation file: `/synapse/arena.<generation>.bin`.
-2. The agent executes an atomic replacement:
+### 5.3 Lock-free atomic reference swaps and automatic memory reclamation
 
-$$\text{rename}("/\text{synapse}/\text{arena}.\langle\text{gen}\rangle.\text{bin}", "/\text{synapse}/\text{arena}.\text{bin}")$$
-
-
-3. Under POSIX filesystem semantics, any application process holding an open file descriptor on the prior `arena.bin` continues reading from that existing inode without interruption.
-
-### 5.2 Safe Reader Contract: Epoch-Based Reclamation & String Lifetimes
-
-Time-based unmap grace periods are unsafe because paused reader threads can trigger `SIGSEGV` if an unmap occurs while memory is being accessed. SynapseState enforces an explicit reader lifecycle protocol:
-
-* **In-Process Reader Registration (Epoch-Based Tracking):**
-Workload SDKs maintain an atomic global pointer to the current memory mapping structure:
-```go
-type ArenaMapping struct {
-    generation uint64
-    data       []byte
-    refCount   int64
-    unmapped   uint32
-}
-
-```
-
-
-Before evaluating a flag, the reader executes an atomic acquire on the active `ArenaMapping` pointer and increments `refCount`. Upon evaluation completion, the reader decrements `refCount`.
-* **Resource Reclamation Protocol:**
-When the SDK detects a new `arena.bin` via `inotify` (with a 25ms timer fallback):
-1. The SDK maps the new generation via `mmap(PROT_READ)` and atomically updates the active pointer.
-2. The previous mapping is marked as superseded.
-3. When the previous mapping's `refCount` reaches zero, the SDK safely unmaps the memory segment (`munmap`).
-4. The sidecar agent maintains at most two historical generation files on disk before unlinking them.
-
-
-* **SDK String Lifetime Contract:**
-FlatBuffers accessors return string pointers that reference the underlying mapped memory segment.
-* *Native Engine Path:* Returns raw byte slices or string views directly, achieving zero allocations on the hot path.
-* *Public OpenFeature Path:* Copies string values (variant names and reason codes) when constructing the standard `ResolutionDetails` object. This guarantees that strings returned to user application code remain valid even after an arena generation is unmapped.
-
-
-
-### 5.3 Memory Budgeting & Update Coalescing
-
-* **tmpfs Allocation Formula:**
-Memory-backed `emptyDir` volumes are charged to the cgroup of the writing process (the agent). The volume quota is defined as:
-
-$$\text{sizeLimit} = (1 + G_{\text{retained}}) \times S_{\text{arena}}$$
-
-
-
-With $G_{\text{retained}} = 2$ and a maximum arena size $S_{\text{arena}} = 16\text{ MB}$, the volume limit is set to:
-
-$$\text{sizeLimit} = (1 + 2) \times 16\text{ MB} = 48\text{ MB}$$
-
-
-* **Update Coalescing Window:**
-To prevent memory pressure during rapid Git updates, the agent coalesces non-emergency updates within a configurable 25ms batching window. Emergency leases bypass this window and trigger immediate compilation.
-
-### 5.4 Reader Crash Defenses & Cross-Platform Adapter Architecture
-
-* **Reader Crash & Panics Recovery Protocol:**
-In-process evaluations execute under a strict decrement guard:
-```go
-func (p *Provider) Evaluate(ctx context.Context, flagKey string) (EvaluationResult, error) {
-    mapping := p.acquireActiveMapping()
-    defer mapping.Release() // atomic.AddInt64(&mapping.refCount, -1)
-    return p.engine.EvaluateDirect(mapping.data, flagKey)
-}
-```
-If a reader thread abnormally terminates or panics without releasing a refcount, the superseded mapping remains pinned. To prevent unbounded memory leaks:
-1. **Generational Sweep:** The sidecar agent logs a warning if a superseded generation retains non-zero readers for $> 60\text{ seconds}$.
-2. **Telemetry Anomaly Metric:** SDKs emit `synapse_leaked_reader_refcount_total` counter via OpenTelemetry when an unmap sweep detects a stale refcount.
-3. **Hard Cap:** A process cannot retain more than 3 concurrent generations. The oldest generation is unmapped with an error log if the ceiling is reached.
-
-* **Cross-Platform & Developer Environment Abstraction:**
-While production Kubernetes workloads strictly utilize Linux POSIX `mmap(2)` via `golang.org/x/sys/unix`, developer environments on macOS and Windows cannot execute direct Linux `/dev/shm` mounts.
-SynapseState defines a storage interface seam (`pkg/engine/mmap_adapter.go`):
-* **Linux (Production Target):** Uses native POSIX `mmap(PROT_READ)` with `MAP_SHARED` backed by `/synapse/arena.bin`.
-* **Windows / macOS (Local Development Fallback):** Uses OS-specific memory-mapped files (`syscall.CreateFileMapping` on Windows, standard `mmap` on Darwin) or in-memory byte buffers for automated unit and conformance test suites without requiring a Linux VM.
+Application SDKs model configuration rulesets as immutable data snapshots:
+* **Evaluation (Hot Path):** Readers read from the active ruleset reference using an atomic pointer load. Evaluations execute with zero mutex locks, zero network syscalls, and zero FFI transitions.
+* **Update (Background Path):** Upon receiving a delta, the SDK compiles a new immutable snapshot in the background and executes an atomic pointer swap.
+* **Reclamation:** Ongoing evaluations finish cleanly against their captured reference. Once unreferenced, superseded snapshots are collected automatically by the language runtime's garbage collector.
+* **Crash Immunity:** Eliminates manual memory unmapping (`munmap`), eliminating all `SIGSEGV` and `SIGBUS` process crash hazards.
 
 ---
 
-## 6. Emergency Override & Lease State Machine
+## 6. Emergency override and lease state machine
 
-### 6.1 Dual-Control Cryptographic Lease Envelope
+### 6.1 Tiered emergency authorization
 
-Emergency leases represent authoritative overrides and must be cryptographically verifiable by agents even during total upstream network partitions.
+SynapseState provides a two-tier emergency lease protocol to mitigate production incidents rapidly:
 
-```typescript
-interface CanonicalEmergencyLease {
-  version: 1;
-  leaseId: string;
-  issuedAt: number;              // Epoch milliseconds
-  expiresAt: number;             // Epoch milliseconds
-  environment: string;
-  clusterId: string;
-  flagKey: string;
-  forcedVariant: string;
-  baseGeneration: number;
-  nonce: string;                 // Hex-encoded 128-bit random value
-  keyId: string;                 // Matches active public key identifier
-  operatorId: string;            // Opaque principal UUID
-  approverId: string;            // Independent approving SRE UUID
-  incidentTicketRef: string;     // e.g., "INC-88912"
-  convergenceMode: 'AUTO_PR_CONVERGENCE' | 'HOLD_SAFE_STATIC';
-  onLeaseExpiry: 'REVERT_TO_CANONICAL' | 'HOLD_SAFE_STATIC';
-  holdSafeVariant?: string;
-  issuerSignature: string;       // Ed25519 signature over RFC 8785 canonical bytes
-  approverSignature: string;     // Ed25519 signature by independent approver
-}
+1. **Tier 1 (Single-Operator Break-Glass Lease):**
+   * Signed with a single Ed25519 private key by an authorized SRE.
+   * Mandatory maximum time-to-live (TTL) of 30 minutes.
+   * Propagates cluster-wide in under 30 seconds (MTTE < 30s) to mitigate critical P0 incidents without late-night coordination delays.
+   * The control plane automatically opens a back-sync pull request against the authoritative Git repository.
+2. **Tier 2 (Dual-Control Promotion):**
+   * To extend an emergency lease beyond 30 minutes, an independent approver must co-sign the lease with their Ed25519 key, or the automated GitOps back-sync PR must be merged.
+   * If neither occurs within 30 minutes, the lease expires automatically, reverting the flag to its baseline.
 
-```
+### 6.2 GitOps sync loop protection
 
-### 6.2 Local Expiration & Anti-Rollback Verification
-
-1. **Anti-Rollback Enforcement:** Agents track the highest observed generation and lease sequence. Any payload with a generation lower than the currently active generation is rejected.
-2. **Monotonic Expiration Deadlines:** To defend against NTP steps and clock skew, the agent converts wall-clock timestamps into a local monotonic deadline upon receiving the lease:
-
-$$\text{Duration} = \max(0, \text{expiresAt} - \text{issuedAt})$$
-
-
-$$\text{Deadline}_{\text{mono}} = \text{Clock}_{\text{mono}} + \text{Duration}$$
-
-
-
-If local wall-clock time differs from `issuedAt` by more than $\pm 5\text{ seconds}$ at receipt, an alert is raised while the monotonic deadline continues to run.
-3. **Revocation Support:** Active leases can be terminated ahead of schedule using a signed revocation tombstone containing the original `leaseId` and a cryptographically verified `REVOKED` state flag.
-
-### 6.3 Lifecycle State Machine
-
-* **LEASE_ACTIVE:** The signed override is verified and actively served from shared memory.
-* **PR_CREATED:** The automated convergence worker branches from `base_sha` and opens a Pull Request against the Git baseline.
-* **PR_MERGED:** The Pull Request is merged into the Git repository.
-* **RECONCILED:** ArgoCD or Flux applies the new configuration, and the agent acknowledges an updated generation that contains the merged variant. The lease is retired without flap windows.
-* **EXPIRING_SOON:** The lease is within 15 minutes of expiration without a merged PR. Escalation alerts are dispatched via Alertmanager.
-* **LEASE_EXPIRED:** The monotonic deadline is reached. The agent executes the configured `onLeaseExpiry` directive (`REVERT_TO_CANONICAL` or `HOLD_SAFE_STATIC`).
-* **REVOKED:** A verified revocation tombstone is received, returning the flag to baseline immediately.
-* **PR_CONFLICT / PR_CREATE_FAILED:** Automated convergence encountered a merge conflict or Git API failure. The override remains in `LEASE_ACTIVE` while alerting platform operators.
-
-### 6.4 GitOps Engine Compatibility
-
-To prevent GitOps reconcilers from pruning active emergency overrides, resources apply explicit metadata annotations:
-
-* **ArgoCD Protection:** Configured with `Prune=false` to prevent resource deletion during Git sync operations:
-
-
-```yaml
-metadata:
-  annotations:
-    argocd.argoproj.io/sync-options: Prune=false
-    argocd.argoproj.io/compare-options: IgnoreExtraneous
-
-```
-
-
-* **Flux v2 Protection:** Configured with `prune: disabled` to preserve the resource across reconciliation passes:
-```yaml
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-
-```
-
-
-
-### 6.5 Break-Glass Execution Path
-
-If the control plane or PostgreSQL becomes unavailable during an infrastructure outage, operators can apply overrides directly using the Kubernetes API:
-
-```bash
-synapse emergency-lease create --break-glass \
-  --flag=payment-rail \
-  --variant=off \
-  --ttl=1h \
-  --issuer-key=./sre-key.pem \
-  --approver-key=./lead-key.pem \
-  | kubectl apply -f -
-
-```
-
-Sidecar agents watch cluster `EmergencyLease` resources directly as a secondary fallback, verifying Ed25519 signatures and applying updates to `/synapse/arena.bin` without control plane dependencies.
+When an emergency lease is active, the agent annotates cluster state. GitOps reconcilers (such as ArgoCD or Flux) respect active lease overlays, preventing continuous delivery sync loops from reverting the emergency fix while the incident is ongoing.
 
 ---
 
-## 7. FlatBuffers Binary Schema & Conformance Engine
+## 7. Protocol Buffers delta schema and evaluation engine
 
-### 7.1 Schema Definition (`schema/arena.fbs`)
+### 7.1 Schema definition (`pkg/protocol/delta.proto`)
 
 ```protobuf
-namespace Synapse.Buffer;
+syntax = "proto3";
 
-enum FlagType : byte { Release = 0, Operational = 1, Experiment = 2, Permission = 3 }
-enum EvaluationType : byte { Boolean = 0, String = 1, Int = 2, Float = 3, JSON = 4 }
-enum Operator : byte { Equals = 0, NotEquals = 1, In = 2, NotIn = 3, GreaterThan = 4, LessThan = 5, SemverGte = 6 }
-enum ExpiryPolicy : byte { RevertToCanonical = 0, HoldSafeStatic = 1 }
+package synapsestate.protocol;
 
-table TypedValue {
-  string_val: string;
-  int_val: int64;
-  float_val: float64;
-  bool_val: bool;
-  json_val: string;
+enum FlagLifecycle {
+  RELEASE = 0;
+  EXPERIMENT = 1;
+  KILLSWITCH = 2;
+  PERMISSION = 3;
 }
 
-table Variant {
-  name: string (key);
-  value: TypedValue;
+enum Operator {
+  EQUALS = 0;
+  NOT_EQUALS = 1;
+  IN = 2;
+  NOT_IN = 3;
+  GREATER_THAN = 4;
+  LESS_THAN = 5;
+  SEMVER_GTE = 6;
 }
 
-table TargetingRule {
-  priority: uint16;
-  attribute_name: string;
-  op: Operator;
-  match_values: [string];
-  serve_variant: string;
+message TargetingRule {
+  uint32 priority = 1;
+  string attribute_name = 2;
+  Operator op = 3;
+  repeated string match_values = 4;
+  string serve_variant = 5;
 }
 
-table RolloutSplit {
-  variant_name: string;
-  weight_basis_points: uint16; // 0 to 10,000; sum across splits must equal 10,000
+message RolloutSplit {
+  string variant_name = 1;
+  uint32 weight_basis_points = 2; // 0 to 10,000
 }
 
-table RolloutConfig {
-  splits: [RolloutSplit];
-  stickiness_attribute: string;
-  seed: uint32;
+message FlagDefinition {
+  string key_name = 1;
+  FlagLifecycle lifecycle = 2;
+  bool is_enabled = 3;
+  string default_variant = 4;
+  string off_variant = 5;
+  repeated TargetingRule rules = 6;
+  repeated RolloutSplit splits = 7;
 }
 
-table EmergencyOverride {
-  is_active: bool;
-  forced_variant: string;
-  lease_id: string;
-  expires_at_epoch_ms: uint64;
-  on_lease_expiry: ExpiryPolicy;
-  hold_safe_variant: string;
-  nonce: string;
+message DeltaUpdate {
+  uint64 generation = 1;
+  repeated FlagDefinition upserted_flags = 2;
+  repeated string deleted_flag_keys = 3;
 }
-
-table FlagRecord {
-  key_name: string (key); // Primary lexicographical search key
-  key_hash: uint64;       // 64-bit FNV-1a hash for fast index filtering
-  flag_type: FlagType;
-  evaluation_type: EvaluationType;
-  is_enabled: bool;
-  default_variant: string;
-  off_variant: string;
-  variants: [Variant];
-  rollout: RolloutConfig;
-  rules: [TargetingRule];
-  override: EmergencyOverride;
-}
-
-table FlagArena {
-  generation: uint64;
-  schema_version: uint16;
-  project_id: string;
-  flags: [FlagRecord];
-}
-
-root_type FlagArena;
-
 ```
 
-### 7.2 Evaluation Flow & Deterministic Bucketing
+### 7.2 Evaluation flow and MurmurHash3 bucketing
 
 Rule evaluation follows a deterministic execution order:
-
-1. **Record Lookup:** The SDK executes a binary search over `FlagArena.flags` matching `key_name`. If the key is not found, the SDK returns the application fallback with reason `DEFAULT`.
-2. **Emergency Override Check:** If `override.is_active == true`, the SDK validates the local monotonic expiration deadline. If the lease is valid, it immediately returns `override.forced_variant` with reason `EMERGENCY_OVERRIDE`.
-3. **Enabled Check:** If `is_enabled == false`, the SDK returns `off_variant` with reason `DISABLED`.
-4. **Targeting Rules Evaluation:** Rules are evaluated in ascending order by `priority`. If an attribute is missing or exhibits a type mismatch, the rule is marked non-matching. If a rule matches, its `serve_variant` is returned with reason `TARGETING_MATCH`.
-5. **Percentage Rollout Resolution:** If no targeted rule matches, the SDK resolves rollout splits using MurmurHash3 bucketing:
-
-$$\text{HashInput} = \text{key\_name} + ":" + \text{AttributeValue} + ":" + \text{uint32ToString}(\text{seed})$$
-
-
-$$\text{Bucket} = \text{uint32}(\text{Murmur3\_32}(\text{HashInput})) \pmod{10000}$$
-
-
-
-The SDK iterates through `rollout.splits`, accumulating `weight_basis_points`. The first split where the cumulative weight exceeds `Bucket` is returned with reason `SPLIT`.
-6. **Default Fallback:** If splits are unconfigured, `default_variant` is returned with reason `STATIC`.
+1. **Map Lookup:** O(1) hash map lookup by flag key in process memory.
+2. **Enabled Check:** If `is_enabled == false`, return `off_variant` with reason `DISABLED`.
+3. **Targeting Rules:** Evaluated in ascending priority order. If an attribute matches, return `serve_variant` with reason `TARGETING_MATCH`.
+4. **Percentage Rollout:** If no rule matches, calculate bucket using unsigned 32-bit MurmurHash3:
+   $$\text{Bucket} = \text{uint32}(\text{Murmur3\_32}(\text{key} + ":" + \text{attributeValue})) \pmod{10000}$$
+   Return corresponding variant with reason `SPLIT`.
+5. **Default Fallback:** If splits are unconfigured, return `default_variant` with reason `STATIC`.
 
 ---
 
-## 8. Autonomous Code Remediation: Quiescence Index & Safe AST Pruning
+## 8. Autonomous code remediation: guarded Quiescence and safe AST pruning
 
-### 8.1 Mathematical Definition of the Quiescence Index ($Q$)
+### 8.1 Candidate qualification criteria
 
-A feature flag is eligible for automated removal only when it demonstrates statistical invariance across all production environments over a full observation window ($\tau \ge 30\text{ days}$).
-
-Let $\mathcal{E}(f, \tau)$ be the complete set of evaluation events recorded for flag $f$ during time window $\tau$. The valid evaluation set is defined as:
-
-
-$$\mathcal{E}_{\text{valid}}(f, \tau) = \{e \in \mathcal{E}(f, \tau) \mid \text{reason}(e) \in \mathcal{R}_{\text{valid}}\}$$
-
-
-Where:
-
-$$\mathcal{R}_{\text{valid}} = \{\text{"static"}, \text{"split"}, \text{"targeting\_match"}, \text{"disabled"}\}$$
-
-Evaluations returning error states or operational overrides are tracked in an invalidation set:
-
-
-$$\mathcal{E}_{\text{invalid}}(f, \tau) = \{e \in \mathcal{E}(f, \tau) \mid \text{reason}(e) \in \{\text{"default"}, \text{"error"}, \text{"emergency\_override"}\}\}$$
-
-The Quiescence Index $Q(f, \tau)$ is defined as:
-
-
-$$Q(f, \tau) = \frac{\sum_{e \in \mathcal{E}_{\text{valid}}(f, \tau)} \mathbb{I}(\text{variant}(e) = v_{\text{dominant}})}{\vert{}\mathcal{E}_{\text{valid}}(f, \tau)\vert{}}$$
-
-### 8.2 Candidate Qualification Criteria
-
-A flag is classified as `STALE_CANDIDATE` if and only if all of the following conditions hold simultaneously:
-
-* **Taxonomy Eligibility:** The flag's declared type is `release` or `experiment`. Flags marked `operational` or `permission` are permanently excluded.
+A flag is classified as a `STALE_CANDIDATE` if and only if all of the following conditions hold simultaneously:
+* **Lifecycle Eligibility:** The flag's declared lifecycle is `release` or `experiment`. Flags marked `killswitch` or `permission` are permanently excluded.
 * **Complete Invariance:** $Q(f, \tau) = 1.0$ continuously across the entire observation window ($\tau \ge 30\text{ days}$).
-* **Minimum Traffic Volume:** Total valid evaluations satisfy $\vert{}\mathcal{E}_{\text{valid}}(f, \tau)\vert{} \ge 100,000$.
-* **Error Rate Ceiling:** Degraded evaluations must not exceed 1% of total traffic:
+* **Minimum Volume:** Total valid evaluations $\ge 100,000$.
+* **Error Rate Ceiling:** Degraded evaluations $\le 1\%$.
+* **Multi-Cluster Invariance:** Evaluates to the identical dominant variant across 100% of production clusters.
 
-$$\frac{\vert{}\mathcal{E}_{\text{invalid}}(f, \tau)\vert{}}{\vert{}\mathcal{E}(f, \tau)\vert{}} \le 0.01$$
+### 8.2 Guarded two-phase deletion protocol
 
-
-* **Multi-Cluster Invariance:** The flag evaluates to the identical $v_{\text{dominant}}$ variant across 100% of reporting clusters and regions.
-* **Absence of Overrides:** Zero emergency lease activations occurred during window $\tau$.
-
-### 8.3 Two-Phase Safe Deletion Pipeline
-
-To prevent regressions in rollbacks, canaries, or long-running worker pods, code removal is separated into two decoupled phases:
-
-* **Phase 1: Source Code Pruning (Draft PR):**
-* The remediation worker scans repository source trees using semantic analyzers: `ts-morph` for TypeScript and `go/packages` + `go/types` for Go.
-* Supported syntax patterns: Direct OpenFeature client calls (`client.GetBooleanValue("key", ...)`), conditional `if/else` blocks, and ternary expressions where the flag key is a string literal.
-* Dynamic flag keys (e.g., `client.GetBooleanValue(computedKey)`), reflection wrappers, and cross-repository dependencies are detected, logged, and skipped.
-* The engine inlines the winning execution path, removes dead conditional branches, cleans up unused imports, and removes flag-specific test files.
-* The worker submits a **Draft Pull Request** containing evaluation telemetry proofs. Automatic merging is prohibited; human review and standard repository CI checks are required.
-
-
-* **Phase 2: Configuration Pruning:**
-* Once the Phase 1 PR is merged and deployed, the control plane enters a 7-day observation period.
-* The flag definition is removed from Git via an automated PR only after evaluation counters for the flag drop to exactly zero across all production pods.
-
-
+1. **Phase 1: Source code pruning with CI validation.**
+   * `synapse-purger` parses application code using `ts-morph` (TypeScript) or `go/types` (Go).
+   * Inlines the winning execution path and removes dead conditional blocks.
+   * **Pre-flight compiler verification:** Runs `tsc --noEmit` to verify that removing conditional branches has not broken control-flow type narrowing.
+   * **Pre-flight test verification:** Runs repository unit tests to identify and update unit test mocks asserting flag evaluations.
+   * Submits a **Draft Pull Request** with telemetry proofs. Automatic merging is prohibited.
+2. **Phase 2: Configuration pruning.**
+   * Once the Phase 1 PR is merged and deployed, the control plane enters a 7-day observation period.
+   * After evaluation counts drop to zero across all production pods, the control plane opens an automated PR removing the flag definition from Git.
 
 ---
 
-## 9. Kubernetes Integration, Cold Starts & Operational Reliability
+## 9. Kubernetes integration and operational reliability
 
-### 9.1 Deterministic Pod Startup Order
+### 9.1 Deterministic pod startup order
 
-To prevent cold-starting application containers from serving default values during control plane outages, SynapseState uses Kubernetes 1.29+ Native Sidecar Containers:
+Application containers do not start until the `synapse-agent` native sidecar initializes the local socket:
 
 ```yaml
 apiVersion: apps/v1
@@ -482,18 +237,15 @@ spec:
   template:
     spec:
       volumes:
-        - name: synapse-shm
-          emptyDir:
-            medium: Memory
-            sizeLimit: 48Mi
+        - name: synapse-socket
+          emptyDir: {}
       initContainers:
         - name: synapse-agent
-          image: synapsestate/agent:v1.2.0
-          restartPolicy: Always # Declares container as a native Kubernetes sidecar
+          image: synapsestate/agent:v2.0.0
+          restartPolicy: Always
           volumeMounts:
-            - name: synapse-shm
-              mountPath: /synapse
-              readOnly: false
+            - name: synapse-socket
+              mountPath: /var/run/synapse
           startupProbe:
             httpGet:
               path: /readyz
@@ -504,184 +256,50 @@ spec:
         - name: application
           image: payment-service:v2.4.0
           volumeMounts:
-            - name: synapse-shm
-              mountPath: /synapse
-              readOnly: true
-
+            - name: synapse-socket
+              mountPath: /var/run/synapse
 ```
 
-Under Kubernetes native sidecar semantics, the application container does not start until the `synapse-agent` sidecar's startup probe passes.
+### 9.2 Probe isolation and offline resilience
 
-### 9.2 Probe Isolation & Offline Resilience
-
-* **Liveness Probe (`/healthz` on Port 9091):** Monitors agent internal process health only. Does not check upstream database or control plane connectivity. If upstream systems fail, the agent remains alive and continues serving current shared memory.
-* **Readiness Probe (`/readyz` on Port 9091):** Returns HTTP 200 only when a valid, verified `arena.bin` file is mapped in `/synapse`.
-* **Cold-Start Fallback Snapshot:** If a newly scheduled pod starts during a total control-plane outage, the agent loads a cryptographically signed bootstrap snapshot from a cluster-local ConfigMap (`synapse-bootstrap-<project>`), populates `/synapse/arena.bin`, and allows the workload to start without upstream connectivity.
-
-### 9.3 Admission Safety & Mass Deletion Guards
-
-* **Validating Webhook:** Enforces that single `FeatureFlagGroup` manifests do not exceed 1 MiB. Rejects any GitOps reconciliation that attempts to delete more than 20% of active flags in a single commit unless explicitly annotated with `synapse.io/allow-mass-deletion: true`.
-* **Resource Conflict Resolution:** Flag keys are scoped hierarchically: `<project>.<group>.<flagKey>`. Cross-group key collisions are rejected during webhook validation.
-* **`inotify` Limit Defense:** If host OS `inotify` watches are exhausted (`ENOSPC` or `EMFILE`), SDKs fall back to 25ms timer-based filesystem polling.
+* **Liveness Probe (`/healthz`):** Checks agent local process health only. Does not check upstream connectivity.
+* **Readiness Probe (`/readyz`):** Returns HTTP 200 once the local Unix domain socket is active and initialized.
+* **Cold-Start Disk Snapshot:** If a pod schedules during a central control plane outage, the agent loads a cached snapshot from local storage, initializes the local socket, and allows the application to start immediately.
 
 ---
 
-## 10. Service Level Objectives (SLOs) & Benchmark Methodology
+## 10. Service Level Objectives (SLOs)
 
-### 10.1 System Performance SLOs
-
-| Measurement Boundary | Target Metric | Evaluation Conditions & Environmental Constraints |
+| Measurement boundary | Target metric | Evaluation conditions |
 | --- | --- | --- |
-| **Native Go Engine** | p99 $\le 0.8\text{ \mu s}$ | Direct pointer dereference and Murmur3 bucketing. Zero heap allocations. AWS `c6i.metal`, 8 pinned cores. |
-| **Public Go SDK (OpenFeature)** | p99 $\le 2.0\text{ \mu s}$ | Complete OpenFeature evaluation path including `ResolutionDetails` object allocation. |
-| **Public Node.js SDK (OpenFeature)** | p99 $\le 5.0\text{ \mu s}$ | Complete evaluation path crossing the native N-API boundary (`napi-rs`), warm V8 optimization. |
-| **Intra-Cluster EEL Propagation** | p99 $\le 50\text{ ms}$ | Time from control-plane API acceptance to verified memory swap across $\ge 99\%$ of pods in a 100-pod cluster. |
-| **Straggler Pod Detection** | Max $\le 10\text{ s}$ | Maximum time to detect and raise alerts for any non-acknowledging pod following an emergency override dispatch. |
-
-### 10.2 Benchmark Methodology
-
-* **Instrumentation Overhead Correction:** Benchmarks use batched evaluations (10,000 iterations per timing capture) and HDR Histogram logging to eliminate per-call timing overhead.
-* **Invariant Stress Verification:** Write-storm benchmarks execute 100 arena swaps per second under 500,000 concurrent evaluation requests per second. Every record in generation $N$ encodes its generation ID; readers continuously verify that values match the expected generation sequence to confirm zero torn reads or use-after-unmap faults.
+| **Native Go Engine** | $p99 \le 0.5\text{ µs}$ | Direct in-memory lookup, 0 heap allocs on evaluation. |
+| **Public Go SDK (OpenFeature)** | $p99 \le 1.0\text{ µs}$ | Complete OpenFeature evaluation path including `ResolutionDetails`. |
+| **Public Node.js SDK (OpenFeature)** | $p99 \le 1.0\text{ µs}$ | Pure TypeScript in-memory lookup (10–25 ns core evaluation). |
+| **Intra-Cluster EEL Propagation** | $p99 \le 50\text{ ms}$ | Time from control-plane API acceptance to local SDK pointer swap. |
+| **Straggler Pod Detection** | $\text{Max} \le 10\text{ s}$ | Maximum time to detect and alert on non-acknowledging pods. |
 
 ---
 
-## 11. Technology Stack, Directory Layout & Delivery Roadmap
-
-### 11.1 Monorepo Structure
+## 11. Technology stack and directory layout
 
 * `cmd/`
-* `synapse-control/`: Go control plane daemon; handles gRPC streaming, CRD sync, and Ed25519 signing.
-* `synapse-operator/`: Kubernetes controller built with Controller-Runtime; reconciles `FeatureFlagGroup` CRDs.
-* `synapse-agent/`: Lightweight Go sidecar daemon; manages binary compilation and atomic file swaps.
-* `synapse-cli/`: SRE administrative tool; handles dual-control override signing and break-glass workflows.
-* `synapse-purger/`: Quiescence engine and AST refactoring tool using `go/types` and `ts-morph`.
-
-
+  * `synapse-control/`: Go control plane daemon; handles gRPC streaming, CRD sync, and Ed25519 signing.
+  * `synapse-operator/`: Kubernetes controller built with Controller-Runtime; reconciles `FeatureFlagGroup` CRDs.
+  * `synapse-agent/`: Lightweight Go sidecar daemon; manages upstream sync and local UDS streaming.
+  * `synapse-cli/`: SRE administrative tool; handles break-glass override signing and lease management.
+  * `synapse-purger/`: Quiescence engine and AST refactoring tool using `go/types` and `ts-morph`.
 * `pkg/`
-* `apis/`: Kubernetes CustomResourceDefinition structs and OpenAPI validation schemas.
-* `buffer/`: Canonical FlatBuffers schemas (`schema/arena.fbs`) and generated Go bindings.
-* `crypto/`: Ed25519 signing, verification, and RFC 8785 canonicalization utilities.
-* `engine/`: Zero-copy rule evaluation and unsigned 32-bit MurmurHash3 bucketing logic.
-
-
+  * `apis/`: Kubernetes CustomResourceDefinition structs and OpenAPI validation schemas.
+  * `protocol/`: Protobuf delta schemas (`pkg/protocol/delta.proto`) and generated Go/TypeScript bindings.
+  * `crypto/`: Ed25519 signing, verification, and RFC 8785 canonicalization utilities.
+  * `engine/`: In-process rule evaluation and unsigned 32-bit MurmurHash3 bucketing logic.
 * `sdk/`
-* `go/`: OpenFeature Go Provider reading `/synapse/arena.bin` via `golang.org/x/sys/unix`.
-* `node/`: OpenFeature Node.js Provider wrapping a Rust native addon via `napi-rs`.
-
-
+  * `go/`: OpenFeature Go Provider with atomic pointer swaps.
+  * `node/`: Pure TypeScript OpenFeature Node.js Provider.
 * `deploy/`
-* `manifests/`: Base CRD manifests (`FeatureFlagGroup`, `EmergencyLease`).
-* `helm/`: Helm deployment charts for control plane, PostgreSQL, and sidecar mutating webhooks.
-
-
+  * `manifests/`: Base CRD manifests (`FeatureFlagGroup`, `EmergencyLease`).
+  * `helm/`: Helm deployment charts for control plane, PostgreSQL, and sidecar mutating webhooks.
 * `tests/`
-* `conformance/`: Cross-runtime test vectors verifying identical evaluation outcomes.
-* `chaos/`: Failure injection suites testing memory unmaps, network partitions, and pod crash lifecycles.
-* `fixtures/`: Corpus of test repositories containing standard OpenFeature patterns for AST validation.
-
-
-
-### 11.2 Phased Delivery Roadmap & Granular Milestones
-
-#### Phase 1: Vertical Slice Data Plane (Weeks 1 to 6)
-* **Milestone 1.1: Canonical FlatBuffers Schema & Code Generation Pipeline**
-  * Target: `schema/arena.fbs` -> `pkg/buffer/`
-  * Artifacts: Canonical FlatBuffers schema defining `FlagArena`, `FlagRecord`, `TargetingRule`, `RolloutSplit`, and `EmergencyOverride`. Automated `flatc` code generation flags.
-  * Invariant: Little-endian 64-bit aligned binary representation; zero-copy offset decoding.
-* **Milestone 1.2: Deterministic Rule Engine & MurmurHash3 Bucketing**
-  * Target: `pkg/engine/`
-  * Artifacts: Binary search over lexicographically sorted flags, priority rule evaluator, and unsigned 32-bit MurmurHash3 bucketing (`[0..9999]`).
-  * Invariant: `0 B/op` heap allocation on native evaluation path; $p99 \le 0.8\text{ µs}$.
-* **Milestone 1.3: Sidecar File Swap Daemon & tmpfs Memory Manager**
-  * Target: `cmd/synapse-agent/`
-  * Artifacts: Local arena compilation, atomic `rename(2)` swap protocol, UID 10001 (RW) / 10002 (RO) permissions, and generation file pruning.
-* **Milestone 1.4: OpenFeature Go Provider with Lock-Free Epoch Reclamation**
-  * Target: `sdk/go/`
-  * Artifacts: `ArenaMapping` atomic refcount lifecycle, `inotify` watcher with 25ms timer fallback, string view vs copy semantics.
-  * Invariant: Zero `SIGSEGV` or use-after-unmap during continuous concurrent writes.
-* **Milestone 1.5: Conformance Matrix & Invariant Benchmark Harness**
-  * Target: `tests/conformance/`, `tests/chaos/`
-  * Artifacts: 50+ golden test vectors covering all operators (`Equals`, `SemverGte`, `In`, etc.) and write-storm benchmark (100 swaps/s @ 500k evals/s).
-
-#### Phase 2: Emergency Overrides & Control Plane (Weeks 7 to 12)
-* **Milestone 2.1: PostgreSQL Ledger & Pointer-Based NOTIFY Event Bus**
-  * Target: `cmd/synapse-control/`, `deploy/migrations/`
-  * Artifacts: Append-only audit ledger, relational generation tables, and lightweight metadata pointer `LISTEN`/`NOTIFY` bus (< 8000 bytes).
-* **Milestone 2.2: gRPC Delta Streaming Engine with mTLS**
-  * Target: `cmd/synapse-control/`, `pkg/grpc/`
-  * Artifacts: Long-lived HTTP/2 gRPC streaming connections, reconnect backoff, and generation delta compilation.
-* **Milestone 2.3: Ed25519 Dual-Control Signing & Monotonic Expiration Engine**
-  * Target: `pkg/crypto/`, `cmd/synapse-cli/`
-  * Artifacts: RFC 8785 canonical JSON serializer, Ed25519 issuer + approver verification, local monotonic deadline enforcement, and break-glass CLI commands.
-* **Milestone 2.4: Fleet ACK Aggregator & Straggler Pod Detection**
-  * Target: `cmd/synapse-control/`
-  * Artifacts: In-memory acknowledgment bitmap tracking applied generation per pod with max 10s straggler alerts.
-
-#### Phase 3: Kubernetes Operator & Node.js Native SDK (Weeks 13 to 18)
-* **Milestone 3.1: Controller-Runtime Operator & CRD Reconciler**
-  * Target: `cmd/synapse-operator/`, `pkg/apis/`
-  * Artifacts: CRD controllers for `FeatureFlagGroup` and `EmergencyLease`, ArgoCD/Flux prune-prevention annotations.
-* **Milestone 3.2: Mutating Admission Webhook for Native Sidecar Injection**
-  * Target: `cmd/synapse-operator/webhook/`
-  * Artifacts: Automated injection of Kubernetes 1.29+ native sidecar containers with startup probes and `/synapse` memory volume mounts.
-* **Milestone 3.3: Node.js OpenFeature SDK via Rust napi-rs Addon**
-  * Target: `sdk/node/`
-  * Artifacts: Rust native addon compiled with `napi-rs`, exposing zero-copy pointer dereferences to Node.js V8 runtime ($p99 \le 5.0\text{ µs}$).
-* **Milestone 3.4: Production Helm Charts & E2E GitOps Verification**
-  * Target: `deploy/helm/`
-  * Artifacts: Multi-replica control plane charts, PostgreSQL high-availability configuration, and automated ArgoCD sync tests.
-
-#### Phase 4: Telemetry Ingestion & Autonomous Code Pruning (Weeks 19 to 24)
-* **Milestone 4.1: OpenTelemetry Metric Collector & Aggregation Pipeline**
-  * Target: `cmd/synapse-purger/collector/`
-  * Artifacts: Aggregation of evaluation counters by key, variant, and reason code over 30-day sliding observation windows ($\tau \ge 30\text{ days}$).
-* **Milestone 4.2: Quiescence Index ($Q$) Engine with Error Ceilings**
-  * Target: `cmd/synapse-purger/quiescence/`
-  * Artifacts: Mathematical evaluation of $Q(f, \tau) = 1.0$, $\le 0.01$ error rate ceilings, multi-cluster invariance, and candidate qualification.
-* **Milestone 4.3: Semantic AST Pruning Engine**
-  * Target: `cmd/synapse-purger/ast/`
-  * Artifacts: Semantic code analyzers (`ts-morph` for TypeScript and `go/types` for Go) inlining dominant variants and deleting dead conditional branches.
-* **Milestone 4.4: Two-Phase Deletion & Draft PR Automated Remediation**
-  * Target: `cmd/synapse-purger/pr/`
-  * Artifacts: Automated GitHub Draft PR submission with evaluation telemetry proofs and 7-day post-merge configuration cleanup.
-
----
-
-### 11.3 Monorepo Toolchain & Build Automation
-
-SynapseState leverages a unified task runner (`Taskfile.yml`) to orchestrate polyglot compilation and continuous testing:
-
-```yaml
-version: '3'
-
-tasks:
-  flatc:
-    desc: Compile FlatBuffers schema into Go and Rust bindings
-    cmds:
-      - flatc --go --go-namespace buffer -o pkg/buffer schema/arena.fbs
-      - flatc --rust -o sdk/node/native/src/schema schema/arena.fbs
-
-  test:unit:
-    desc: Run unit tests across all Go packages
-    cmds:
-      - go test -race -v ./pkg/... ./cmd/... ./sdk/go/...
-
-  bench:engine:
-    desc: Execute zero-copy evaluation benchmarks
-    cmds:
-      - go test -benchmem -run=^$$ -bench=BenchmarkEvaluateDirect ./pkg/engine/...
-
-  lint:
-    desc: Run linters across Go and TypeScript
-    cmds:
-      - golangci-lint run ./...
-      - npx biome check sdk/node/
-```
-
-### 11.4 Acceptance Criteria & Quality Gates
-
-1. **Compilation Cleanliness:** Zero warnings under `golangci-lint`, `cargo clippy`, and TypeScript strict mode.
-2. **Deterministic Conformance:** Identical evaluation outcomes across Go and Node.js for 100% of test vectors in `tests/conformance/`.
-3. **Zero-Allocation Hot Path:** Zero bytes allocated per evaluation op in `BenchmarkEvaluateDirect`.
-4. **Race-Detector Cleanliness:** Zero warnings under `go test -race ./...` under write-storm concurrency.
-5. **No Regressions on Rollback:** Verified monotonic deadline enforcement rejecting prior generation updates.
+  * `conformance/`: Cross-runtime test vectors verifying identical evaluation outcomes.
+  * `chaos/`: Failure injection suites testing network partitions, sidecar crashes, and reconnect loops.
+  * `fixtures/`: Corpus of test repositories containing standard OpenFeature patterns for AST validation.

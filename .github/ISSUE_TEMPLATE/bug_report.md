@@ -11,12 +11,12 @@ assignees: ''
 
 ## Environment & Component
 - **Component:** <!-- cmd/synapse-agent, sdk/go, synapse-operator, etc. -->
-- **OS / Kernel:** <!-- Linux 6.x, K8s v1.29+, tmpfs mount -->
+- **OS / Kernel:** <!-- Linux 6.x, K8s v1.29+, Windows 11, macOS -->
 - **Architecture:** <!-- amd64 / arm64 -->
 
 ## Symptoms
-- [ ] Panic / Crash (`SIGSEGV`, `SIGBUS`)
-- [ ] Memory Leak (cgroup memory growth in tmpfs)
+- [ ] Panic / Process Crash
+- [ ] Memory Leak (unbounded heap growth)
 - [ ] Goroutine / Thread Lock contention
 - [ ] Conformance / Invariant Violation (torn read, stale generation)
 - [ ] Latency Degradation (p99 violation)
