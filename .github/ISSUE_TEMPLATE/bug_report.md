@@ -1,6 +1,6 @@
 ---
 name: Systems Bug Report
-about: Report a crash, race condition, memory leak, or conformance violation
+about: Report a failure, crash, invariant violation, or conformance vector mismatch
 title: '[BUG]: '
 labels: ['bug', 'investigation']
 assignees: ''
@@ -10,29 +10,32 @@ assignees: ''
 <!-- Clear and concise description of the bug -->
 
 ## Environment & Component
-- **Component:** <!-- cmd/synapse-agent, sdk/go, synapse-operator, etc. -->
-- **OS / Kernel:** <!-- Linux 6.x, K8s v1.29+, Windows 11, macOS -->
-- **Architecture:** <!-- amd64 / arm64 -->
+- **Component:** <!-- packages/lease, packages/sdk, packages/cli, apps/control-api, apps/purger, apps/dashboard, deploy/helm -->
+- **Node / Runtime:** <!-- Node.js v20+, TypeScript v5.x, k3s v1.29+ -->
+- **OS / Environment:** <!-- Linux, Windows, macOS -->
 
 ## Symptoms
-- [ ] Panic / Process Crash
-- [ ] Memory Leak (unbounded heap growth)
-- [ ] Goroutine / Thread Lock contention
-- [ ] Conformance / Invariant Violation (torn read, stale generation)
-- [ ] Latency Degradation (p99 violation)
+- [ ] Invariant Violation (lease expired but still served, fail-safe delegation failed)
+- [ ] Keyset / Signature Verification Failure
+- [ ] Clock Skew / Expiry Inconsistency
+- [ ] State Polling / ETag Sync Failure
+- [ ] Conformance Vector Violation
+- [ ] Audit Hash Chain Divergence
+- [ ] Purger Refactoring Failure / Missing Refusal Report
+- [ ] Unhandled Exception in OverrideProvider / TelemetryHook
 
 ## Steps to Reproduce
 ```bash
-# Exact commands / benchmark to reproduce
+# Exact commands or script to reproduce
 ```
 
-## Logs & Core Dumps
+## Logs & Error Output
 ```
-// Paste stack trace, dmesg, or pprof output here
+// Paste stack trace, API logs, or debug output here
 ```
 
-## Systematic Debugging Checklist (obra/superpowers)
-- [ ] Phase 1: Problem verified with minimal reproducible test case
-- [ ] Phase 2: Root cause identified (not just symptom mitigation)
-- [ ] Phase 3: Regression test added
-- [ ] Phase 4: Fix verified against high-concurrency benchmarks
+## Systematic Debugging Checklist
+- [ ] Phase 1: Problem reproduced with minimal test case or conformance vector
+- [ ] Phase 2: Root cause isolated to specific invariant boundary
+- [ ] Phase 3: Regression test added to test suite or conformance package
+- [ ] Phase 4: Fix verified without violating hot-path fallback guarantees

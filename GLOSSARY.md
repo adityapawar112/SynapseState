@@ -1,60 +1,57 @@
-# Domain glossary: SynapseState
+# Domain Glossary: SynapseState
 
 This glossary establishes the canonical vocabulary for SynapseState. Every term defines a domain concept. Implementation details, file paths, and low-level code mechanics belong in architectural specifications rather than this document.
 
-### Break-Glass Lease
-A short-lived emergency override signed by a single authorized operator to mitigate a critical production incident immediately.
+### Audit Checkpoint
+A signed, periodic summary of the append-only audit ledger written to an external, write-once storage destination to detect and prevent unauthorized tampering.
 
-### Delta Stream
-A local push-based communication channel between a sidecar agent and application runtimes that delivers incremental configuration updates.
+### Break-Glass Lease
+A short-lived, cryptographically signed emergency override issued by a single on-call operator to force a specific flag variant across a cluster during an active production incident.
+
+### Change Attribution
+The automated process of correlating operational incidents (such as SLO burn-rate alerts) with recent feature flag modifications to identify likely causal changes and suggest mitigation actions.
+
+### Delegate Provider
+An underlying, standard OpenFeature provider (such as flagd in-process, an in-memory JSON provider, or Unleash) that performs steady-state targeting and flag evaluation beneath SynapseState's governance wrapper.
 
 ### Drift
-An operational condition where the active configuration evaluated in a running cluster diverges from the committed configuration in the authoritative Git repository.
+An operational condition where the active configuration evaluated in production diverges from the baseline configuration committed to the authoritative Git repository.
 
 ### Dual Control
-A security requirement where a permanent operational override or lease extension must be independently authorized by two distinct operators or verified through a merged code review.
+A security requirement where a permanent operational change or lease promotion must be independently approved by a second human operator or verified through a peer-reviewed Git pull request.
+
+### Dual-Clock Expiry
+A verification algorithm that enforces both a monotonic clock duration from the moment a lease is first observed and an absolute wall-clock deadline from the issue timestamp, guaranteeing that no override outlives its intended lifespan.
 
 ### Emergency Lease
-A time-bounded, cryptographically signed override that forces a specific flag variant across a cluster to mitigate an active production incident.
+A time-bounded, Ed25519-signed envelope that forces a specific flag variant in-memory within application runtimes to mitigate an outage.
 
-### Epoch
-A discrete lifecycle phase of an in-process ruleset snapshot, transitioning when an updated generation is atomically swapped into active evaluation.
+### Flag Lifecycle Class
+The operational classification of a feature flag (such as temporary `release`, permanent `killswitch`, or long-lived `permission`) that dictates its governing rules and its eligibility for automated code retirement.
 
-### Feature Flag
-A named configuration decision point in software that controls runtime behavior, enables code paths, or alters operational limits without deploying new code.
+### In-Process Override Map
+A thread-safe, in-memory collection of verified, unexpired emergency leases checked by the `OverrideProvider` prior to delegating evaluations.
 
-### Flag Lifecycle
-The operational classification of a feature flag (such as temporary release, experiment, permanent kill switch, or permission gate) that dictates its governing rules and eligibility for automated code cleanup.
+### Override Provider
+An OpenFeature provider implementation that intercepts flag evaluations, serving active emergency lease values when present, and falling back safely to a delegate provider otherwise.
 
-### Generation
-A strictly increasing integer sequence that uniquely identifies an immutable snapshot of all feature flag rulesets for a project.
+### Pinned Keyset
+A trusted, Git-managed registry mapping key IDs (`kid`) to public keys and authorized operational roles, mounted into workloads to verify signatures independently of the central control plane.
 
-### In-Process Cache
-An in-memory data store within an application runtime that holds compiled feature rules for direct local access without network round-trips.
+### Promotion
+The workflow of converting a temporary break-glass lease into a permanent Git baseline configuration by opening an automated Pull Request.
 
-### MurmurHash3 Bucketing
-A deterministic, uniform hashing method that maps contextual attributes (such as user identifiers or tenant tokens) into an integer range between 0 and 9,999 for percentage rollouts.
+### Refusal Report
+A structured report emitted by the automated code refactoring engine (`synapse-purger`) detailing specific AST locations where ambiguity or unsupported patterns prevented safe automated code deletion.
 
-### Quiescence ($Q$)
-A mathematical ratio between 0.0 and 1.0 representing the proportion of evaluations for a given flag that resolved to its dominant variant across all environments over a continuous observation window.
-
-### Reader
-An active execution context within an application workload that evaluates a feature flag against runtime attributes using the active in-process cache.
-
-### Rollout Split
-A percentage allocation of traffic distributed across multiple variants of a flag when no deterministic targeting rule matches.
+### Revocation
+A cryptographically signed directive that prematurely terminates an active emergency lease before its scheduled expiration deadline.
 
 ### Stale Candidate
-A release or experiment flag that has demonstrated complete Quiescence ($Q = 1.0$) over a full observation period without operational errors, qualifying it for automated source code deletion.
+A release flag that has served an invariant variant across all production services over a full observation window with 100% telemetry coverage, qualifying it for automated source code retirement.
 
-### Straggler Pod
-A workload instance that has not applied or acknowledged a published configuration generation within the expected intra-cluster propagation deadline.
+### Telemetry Coverage
+A verification prerequisite for stale flag detection requiring that every registered service in an environment has actively submitted evaluation metrics during the observation window.
 
-### Targeting Rule
-A prioritized condition that compares runtime context attributes against defined criteria to select an execution variant.
-
-### Tombstone
-A cryptographically verified revocation record that terminates an active emergency lease before its scheduled expiration.
-
-### Variant
-One specific, mutually exclusive value or execution path that a feature flag can return to a caller upon evaluation.
+### Telemetry Hook
+An OpenFeature evaluation hook that aggregates flag evaluation outcomes `(flag_key, variant, reason)` in memory without capturing or exporting contextual attributes or user identifiers.

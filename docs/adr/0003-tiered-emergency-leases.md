@@ -1,7 +1,7 @@
 # 3. Tiered Emergency Leases with Short-Lived Break-Glass Authorization
 
 Date: 2026-10-05
-Status: Accepted
+Status: Superseded by [ADR 0007](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0007-operator-signed-leases-with-pinned-keyset-and-git-promotion.md)
 
 ## Context
 

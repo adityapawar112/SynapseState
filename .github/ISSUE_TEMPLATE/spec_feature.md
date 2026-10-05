@@ -1,33 +1,36 @@
 ---
 name: Feature / Spec Ticket
-about: Implement a component or tracer bullet from the SynapseState Spec
+about: Implement a component, milestone deliverable, or verification drill from the SynapseState Spec
 title: '[FEAT]: '
-labels: ['enhancement', 'spec-tracer']
+labels: ['enhancement', 'spec-deliverable']
 assignees: ''
 ---
 
 ## Spec Reference
-- **Spec Section:** <!-- e.g., §5.2 Safe Reader Contract -->
-- **Phase Milestone:** <!-- e.g., Phase 1 Data Plane -->
-- **Target Component:** <!-- e.g., sdk/go, cmd/synapse-agent, pkg/engine -->
+- **Spec Section:** <!-- e.g., [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md) §5.3 Verification Algorithm -->
+- **Roadmap Phase:** <!-- Phase 1 Foundation, Phase 2 Deploy, Phase 3 Observe, Phase 4 Incident Loop, Phase 5 Purger, Phase 6 Dashboard -->
+- **Target Component:** <!-- packages/lease, packages/sdk, packages/cli, packages/conformance, apps/control-api, apps/purger, apps/dashboard, deploy/* -->
 
-## Problem & Acceptance Criteria
+## Scope & Acceptance Criteria
 <!-- What is being implemented and what exact conditions define completion? -->
-- [ ] Invariant 1:
-- [ ] Invariant 2:
-- [ ] Invariant 3:
+- [ ] Deliverable 1:
+- [ ] Deliverable 2:
+- [ ] Deliverable 3:
 
-## Performance & SLO Impact
-- [ ] Allocation budget: Zero heap allocations on hot path (or specify limit)
-- [ ] Latency budget: p99 <= <!-- e.g., 0.8µs native, 2.0µs Go SDK -->
+## Invariant & Reliability Checklist
+- [ ] Fail-safe fallback: Application evaluation never blocks or crashes on internal errors.
+- [ ] Keyset isolation: Control API never serves or manages trusted keyset.
+- [ ] Dual-clock expiry: Monotonic + wall bounds strictly maintained.
+- [ ] Zero context egress: Telemetry collects only `(flag_key, variant, reason)`.
+- [ ] Evidence-based claims: All performance figures backed by reproducible benchmarks.
 
 ## Blocking Dependencies
-<!-- List issues/tickets that must merge before this can start -->
-- Depends on: None
-- Blocks: None
+<!-- List issues or phase gates that must complete before this can start -->
+- Depends on:
+- Blocks:
 
 ## Verification Strategy
-<!-- How will this be tested? (Unit, Conformance, Chaos, Benchmarks) -->
+<!-- How will this be tested? (Unit, Conformance Vectors, fast-check Property Tests, k6 Load, Chaos Drills) -->
 ```bash
 # Verification commands
 ```

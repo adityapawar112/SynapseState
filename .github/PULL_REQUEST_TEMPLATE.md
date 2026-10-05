@@ -3,27 +3,29 @@
 Closes #
 
 ## Spec & Contract Alignment
-- [ ] Conforms to [SpecDoc.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/SpecDoc.md) requirements
-- [ ] No split-brain states or broken source-of-truth invariants
-- [ ] Respects explicit non-goals (no Web UI, no Bayesian funnels, no in-process mutations)
+- [ ] Conforms to [SpecDoc.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/SpecDoc.md) and [ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md) requirements.
+- [ ] Adheres to [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md) engineering charter.
+- [ ] Respects explicit non-goals (no custom flag evaluator, no client-side SDKs, no in-pod sidecars/UDS, no autonomous code merges).
 
 ## Systems Invariants & Architecture Checklist
-- [ ] **Zero-Hop Hot Path:** Zero network syscalls on evaluation path (`p99 <= 0.5µs native`, `p99 <= 1.0µs Node.js`).
-- [ ] **In-Process Safety:** Uses lock-free atomic pointer swaps; zero mutex locks on the evaluation path.
-- [ ] **Immutable Snapshot Swaps:** Updates compile into immutable ruleset snapshots; no in-place mutation.
-- [ ] **Security:** RFC 8785 canonicalization and Ed25519 signatures verified for all lease/override paths.
-- [ ] **Boundary Discipline:** Input validation strictly isolated to ingress/webhooks; engine logic remains pure.
+- [ ] **Fail-Safe Hot Path:** OverrideProvider catches internal exceptions and falls through to delegate provider; zero evaluation disruption.
+- [ ] **Pinned Keyset Trust Root:** Overrides verified strictly against local Git-pinned keyset; Control API cannot forge leases.
+- [ ] **Dual-Clock Expiry:** Enforces $\min(\text{wall\_expiry}, \text{mono\_expiry})$; zero leases survive past deadline.
+- [ ] **Zero-Context Telemetry:** TelemetryHook aggregates only `(flag_key, variant, reason)`; never touches evaluation context or user data.
+- [ ] **Refusal-by-Default (if purger):** Only literal-key supported TypeScript patterns rewritten; emits Refusal Report on ambiguous syntax; Draft PRs only.
+- [ ] **Tamper-Evident Audit Ledger:** State mutations hash-chained with SHA-256 and periodic external checkpoints.
 
-## Verification & Benchmarks
+## Verification & Test Output
 ```bash
-# Paste benchmark results and test outputs here
-# Must include:
-# 1. go test -race ./...
-# 2. Benchmark evaluation latency (p50, p90, p99)
-# 3. Allocations per op (0 allocs/op for native evaluation)
+# Paste test results and verification logs here
+# E.g.:
+# 1. npm test
+# 2. npm run lint
+# 3. npx tsc --noEmit
+# 4. Conformance suite vectors passing
 ```
 
 ## Reviewer Checklist
-- [ ] Spec Compliance Verified
-- [ ] Concurrency & Race Detector Clean
-- [ ] Memory Leak & cgroup Limit Verified
+- [ ] Architectural Invariants Verified
+- [ ] Fail-Static Behavior Verified Under Failure Drills
+- [ ] Evidence-Based Claims Policy Upheld (no unsubstantiated benchmark claims)

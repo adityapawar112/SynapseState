@@ -1,15 +1,15 @@
 # Concurrency & Memory Invariants
 
-1. **Zero-Hop Hot Path**:
-   - In `pkg/engine`, `sdk/go`, and `sdk/node`, evaluations must run entirely in-process against local heap memory.
+1. **Fail-Safe Hot Path Evaluation**:
+   - In `packages/sdk`, `OverrideProvider` checks an in-memory map of active, verified emergency leases.
    - Zero network syscalls, zero IPC roundtrips, and zero mutex locks on the evaluation path.
+   - Any internal exception caught inside the wrapper must immediately fall through to the delegate OpenFeature provider without disrupting application traffic.
 
-2. **Immutable Snapshot Swaps**:
-   - Never mutate active ruleset maps or objects in place.
-   - When delta updates arrive over the local IPC stream, compile the new ruleset into an immutable snapshot and atomically swap the active pointer.
-   - Ongoing evaluations finish against their captured snapshot without lock contention.
+2. **In-Memory Lease Map Swaps**:
+   - Never mutate active lease maps or objects in place.
+   - When updated state arrives via HTTP polling (`GET /v1/sdk/state`), verify cryptographic signatures and compile the new active lease set into an immutable map reference.
+   - Swap the active map reference atomically; ongoing evaluations finish cleanly without lock contention.
 
-3. **Safe Memory Reclamation**:
-   - Rely on language runtime garbage collection for superseded snapshot reclamation.
-   - No manual OS virtual memory mapping (`mmap`) or unmapping (`munmap`) in application runtimes.
-   - Zero risk of `SIGSEGV` or `SIGBUS` process terminations from memory reclamation races.
+3. **Safe Memory Management**:
+   - Rely on language runtime garbage collection for superseded lease map reclamation.
+   - Pure TypeScript with zero native compilation dependencies, zero `mmap` virtual memory allocations, and zero crash hazards.

@@ -13,22 +13,12 @@ Thumbs.db
 *.sublime-project
 *.sublime-workspace
 
-# Go
-bin/
-dist/
-vendor/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-go.work
-go.work.sum
-
 # Node.js & TypeScript
 node_modules/
+dist/
+build/
+.next/
+out/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -37,31 +27,20 @@ lerna-debug.log*
 .pnpm-store/
 *.tsbuildinfo
 .turbo/
-build/
-
-# Rust & Cargo (for napi-rs native addon in sdk/node)
-target/
-Cargo.lock.d/
-**/*.node
-
-# FlatBuffers Generated Artifacts (unless intentionally committed)
-*.bfbs
 
 # Kubernetes, Helm & Terraform
 *.tfstate
 *.tfstate.*
 .terraform/
+.terraform.lock.hcl
 charts/*/charts/
 charts/*/tmp/
 
-# SynapseState Runtime & Testing Artifacts
-/synapse/
-arena.*.bin
-*.bin
-*.prof
-*.pprof
+# Testing & Coverage Artifacts
+coverage/
 coverage.txt
 coverage.html
+*.lcov
 scratch/
 tmp/
 .temp/

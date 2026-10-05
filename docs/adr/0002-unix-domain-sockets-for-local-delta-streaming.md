@@ -1,7 +1,7 @@
 # 2. Unix Domain Sockets for Local Delta Streaming
 
 Date: 2026-10-05
-Status: Accepted
+Status: Superseded by [ADR 0006](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0006-http-polling-with-etag-over-sidecar-ipc.md)
 
 ## Context
 

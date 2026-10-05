@@ -1,19 +1,23 @@
 # AGENTS.md — SynapseState Engineering Charter & Operating Guide
 
 > **Target Audience:** All AI agents, pair programmers, and human contributors operating in `synapsestate/synapsestate`.
-> **Primary Specification:** [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md) & [PRODUCT.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/PRODUCT.md)
+> **Primary Specifications:** [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md), [PRODUCT.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/PRODUCT.md) & [docs/limitations.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/limitations.md)
 
 ---
 
 ## 1. Project Mission & Non-Goals
 
-SynapseState delivers a self-hosted, distributed runtime configuration and feature flag platform optimized for high-throughput, latency-critical microservices running in Kubernetes clusters.
+SynapseState delivers a vendor-neutral **incident-safety and lifecycle governance layer for OpenFeature**. It adds signed, auto-expiring emergency overrides (break-glass leases) that evaluate in-process and reconcile back to Git, and telemetry-driven, compiler-verified cleanup pull requests for dead feature flags.
+
+It does **not** evaluate flags or manage rollouts. It wraps an existing OpenFeature provider (such as flagd in-process, a plain JSON provider, or Unleash).
 
 ### Core Non-Goals (Hard System Boundaries)
-- **NO Client-Side / Web / Mobile:** Internal rulesets never egress to untrusted browsers or devices.
-- **NO Web Administrative UI:** Operations are strictly declarative (GitOps via CRDs) and operational via `synapse-cli`.
-- **NO Per-Evaluation Socket Calls:** Application SDKs never make network or socket roundtrips to evaluate a flag.
-- **NO Unverified Autonomous Merges:** Automated code remediation (`synapse-purger`) submits Draft PRs verified by compiler checks and repository tests.
+- **NO Custom Evaluator or Rollout DSL:** We do not write flag evaluation logic, context segmenters, or MurmurHash3 bucketing engines. Evaluation is strictly delegated to standard OpenFeature providers.
+- **NO Client-Side / Mobile SDKs:** Internal rulesets, keysets, and telemetry never egress to untrusted browsers or mobile devices.
+- **NO Web Administrative Flag Authoring:** Baseline flag configurations are managed declaratively in Git. SynapseState does not provide a UI for editing flag definitions.
+- **NO In-Pod Sidecar Daemons or UDS Sockets:** We do not inject sidecar containers or maintain intra-pod Unix domain socket streaming. SDKs poll the Control API directly over HTTPS with `ETag`.
+- **NO Unverified Autonomous Code Merges:** Automated code cleanup (`synapse-purger`) submits Draft PRs verified by compiler type-checks (`tsc --noEmit`), linters, and repository test suites. Automatic merging is strictly prohibited.
+- **NO Microbenchmark Theater:** We do not market unsubstantiated nanosecond records. We publish only measured wrapper overhead compared against bare delegate providers.
 
 ---
 
@@ -21,13 +25,13 @@ SynapseState delivers a self-hosted, distributed runtime configuration and featu
 
 Every code modification and pull request MUST adhere to these non-negotiable invariants:
 
-1. **Zero-Hop Hot Path:** The evaluation path in the native Go engine and TypeScript SDK must evaluate directly from language-native memory with atomic reference swaps. **Zero network syscalls** on steady-state evaluations.
-2. **In-Pod Sidecar Multiplexing:** The `synapse-agent` sidecar maintains the sole upstream connection per pod and pushes delta updates over local IPC only when configurations change.
-3. **Immutable Snapshot Swaps & Runtime GC:** Never mutate active ruleset objects in place. All updates compile into an immutable snapshot and swap atomically. Superseded snapshots are reclaimed by the language runtime's garbage collector. Zero manual memory unmapping.
-4. **Strict Source-of-Truth Hierarchy:**
-   $$\text{Git Baseline} \longrightarrow \text{K8s CRDs} \longrightarrow \text{PostgreSQL Ledger} \longrightarrow \text{gRPC Streaming} \longrightarrow \text{Local IPC Stream} \longrightarrow \text{In-Process Heap}$$
-5. **Tiered Cryptographic Leases:** Immediate break-glass overrides require one Ed25519 signature with a mandatory 30-minute expiration. Permanent overrides require dual-control authorization (issuer + approver) or an automated Git merge.
-6. **Boundary Discipline:** Isolate all input validation, sanitization, and parsing at system boundaries (K8s Admission Webhook, CLI flags, gRPC endpoints). Internal engine functions must remain pure.
+1. **Fail-Safe Hot Path Delegation:** Flag evaluation occurs entirely in-memory within the application process. The `OverrideProvider` checks an in-memory map of active, valid leases. If no lease exists, or if an internal exception occurs, it **must immediately fall back to the delegate OpenFeature provider**. SynapseState must never disrupt application traffic.
+2. **Pinned Keyset Trust Root:** SDKs verify Ed25519 signatures against a locally pinned keyset file mounted from Git. **The Control API must never serve or modify the trusted keyset.** Even under total control-plane compromise, an attacker cannot forge emergency overrides.
+3. **Deterministic Dual-Clock Expiry:** Overrides enforce both monotonic relative time (`first_seen_mono + ttl_seconds`) and wall-clock absolute bounds (`issued_at + ttl_seconds + SKEW_TOLERANCE`). Overrides are honored for $\le \min(\text{wall\_expiry}, \text{mono\_expiry})$. **Zero leases may survive past their deadline.**
+4. **Git Reconciliation as Dual Control:** The 2 AM incident path requires only a single operator signature with a short TTL (max 30 minutes). Making an override permanent requires promoting it via `synapse promote`, opening a GitHub PR against Git. **Human review and merge of that PR serves as the mandatory secondary approval.**
+5. **Zero-Context Telemetry:** The `TelemetryHook` aggregates only `(flag_key, variant, reason)` tuples and counts in memory. It must **never inspect, capture, or export evaluation context, user IDs, or targeting attributes**.
+6. **Refusal-by-Default Code Pruning:** `synapse-purger` operates only on high-confidence, literal-key TypeScript patterns. If dynamic expressions, wrapper abstractions, or test mocks are encountered, it must **refuse to modify code and emit a structured Refusal Report**.
+7. **Tamper-Evident Audit Ledger:** All state mutations append to a SHA-256 hash-chained PostgreSQL ledger. Scheduled tasks sign periodic checkpoints to an immutable external write-once store.
 
 ---
 
@@ -35,31 +39,29 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 
 ```
 .
-├── cmd/
-│   ├── synapse-control/     # Go control plane daemon (gRPC stream, PostgreSQL ledger, CRD sync)
-│   ├── synapse-operator/    # K8s Controller-Runtime operator (FeatureFlagGroup, mutating webhook)
-│   ├── synapse-agent/       # Go sidecar daemon (pod multiplexer, local UDS streaming, disk snapshot)
-│   ├── synapse-cli/         # SRE CLI (Ed25519 break-glass signing, lease management)
-│   └── synapse-purger/      # Quiescence engine & AST refactoring tool (go/types, ts-morph)
-├── pkg/
-│   ├── apis/                # Kubernetes CRD structs and OpenAPI validation schemas
-│   ├── protocol/            # Protobuf delta schemas & generated Go/TypeScript bindings
-│   ├── crypto/              # Ed25519 signing, RFC 8785 canonicalization
-│   └── engine/              # In-process rule evaluation & MurmurHash3 unsigned 32-bit bucketing
-├── sdk/
-│   ├── go/                  # OpenFeature Go Provider with atomic pointer swaps
-│   └── node/                # Pure TypeScript OpenFeature Node.js Provider
+├── apps/
+│   ├── control-api/        # Node.js + Postgres governance service (HTTP API)
+│   ├── dashboard/          # Read-mostly Next.js operations portal with OIDC RBAC
+│   ├── demo-shop/          # Example microservice app using SDK (fault-injection target)
+│   └── purger/             # TypeScript AST refactoring worker (ts-morph)
+├── packages/
+│   ├── lease/              # Canonicalization (RFC 8785), Ed25519 signing & verification
+│   ├── sdk/                # Pure TypeScript OpenFeature OverrideProvider & TelemetryHook
+│   ├── cli/                # SRE command-line tool (synapse)
+│   └── conformance/        # Language-neutral test vectors (JSON) & test runner
 ├── deploy/
-│   ├── manifests/           # Base CRD manifests (FeatureFlagGroup, EmergencyLease)
-│   └── helm/                # Production Helm charts
-├── tests/
-│   ├── conformance/         # Cross-runtime test vectors (Go vs Node.js)
-│   ├── chaos/               # Fault injection (network partitions, sidecar crashes, reconnect loops)
-│   └── fixtures/            # Test repositories for AST pruning validation
+│   ├── terraform/          # Cloud VM, networking, firewall, DNS, object storage
+│   ├── helm/               # Helm charts for Control API, Postgres, Observability
+│   └── gitops/             # GitOps deployment manifests (Phase 7)
+├── load/                   # k6 load-testing scripts
 └── docs/
-    ├── ARCHITECTURE.md      # Authoritative system architecture
-    ├── ROADMAP.md           # Phased Wayfinder delivery roadmap
-    └── adr/                 # Architectural Decision Records
+    ├── ARCHITECTURE.md     # Authoritative system architecture
+    ├── ROADMAP.md          # Phased delivery roadmap & kill criteria
+    ├── SpecDoc.md          # Technical product specification
+    ├── limitations.md      # System boundaries and failure modes
+    ├── adr/                # Architectural Decision Records
+    ├── runbooks/           # Operator disaster recovery and incident runbooks
+    └── postmortems/        # Failure injection reports and retrospectives
 ```
 
 ---
@@ -70,31 +72,32 @@ The workspace is configured with active skills located in [`.agents/skills/`](fi
 
 | Phase / Workflow | Recommended Skills to Invoke |
 |---|---|
-| **Architecture & Interface Design** | `codebase-design`, `domain-modeling`, `architect`, `principle-foundational-thinking` |
-| **Monorepo Planning & Roadmap** | `wayfinder`, `to-tickets`, `research` |
-| **Multi-Agent Task Execution** | `subagent-driven-development`, `using-git-worktrees`, `dispatching-parallel-agents` |
-| **Implementation & Concurrency** | `test-driven-development`, `principle-separate-before-serializing-shared-state`, `principle-boundary-discipline` |
-| **Debugging & Invariant Violations** | `systematic-debugging`, `principle-fix-root-causes`, `blast-radius` |
-| **Verification & PR Gatekeeping** | `verification-before-completion`, `receiving-code-review`, `requesting-code-review`, `show-me-your-work` |
+| **Architecture & Interface Design** | `codebase-design`, `domain-modeling`, `architect` |
+| **Monorepo Planning & Roadmap** | `research` |
+| **Implementation & Concurrency** | `test-driven-development` |
+| **Debugging & Invariant Violations** | `systematic-debugging` |
+| **Verification & PR Gatekeeping** | `verification-before-completion`, `receiving-code-review`, `requesting-code-review` |
 
 ---
 
-## 5. Performance SLOs (Benchmark Gates)
+## 5. Performance & Reliability SLOs
 
-All code touching the evaluation path must be validated against continuous benchmarks before merging:
+All code touching state delivery and SDK evaluation must be validated against continuous benchmarks before merging:
 
-| Boundary | Target SLO | Conditions |
+| Measurement Boundary | Target SLO | Conditions & Verification |
 |---|---|---|
-| **Native Go Engine** | $p99 \le 0.5\text{ µs}$ | Direct in-memory lookup, 0 heap allocs on evaluation |
-| **Public Go OpenFeature SDK** | $p99 \le 1.0\text{ µs}$ | Includes `ResolutionDetails` allocation |
-| **Public Node.js OpenFeature SDK** | $p99 \le 1.0\text{ µs}$ | Pure V8 in-memory lookup, zero FFI overhead |
-| **Intra-Cluster EEL Propagation** | $p99 \le 50\text{ ms}$ | API acceptance to verified memory swap across $\ge 99\%$ of 100 pods |
-| **Straggler Pod Detection** | $\text{Max} \le 10\text{ s}$ | Alerting non-acknowledging pods |
+| **Lease Propagation Lag** | $p95 \le 10\text{ s}$ | Measured using server timestamps (`server_time - issued_at`) under 5s polling. |
+| **Lease Expiry Correctness** | **0** past `TTL + SKEW_TOLERANCE` | Validated by property tests (`fast-check`) and chaos clock-skew injection. |
+| **SDK Hot-Path Overhead** | Minimal overhead vs bare delegate | Microbenchmarks measuring `OverrideProvider` resolution path. |
+| **Evaluation Path Availability** | 100% (Zero app crashes) | Automatic fallback to delegate provider on any internal exception. |
+| **Control API Availability** | 99.5% over 30 days (Single node) | Blackbox HTTP probing. (SDKs fail-static during API downtime). |
+| **Purger Refactoring Precision** | 0 incorrect removals on corpus | Validated across supported, complex, and adversarial test repositories. |
 
 ---
 
-## 6. Git & Commit Guidelines
+## 6. Git, Commit & Verification Guidelines
 
-- **Format:** Conventional Commits (`feat(engine): ...`, `fix(agent): ...`, `perf(protocol): ...`, `docs: ...`).
-- **Tracer Bullets:** Every commit and PR must leave the repository in a compile-clean, green-test state.
-- **Evidence Before Claims:** Always run tests and benchmarks, pasting raw outputs in PR descriptions.
+- **Conventional Commits:** Use standard prefixes (`feat(lease): ...`, `fix(sdk): ...`, `perf(api): ...`, `docs: ...`, `chore: ...`).
+- **Evidence Before Claims:** Always run automated tests and benchmarks before claiming completion. Paste raw test outputs and logs in pull request descriptions.
+- **Claims Policy:** Do not use buzzwords ("lock-free", "bank-grade", "50,000x faster") unless verified by a documented benchmark with date, hardware, and methodology.
+- **Fail-Static Verification:** Any PR touching the SDK must demonstrate that disconnecting the Control API leaves evaluation functional and active leases strictly bounded by their TTL.

@@ -1,7 +1,7 @@
 # 4. Lock-Free Atomic Reference Swapping for In-Process Configuration
 
 Date: 2026-10-05
-Status: Accepted
+Status: Superseded by [ADR 0005](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0005-delegate-evaluation-to-existing-openfeature-providers.md)
 
 ## Context
 

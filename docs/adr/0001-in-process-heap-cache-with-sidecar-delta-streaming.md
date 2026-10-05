@@ -1,7 +1,7 @@
 # 1. In-Process Heap Cache with Sidecar Delta Streaming over POSIX Shared Memory
 
 Date: 2026-10-05
-Status: Accepted
+Status: Superseded by [ADR 0005](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0005-delegate-evaluation-to-existing-openfeature-providers.md) and [ADR 0006](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/adr/0006-http-polling-with-etag-over-sidecar-ipc.md)
 
 ## Context
 
