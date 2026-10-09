@@ -1,0 +1,20 @@
+{
+  "name": "@synapsestate/conformance",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@synapsestate/lease": "workspace:*",
+    "@synapsestate/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "fast-check": "^3.23.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

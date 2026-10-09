@@ -1,0 +1,27 @@
+{
+  "name": "@synapsestate/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "synapse": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@synapsestate/lease": "workspace:*",
+    "cli-table3": "^0.6.5",
+    "commander": "^14.0.0",
+    "picocolors": "^1.1.1",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

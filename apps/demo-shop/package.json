@@ -1,0 +1,22 @@
+{
+  "name": "@synapsestate/demo-shop",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openfeature/flagd-provider": "^0.16.1",
+    "@openfeature/server-sdk": "^1.23.0",
+    "@synapsestate/sdk": "workspace:*",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.0"
+  }
+}
