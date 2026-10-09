@@ -1,0 +1,20 @@
+{
+  "ops-primary-01": {
+    "public_key": "_Qo7QXvXuOQwYtrgpBGEmBWDJb2a8pj_C6EWC9o6s8k",
+    "role": "operator",
+    "max_ttl_seconds": 3600
+  },
+  "ops-secondary-02": {
+    "public_key": "zHWIfYNF_UPJGTG7hlEpME5TrD0S2FEZI8VTrRqkOJE",
+    "role": "operator",
+    "max_ttl_seconds": 7200
+  },
+  "admin-root-01": {
+    "public_key": "jQzdIsK5rShYc9dNpzs4HalaUS3Q_hNDkxNCAPY6SCA",
+    "role": "admin"
+  },
+  "admin-backup-02": {
+    "public_key": "AK_hvkWohzAWheuHzTQn6g0iNPan8UQDGHkiK73BVKE",
+    "role": "admin"
+  }
+}

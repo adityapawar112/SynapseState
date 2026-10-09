@@ -1,0 +1,90 @@
+{
+  "description": "Invalid revocation envelopes (tampered payload, corrupted signature, cross-domain)",
+  "cases": [
+    {
+      "id": "revocation_tampered_lease_id",
+      "description": "Revocation payload lease_id altered post-signing",
+      "type": "revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000099",
+          "revoked_at": "2026-10-09T12:15:00.000Z",
+          "kid": "ops-primary-01",
+          "reason": "INC-991: Payment incident resolved; emergency lease recalled"
+        },
+        "sig": "D3a22DWPSsxdkR9tsqXqKc6dYh6Ox3Y4tTGTJZ8sqIQj88cRLE27d5wNv8OqU9fWBk6Sq0pP0qFWxSqxp656Aw"
+      },
+      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+    },
+    {
+      "id": "revocation_tampered_sig",
+      "description": "Corrupted signature characters in revocation envelope",
+      "type": "revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000001",
+          "revoked_at": "2026-10-09T12:15:00.000Z",
+          "kid": "ops-primary-01",
+          "reason": "INC-991: Payment incident resolved; emergency lease recalled"
+        },
+        "sig": "A3a22DWPSsxdkR9tsqXqKc6dYh6Ox3Y4tTGTJZ8sqIQj88cRLE27d5wNv8OqU9fWBk6Sq0pP0qFWxSqxp656Aw"
+      },
+      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+    },
+    {
+      "id": "revocation_cross_domain_lease_prefix",
+      "description": "Revocation signed with LEASE_DOMAIN_PREFIX instead of REVOCATION_DOMAIN_PREFIX",
+      "type": "revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000001",
+          "revoked_at": "2026-10-09T12:15:00.000Z",
+          "kid": "ops-primary-01",
+          "reason": "INC-991: Payment incident resolved; emergency lease recalled"
+        },
+        "sig": "QTFFmwsEX-eLHif6O-4DCFL8hU1dz0WJo_cbFCCQfhRdGGMbWerTlVVpg-Wv8KI0wuZ82t-tuHy-wYZ8kVAkDQ"
+      },
+      "expectedFailure": "DOMAIN_SEPARATION_MISMATCH"
+    },
+    {
+      "id": "revocation_unknown_kid",
+      "description": "Revocation signed by unauthorized key not in trusted keyset",
+      "type": "revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000001",
+          "revoked_at": "2026-10-09T12:15:00.000Z",
+          "kid": "untrusted-rogue-01",
+          "reason": "INC-991: Payment incident resolved; emergency lease recalled"
+        },
+        "sig": "GVKyOGL3mFHHTImLOnzGHW_pJtgxCflE5dgaPgPrdlU8SCwHhD0QMsRUe5AirX5_iSSRBINb3_-Zhw2-sYzmCA"
+      },
+      "expectedFailure": "UNKNOWN_KEY_ID"
+    },
+    {
+      "id": "revocation_malformed_timestamp",
+      "description": "revoked_at is not a valid ISO 8601 UTC timestamp",
+      "type": "revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000001",
+          "revoked_at": "invalid-timestamp",
+          "kid": "ops-primary-01",
+          "reason": "INC-991: Payment incident resolved; emergency lease recalled"
+        },
+        "sig": "D3a22DWPSsxdkR9tsqXqKc6dYh6Ox3Y4tTGTJZ8sqIQj88cRLE27d5wNv8OqU9fWBk6Sq0pP0qFWxSqxp656Aw"
+      },
+      "expectedFailure": "SCHEMA_VALIDATION_FAILED"
+    }
+  ]
+}

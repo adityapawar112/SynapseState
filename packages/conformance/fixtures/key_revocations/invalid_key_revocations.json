@@ -1,0 +1,90 @@
+{
+  "description": "Invalid key revocation envelopes (tampered payload, corrupted signature, unauthorized operator signer)",
+  "cases": [
+    {
+      "id": "key_revocation_tampered_kid",
+      "description": "Key revocation kid changed post-signing",
+      "type": "key_revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "kid": "admin-root-01",
+          "revoked_at": "2026-10-09T12:30:00.000Z",
+          "revoked_by_kid": "admin-root-01",
+          "reason": "INC-996: Operator workstation lost; credential revoked"
+        },
+        "sig": "53827SkO9YwAZDv0J6E_u3B7asYxfhfoBN30gWyiaULk53YzGF9w1Mt6C08k8zaTGuRfWnkra15WU8PLOUF1CQ"
+      },
+      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+    },
+    {
+      "id": "key_revocation_tampered_sig",
+      "description": "Corrupted signature in key revocation envelope",
+      "type": "key_revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "kid": "ops-secondary-02",
+          "revoked_at": "2026-10-09T12:30:00.000Z",
+          "revoked_by_kid": "admin-root-01",
+          "reason": "INC-996: Operator workstation lost; credential revoked"
+        },
+        "sig": "A3827SkO9YwAZDv0J6E_u3B7asYxfhfoBN30gWyiaULk53YzGF9w1Mt6C08k8zaTGuRfWnkra15WU8PLOUF1CQ"
+      },
+      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+    },
+    {
+      "id": "key_revocation_cross_domain",
+      "description": "Key revocation signed with LEASE_DOMAIN_PREFIX",
+      "type": "key_revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "kid": "ops-secondary-02",
+          "revoked_at": "2026-10-09T12:30:00.000Z",
+          "revoked_by_kid": "admin-root-01",
+          "reason": "INC-996: Operator workstation lost; credential revoked"
+        },
+        "sig": "hHqByrhqRb_E45ZCp09iZi7JDNT6MBZYSX7FdWB-rl7eU3ZMS3-iFWFi11jhe-ek8pvkKPgswMu3trXCh0j3Dw"
+      },
+      "expectedFailure": "DOMAIN_SEPARATION_MISMATCH"
+    },
+    {
+      "id": "key_revocation_signed_by_operator",
+      "description": "Operator attempted to sign key revocation (only admin role is authorized)",
+      "type": "key_revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "kid": "ops-secondary-02",
+          "revoked_at": "2026-10-09T12:30:00.000Z",
+          "revoked_by_kid": "ops-primary-01",
+          "reason": "INC-996: Operator workstation lost; credential revoked"
+        },
+        "sig": "W9MIeqM3aRcbx-WEJ1NYVrowAzYCgtGHLeQB_s_Su2QG09laGPvzUnALz5VfLKrv1D9LbySBQbrYvnP0Sni6BQ"
+      },
+      "expectedFailure": "UNAUTHORIZED_SIGNER"
+    },
+    {
+      "id": "key_revocation_unknown_signer",
+      "description": "Key revocation signed by untrusted rogue key",
+      "type": "key_revocation",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "kid": "ops-secondary-02",
+          "revoked_at": "2026-10-09T12:30:00.000Z",
+          "revoked_by_kid": "untrusted-rogue-01",
+          "reason": "INC-996: Operator workstation lost; credential revoked"
+        },
+        "sig": "UM0VHX4DOgLvDuu4X6qmT82_-uZX5sbWXYbCYIqlbYn0UmBjrO59em9jmAE4LFjfOZjraDtOyrix5QU2TiRLAw"
+      },
+      "expectedFailure": "UNKNOWN_KEY_ID"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "description": "Valid key revocation envelopes signed by admin with KEYREVOCATION_DOMAIN_PREFIX",
+  "cases": [
+    {
+      "id": "valid_key_revocation_compromised_operator",
+      "description": "Admin key revocation dropping compromised operator key",
+      "type": "key_revocation",
+      "valid": true,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "kid": "ops-secondary-02",
+          "revoked_at": "2026-10-09T12:30:00.000Z",
+          "revoked_by_kid": "admin-root-01",
+          "reason": "INC-996: Operator workstation lost; credential revoked"
+        },
+        "sig": "53827SkO9YwAZDv0J6E_u3B7asYxfhfoBN30gWyiaULk53YzGF9w1Mt6C08k8zaTGuRfWnkra15WU8PLOUF1CQ"
+      },
+      "expected": {
+        "kid": "admin-root-01",
+        "revokedKid": "ops-secondary-02"
+      }
+    },
+    {
+      "id": "valid_key_revocation_with_revoked_by_kid",
+      "description": "Backup admin key revocation specifying revoked_by_kid",
+      "type": "key_revocation",
+      "valid": true,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "kid": "ops-primary-01",
+          "revoked_at": "2026-10-09T12:35:00.000Z",
+          "revoked_by_kid": "admin-backup-02",
+          "reason": "Planned key rotation by backup administrator"
+        },
+        "sig": "dH7rmHc1q-KuDsBCM9IL8YtgEQYdY9jl850YZMGuNw6tq4F0P7ffMpkYAqYlq4dPAgu_zCHBv3BAR0et8qPtAQ"
+      },
+      "expected": {
+        "kid": "admin-backup-02",
+        "revokedKid": "ops-primary-01"
+      }
+    }
+  ]
+}
