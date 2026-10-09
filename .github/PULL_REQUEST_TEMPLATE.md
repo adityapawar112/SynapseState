@@ -12,7 +12,7 @@ Closes #
 - [ ] **Pinned Keyset Trust Root:** Overrides verified strictly against local Git-pinned keyset; Control API cannot forge leases.
 - [ ] **Dual-Clock Expiry:** Enforces $\min(\text{wall\_expiry}, \text{mono\_expiry})$; zero leases survive past deadline.
 - [ ] **Zero-Context Telemetry:** TelemetryHook aggregates only `(flag_key, variant, reason)`; never touches evaluation context or user data.
-- [ ] **Refusal-by-Default (if purger):** Only literal-key supported TypeScript patterns rewritten; emits Refusal Report on ambiguous syntax; Draft PRs only.
+- [ ] **Read-Only Scanner (if purger):** Purger operates strictly as a read-only AST scanner and candidate qualifier; never executes untrusted repo tests or build scripts; emits structured candidate or refusal reports.
 - [ ] **Tamper-Evident Audit Ledger:** State mutations hash-chained with SHA-256 and periodic external checkpoints.
 
 ## Verification & Test Output

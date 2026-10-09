@@ -30,8 +30,8 @@ SynapseState provides an incident-safety, governance, and automated lifecycle la
 2. **Deterministic Auto-Expiry:** Rigorous dual-clock bounds (monotonic elapsed time since first observation combined with wall-clock absolute deadlines) guaranteeing that no override outlives its lease.
 3. **Automated Git Reconciliation:** Break-glass overrides reconcile back into the authoritative Git repository via automated Pull Requests, where human code review serves as the second approval.
 4. **Context-Free Stale Detection:** Aggregate runtime evaluation telemetry to identify dead release toggles without ever logging or egressing evaluation context, user attributes, or targeting keys.
-5. **Compiler-Verified Code Retirement:** Automated refactoring (`synapse-purger`) that safely purges stale flags from application codebases, verified by compiler checks, linters, and repository tests, with strict refusal-by-default for ambiguous syntax.
-6. **Incident Change Attribution:** Automated correlation between Alertmanager SLO alerts and recent flag changes, providing on-call engineers with ranked suspects and copy-pasteable mitigation commands.
+5. **Telemetry-Driven Codebase Scanning:** Read-only AST scanner and qualification engine (`synapse-purger`) identifying dead toggles and exporting structured candidate reports for external refactoring tools, with strict refusal-by-default for ambiguous syntax and zero untrusted code execution.
+6. **Incident Change Attribution:** Rapid correlation between service degradation and recent flag transitions/merges via `synapse log`, providing on-call engineers with ranked suspects and type-aware mitigation commands.
 
 ### Engineering Constraints
 - **Single Developer / Small Team Execution:** Entire codebase implemented in TypeScript/Node.js, allowing focus on infrastructure, reliability, and security practices rather than cross-compilation overhead.
@@ -45,26 +45,28 @@ SynapseState provides an incident-safety, governance, and automated lifecycle la
 ```mermaid
 flowchart TD
     subgraph GitOps ["Git Repository (Authoritative Baseline)"]
-        GitRepo["flags.yaml registry<br/>Trusted public keyset<br/>Kubernetes manifests"]
+        GitRepo["flags/<env>/*.yaml definitions<br/>Trusted public keyset<br/>Kubernetes manifests"]
     end
 
     subgraph OperatorSurface ["Operator Workstation"]
-        CLI["synapse-cli<br/>Signs leases with Ed25519 private key"]
+        CLI["synapse-cli<br/>Signs leases with Ed25519 private key<br/>Syncs time via GET /v1/time"]
     end
 
     subgraph GovernancePlane ["Synapse Governance Plane (k3s)"]
-        ControlAPI["Control API (Node.js/TS)<br/>Leases, Revocations, Registry Sync<br/>Telemetry Rollups, Hash-Chained Audit Log"]
-        Postgres[("PostgreSQL 16<br/>Leases, State, Audit")]
+        ControlAPI["Control API (Node.js/TS)<br/>Leases, Revocations, Registry Sync<br/>In-Process Audit Sealer, State Long-Poll"]
+        CronJob["External Checkpoint Signer<br/>Isolated Kubernetes CronJob (Object Lock)"]
+        Postgres[("PostgreSQL 16<br/>leases, audit_pending, audit_events,<br/>services, flag_usage_daily, change_events")]
         ControlAPI <--> Postgres
+        CronJob --> Postgres
     end
 
     subgraph Workload ["Application Pod (k3s / Production)"]
-        ConfigMap["Mounted ConfigMap:<br/>Flag definitions & pinned keyset"]
+        ConfigMap["Mounted Volume:<br/>Flag definitions, pinned keyset<br/>& emergency-leases/ dir"]
         subgraph AppProcess ["Application Process (Node.js Runtime)"]
             OF["OpenFeature Client"]
-            OP["OverrideProvider<br/>In-memory verified lease map"]
+            OP["OverrideProvider<br/>In-memory verified lease map<br/>Hot-reload keyset polling (10s)"]
             DP["Delegate Provider<br/>(e.g., flagd in-process / JSON file)"]
-            TH["TelemetryHook<br/>Batched metric aggregator"]
+            TH["TelemetryHook<br/>Bulkhead aggregator (5m flush)"]
             
             OF --> OP
             OP -->|"Active valid lease"| OP
@@ -72,7 +74,7 @@ flowchart TD
             OF -.->|"after / finally"| TH
         end
         ConfigMap -->|"Mount file"| DP
-        ConfigMap -->|"Mount pinned keyset"| OP
+        ConfigMap -->|"Mount pinned keyset & fallback"| OP
     end
 
     subgraph Observability ["Cluster Observability"]
@@ -81,14 +83,16 @@ flowchart TD
         Alert["Alertmanager"]
     end
 
-    CLI -->|"POST /v1/leases (signed payload)"| ControlAPI
+    CLI -->|"1. GET /v1/time & POST /v1/leases"| ControlAPI
+    CLI -.->|"Air-gapped emergency: kubectl apply"| ConfigMap
     GitRepo -.->|"ConfigMap sync"| ConfigMap
     ControlAPI -->|"Open promote PR / Webhook sync"| GitRepo
-    OP -->|"Poll GET /v1/sdk/state (ETag)"| ControlAPI
-    TH -->|"POST /v1/telemetry/batches"| ControlAPI
+    OP -->|"GET /v1/sdk/state?wait=30s (ETag)"| ControlAPI
+    TH -->|"POST /v1/telemetry/batches (Bulkhead pool)"| ControlAPI
     ControlAPI -->|"Metrics / Annotations"| Prom
     AppProcess -->|"Metrics"| Prom
-    Alert -->|"Webhook (suspect ranking)"| ControlAPI
+    Alert -.->|"SLO alert prompts SRE"| CLI
+    CLI -->|"2. synapse log: GET /v1/changes"| ControlAPI
 ```
 
 ---
@@ -101,7 +105,7 @@ synapsestate/
 │   ├── control-api/        # Node.js + Postgres governance service (HTTP API)
 │   ├── dashboard/          # Read-mostly Next.js operations portal with OIDC RBAC
 │   ├── demo-shop/          # Realistic microservice app using SDK (fault-injection target)
-│   └── purger/             # TypeScript AST refactoring worker (ts-morph)
+│   └── purger/             # Read-only TypeScript AST scanner & qualifier (ts-morph)
 ├── packages/
 │   ├── lease/              # Shared cryptographic core: RFC 8785, Ed25519, verification
 │   ├── sdk/                # Pure TypeScript OpenFeature OverrideProvider & TelemetryHook
@@ -136,35 +140,43 @@ OpenFeature’s architecture cleanly accommodates SynapseState through two nativ
 
 ## 4. System Data Flows & Protocols
 
-### 4.1 State Delivery Protocol (Control Plane to SDK)
-State synchronization uses standard HTTP polling with `ETag` conditional caching:
+### 4.1 State Delivery Protocol: ETag Long-Polling (Control Plane to SDK)
+State synchronization uses HTTP long-polling with `ETag` conditional caching:
 
 ```
 Application SDK                                   Control API
       │                                                │
-      │─── GET /v1/sdk/state?env=prod ────────────────►│
+      │─── GET /v1/sdk/state?env=prod&wait=30s ───────►│
       │    If-None-Match: "33a64df5"                   │
       │    Authorization: Bearer <service_token>       │
       │                                                │
-      │◄── 304 Not Modified ───────────────────────────│ (No change, zero allocation)
-      │    (wait 5s + jitter)                          │
+      │    (Server holds connection up to 30s)         │
+      │    (Instant wake-up if state ETag changes)     │
       │                                                │
-      │─── GET /v1/sdk/state?env=prod ────────────────►│
+      │◄── 304 Not Modified ───────────────────────────│ (No change when 30s expires)
+      │    (re-poll immediately with backoff on error) │
+      │                                                │
+      │─── GET /v1/sdk/state?env=prod&wait=30s ───────►│
       │    If-None-Match: "33a64df5"                   │
       │                                                │
-      │◄── 200 OK (ETag: "7c91e2b8") ──────────────────│
-      │    { server_time, active_leases, revocations } │
+      │◄── 200 OK (ETag: "7c91e2b8") ──────────────────│ (Immediate delivery on update)
+      │    { server_time, active_leases, revocations,  │
+      │      key_revocations, registry_version }       │
       ▼                                                ▼
 ```
 
-- **Poll Interval:** Default 5 seconds with random jitter.
+- **Long-Poll Contract:** `GET /v1/sdk/state?env={env}&wait=30s` (maximum `60s`, default `0s` for plain polling).
+  - Single wire contract: Plain polling is simply `wait=0`.
+  - In-memory cache: Token hashes and active ETags are verified in Node.js memory, bypassing database queries on `304 Not Modified`.
+  - On single node, state mutations wake suspended requests via in-process `EventEmitter`; on clustered nodes, via Postgres `LISTEN`/`NOTIFY`.
+  - Reconnect storm defense: Random jitter (1–3s) and exponential backoff on connection drop.
 - **Payload Contents:**
-  - `server_time`: Authoritative server timestamp (used for propagation lag calculation).
+  - `server_time`: Authoritative server timestamp.
   - `active_leases`: Array of cryptographically signed lease envelopes.
-  - `revocations`: Array of signed lease revocation records issued after the SDK's watermark.
-  - `registry_version`: Current version sequence of the flag catalog.
-- **Authentication:** Service-scoped bearer tokens, stored hashed (SHA-256) server-side and rotatable.
-- **Separation of Concerns:** Flag definitions themselves (targeting rules, variants) do **not** flow through this API; they are managed by the delegate provider's native mechanism (e.g. Kubernetes ConfigMap).
+  - `revocations`: Array of signed lease revocation records. **Bounded retention:** Only includes revocations where `expires_at >= server_time` (automatically pruned when the underlying lease would have naturally expired).
+  - `key_revocations`: Array of signed key revocation records (`synapsestate/keyrevocation/v1\n`).
+  - `registry_version`: Monotonic sequence version of the flag catalog.
+- **Authentication:** Service-scoped bearer tokens, stored hashed (SHA-256) server-side and cached in memory.
 
 ### 4.2 Emergency Lease Creation Flow
 ```mermaid
@@ -176,18 +188,30 @@ sequenceDiagram
     participant PG as PostgreSQL
     participant SDK as Application SDK
 
-    SRE->>CLI: synapse lease create --flag checkout-v2 --value false --ttl 30m --reason "INC-142"
-    Note over CLI: Canonicalize JSON (RFC 8785)<br/>Sign with operator Ed25519 key
+    Note over SRE, CLI: 1. Server-Synchronized Timestamp
+    CLI->>API: GET /v1/time
+    API-->>CLI: 200 OK { server_time }
+    Note over CLI: Set issued_at = server_time<br/>Canonicalize JSON (RFC 8785)<br/>Sign with operator Ed25519 key
+
+    Note over CLI, API: 2. Lease Submission & Warning Check
     CLI->>API: POST /v1/leases { payload, sig }
-    Note over API: 1. Verify sig against pinned keyset<br/>2. Verify flag exists in registry<br/>3. Verify ttl <= MAX_TTL
-    API->>PG: INSERT lease + audit_event (One transaction)
-    PG-->>API: Success (ETag updated)
-    API-->>CLI: 201 Created (Lease ID: 01J...)
+    Note over API: 1. Verify sig against pinned keyset<br/>2. Validate abs(issued_at - now) <= SKEW_TOLERANCE<br/>3. Verify ttl <= MAX_TTL<br/>4. Soft catalog check (flags & telemetry)
+    API->>PG: INSERT lease + audit_pending (Atomic, no advisory lock)
+    PG-->>API: Success (ETag bumped, EventEmitter fires)
+    API-->>CLI: 201 Created { lease_id: "01J...", warnings: ["UNKNOWN_FLAG"?] }
     
-    SDK->>API: GET /v1/sdk/state (Next poll)
-    API-->>SDK: 200 OK (Lease payload + sig)
-    Note over SDK: Local verification against pinned keyset<br/>Set monotonic & wall deadlines<br/>Atomic update to active lease map
-    Note over SDK: All subsequent flag checks evaluate to false in memory
+    Note over CLI: If UNKNOWN_FLAG and absent from telemetry:<br/>Prompt single confirmation [y/N]
+
+    Note over API, SDK: 3. Instant Long-Poll Delivery (<100ms)
+    API-->>SDK: 200 OK (State changed!) { active_leases, revocations }
+    Note over SDK: Local verification against pinned keyset<br/>Set monotonic (process) & wall deadlines<br/>Atomic update to active lease map
+
+    Note over SRE, CLI: 4. Live Rollout Feedback Loop
+    loop Poll rollout status (every 2s for 30s)
+        CLI->>API: GET /v1/leases/01J.../rollout-status
+        API-->>CLI: 200 OK { instances_observed: 38/40, override_evals: 1420 }
+    end
+    Note over CLI: Status Line: Applied by 38/40 instances | 1,420 evaluations
 ```
 
 ### 4.3 Git Reconciliation & Promotion Flow
@@ -197,7 +221,7 @@ synapse promote <lease_id>
        ▼
 Control API (via GitHub App) opens Pull Request:
   - Branch: synapse/promote-lease-01J...
-  - Changes: Update flags.yaml (baseline flag definition)
+  - Target: flags/<env>/<flag_key>.yaml
   - Description: Links incident reason, lease ID, and operator signature
        │
        ▼
@@ -212,17 +236,25 @@ PR Merged into default branch
 GitHub Webhook triggers Control API:
   - State moves to PROMOTED
   - Generates signed revocation for the temporary lease
-  - Appends audit event linking merge commit SHA
+  - Inserts GIT_MERGE and LEASE_PROMOTED events into change_events and audit_pending
 ```
 
-### 4.4 Telemetry Collection Flow
+#### Directory Layout & GitOps Constraints
+* **Per-Flag File Structure:** Flag definitions live in individual files under `flags/<env>/<flag_key>.yaml`.
+  * *Charset Invariant:* Flag keys must match `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` (lowercase alphanumeric and hyphens). This satisfies Kubernetes ConfigMap key constraints (`[-._a-zA-Z0-9]+`) and prevents file collisions on case-insensitive filesystems (e.g. Windows/macOS). CI lints enforce `filename == key`.
+  * *Schema Unification:* Each `<flag_key>.yaml` houses both governance registry metadata (`class`, `owner`, `description`) and delegate variant definitions (`variants`, `defaultVariant`).
+* **Delegate Single-File Merging:** For OpenFeature providers that require a single file path rather than a directory source, a pre-commit hook or CI pipeline merges `flags/<env>/*.yaml` into a single `dist/<env>/flags.json` ConfigMap artifact.
+* **Stale PR & Conflict Handling:** Concurrent promotions on different flags never collide. If two promotions target the same flag, the second PR is flagged `STALE_PR_CONFLICT` by the Control API, prompting automated rebase or human resolution.
+* **Provider Scope:** Automated Git promotion in v1 is scoped strictly to Git-backed providers (e.g. `flagd` in-process, JSON/YAML file providers). For SaaS or external-database providers (e.g. Unleash), baselines are managed externally; promotion to Git is documented as out of scope for v1.
+
+### 4.4 Telemetry Collection & Bulkhead Pipeline
 1. **In-Memory Buffering:** The `TelemetryHook` increments counters in a local hash map keyed by `(flag_key, variant, reason)`.
-2. **Periodic Flushing:** Every 60 seconds (configurable), the worker flushes the aggregate batch to `POST /v1/telemetry/batches`.
-3. **Idempotency:** Batches carry `{ instance_id, batch_id, window_start, window_end, metrics: [...] }`. The combination of `(instance_id, batch_id)` has a unique index in PostgreSQL, making retries safe.
-4. **Non-Blocking Guarantee:** The buffer has a fixed capacity (default 10,000 tuples). If saturated, older metrics are dropped and a `dropped_total` counter is incremented. The telemetry path never blocks application threads and never throws exceptions.
-5. **Propagation Lag Measurement:** When an SDK first observes and verifies a new lease, it reports:
+2. **Periodic Flushing:** Flushes every **5 minutes** (default) with 30s randomized jitter to `POST /v1/telemetry/batches`. (Staleness requires 35–45 day observation, so 5-minute granularity provides 5× lower database write volume without sacrificing accuracy).
+3. **Sorted Key Invariant:** Batches sort metric keys deterministically by `(flag_key ASC, variant ASC, reason ASC)` prior to serialization, preventing PostgreSQL row-lock deadlocks during concurrent multi-row upserts.
+4. **Dedicated Connection Pool & Load Shedding:** Telemetry ingestion is served by an isolated PostgreSQL connection pool. Under peak load, the Control API sheds telemetry with `429 Too Many Requests` or `503 Service Unavailable`. The SDK catches these errors non-blockingly, drops the batch, and increments `dropped_total`. **Telemetry load never starves or blocks emergency lease operations.**
+5. **Propagation Lag Measurement:** Because `lease.issued_at` is synchronized via `GET /v1/time`, the client calculation:
    $$\text{propagation\_lag\_ms} = \text{server\_time}_{\text{poll\_response}} - \text{lease.issued\_at}$$
-   Both timestamps originate from the Control API server clock, eliminating client clock skew from propagation metrics.
+   is strictly based on the server clock, eliminating client clock drift.
 
 ---
 
@@ -249,20 +281,52 @@ All emergency leases are constructed as deterministic JSON objects canonicalized
 - **Domain Separation:** Before signing, a prefix byte string (`"synapsestate/lease/v1\n"`) is prepended to the canonical payload bytes. This guarantees that signatures cannot be transplanted across protocol message types.
 - **Revocation Message Schema:** Revocations use domain prefix `"synapsestate/revocation/v1\n"` over canonical payload:
   `{ "v": 1, "lease_id": "...", "revoked_at": "...", "kid": "...", "reason": "..." }`.
+- **Signed Key Revocation Schema:** Key revocations use domain prefix `"synapsestate/keyrevocation/v1\n"` over canonical payload:
+  `{ "v": 1, "kid": "compromised-key-id", "revoked_at": "...", "revoked_by_kid": "security-admin", "reason": "..." }`.
+  Key revocations must be signed by an active key possessing the `key_revoker` role in the pinned keyset.
 
-### 5.2 Trust Root Architecture (The Pinned Keyset)
-To protect against control-plane compromise:
-- **No Keyset Distribution via Control API:** The Control API does **not** serve or manage the public keyset used by workload SDKs.
-- **Git-Managed Keyset:** The trusted keyset (`kid -> { publicKey, role, status }`) is committed to Git and mounted into workload pods as a Kubernetes ConfigMap file.
-- **Zero Forgery Under Compromise:** If an attacker gains full administrative access to the Control API and PostgreSQL, they **cannot forge emergency overrides**, because application SDKs verify signatures strictly against their locally mounted, Git-audited keyset.
+### 5.2 Trust Root Architecture, Pluggable Signer & Keyset Lifecycle
+To protect against control-plane compromise while preserving rapid revocation agility:
+
+#### 1. Operator Key Storage: Pluggable Signer Interface
+The CLI uses an extensible `Signer` interface:
+```typescript
+export interface Signer {
+  readonly kid: string;
+  sign(message: Uint8Array): Promise<string>; // base64url Ed25519 signature
+}
+```
+* **Default Pure-TypeScript Implementation (`EncryptedKeyfileSigner`):**
+  - Stored at `~/.synapse/keys/<kid>.key`.
+  - Encrypted with AES-256-GCM using keys derived via `crypto.scrypt` with a mandatory non-empty passphrase.
+  - Header explicitly specifies algorithm version, salt, scrypt parameters ($N, r, p$), and initialization vector.
+  - AAD (Additional Authenticated Data) cryptographically binds the `kid` and file format version to the ciphertext.
+  - Filesystem hygiene: Strictly enforces POSIX file mode `0600` (fails if group/world readable) and logs security warnings on Windows.
+* **Separation from SSH Credentials:** SynapseState strictly avoids reusing `~/.ssh/id_ed25519` directly, preserving cryptographic trust domains. Pluggable signer implementations (such as `@napi-rs/keyring` for OS Keychain or SSH-agent / SSHSIG) can be configured without modifying the core cryptographic engine.
+* **On-Call Redundancy & Generation Tooling:** Team policies mandate at least **two authorized key holders** on every on-call rotation. The CLI provides `synapse key generate` and `synapse key export-public` to automate keyset PR generation.
+
+#### 2. Git-Managed Keyset & Bounded Cache Fallback
+* **Git Source of Truth:** The trusted keyset (`kid -> { publicKey, roles, max_ttl_seconds, status }`) is committed to Git and mounted into workload pods as a Kubernetes ConfigMap volume.
+  - Per-key `max_ttl_seconds` restricts blast radius (e.g. 1 hour default for standard SREs, 24 hours reserved for principal leads).
+* **Hot Reload via File-Hash Polling:** SDKs poll `SHA-256(fileContent)` of `/etc/synapse/keyset/keyset.json` every **10 seconds**.
+  - *Invariant:* Does not use `fs.watch` (which fails on Kubernetes symlink swaps) and prohibits `subPath` mounts (which never receive ConfigMap updates).
+* **Bounded In-Memory Fallback Cache:**
+  - The SDK caches the parsed keyset in memory alongside a `keyset_verified_at` timestamp and exports `synapse_sdk_keyset_age_seconds`.
+  - **Bounded Staleness Ceiling:** If filesystem reads repeatedly fail due to volume turbulence, the cache is honored up to a maximum threshold of **15 minutes**. Beyond 15 minutes of failed reads, the SDK stops accepting *new* leases (fail-static for overrides). Already-verified leases continue until their deadlines elapse, and baseline flag evaluation continues unaffected via the delegate provider.
+  - **Cold-Start Resilience:** If a pod starts cold with an unreadable keyset file, it boots with overrides disabled and exports a degraded metric (`synapse_sdk_keyset_status{state="unreadable"}`), without failing pod liveness or readiness probes.
+  - **Read Hygiene:** Retries on transient `ENOENT`/`EIO` symlink swap errors; parse errors retain the last valid keyset; a valid empty JSON `{}` is processed as a legitimate "revoke all keys" command, immediately purging all active leases.
+* **Signed Fast-Path Key Invalidation:** The Control API distributes signed key revocations (`synapsestate/keyrevocation/v1\n`). These are deny-only: the Control API can revoke a key immediately across long-poll streams, but cannot add trust or resurrect revoked keys.
+* **In-Flight Lease Re-validation:** Whenever a keyset reload or key revocation occurs, the SDK re-evaluates all active leases in memory. Any lease signed by a missing or revoked key is immediately evicted.
+* **Air-Gapped Emergency Fallback Directory:** In addition to long-polling the Control API, SDKs scan `/etc/synapse/emergency-leases/*.json` on startup and on file-hash changes. SREs can apply overrides via `kubectl apply` directly during control plane outages.
 
 ### 5.3 SDK Dual-Clock Verification Algorithm
 To protect against both NTP clock tampering and replay attacks, SDKs enforce dual-clock bounds:
 
 ```python
-def verify_lease(envelope, pinned_keyset, now_wall, now_mono):
+def verify_lease(envelope, pinned_keyset, active_key_revocations, now_wall, now_mono):
     # 1. Schema and Identity Check
     if envelope.v != 1: return REJECT_UNSUPPORTED_VERSION
+    if envelope.payload.kid in active_key_revocations: return REJECT_REVOKED_KEY
     key_entry = pinned_keyset.get(envelope.payload.kid)
     if not key_entry or key_entry.status != "ACTIVE": return REJECT_UNKNOWN_KEY
     if "lease_signer" not in key_entry.roles: return REJECT_UNAUTHORIZED_ROLE
@@ -273,21 +337,22 @@ def verify_lease(envelope, pinned_keyset, now_wall, now_mono):
     if not ed25519_verify(key_entry.public_key, message, envelope.sig):
         return REJECT_INVALID_SIGNATURE
 
-    # 3. Parameter Validation
+    # 3. Parameter Validation (Enforce key-specific and global TTL caps)
     ttl = envelope.payload.ttl_seconds
-    if ttl <= 0 or ttl > SDK_MAX_TTL: return REJECT_INVALID_TTL
+    max_allowed_ttl = min(SDK_MAX_TTL, key_entry.get("max_ttl_seconds", SDK_MAX_TTL))
+    if ttl <= 0 or ttl > max_allowed_ttl: return REJECT_INVALID_TTL
 
     # 4. Anti-Future Skew Check
     issued_at = parse_iso8601(envelope.payload.issued_at)
     if issued_at > now_wall + SKEW_TOLERANCE:
         return REJECT_FUTURE_TIMESTAMP
 
-    # 5. Wall Clock Expiry
+    # 5. Wall Clock Expiry (Absolute safety ceiling across pod restarts)
     wall_expiry = issued_at + ttl + SKEW_TOLERANCE
     if now_wall >= wall_expiry:
         return REJECT_EXPIRED
 
-    # 6. Monotonic Relative Expiry (Captured on first sight)
+    # 6. Monotonic Relative Expiry (Scoped strictly per process incarnation)
     if envelope.payload.lease_id not in local_lease_store:
         first_seen_mono = now_mono
     else:
@@ -295,7 +360,7 @@ def verify_lease(envelope, pinned_keyset, now_wall, now_mono):
         
     mono_expiry = first_seen_mono + ttl
 
-    # 7. Effective Expiry (Strict Minimum)
+    # 7. Effective Expiry (Strict Minimum of wall and process-monotonic deadlines)
     effective_expiry = min(wall_expiry, mono_expiry)
 
     # 8. Local Revocation Check
@@ -305,13 +370,16 @@ def verify_lease(envelope, pinned_keyset, now_wall, now_mono):
     return ACCEPT_VALID_LEASE
 ```
 
-- **Guaranteed Invariant:** A lease is honored for at most `ttl_seconds + SKEW_TOLERANCE` after issuance, and at most `ttl_seconds` from when the SDK first observes it.
+- **Process-Incarnation Monotonic Invariant:** Monotonic expiry (`first_seen_mono + ttl`) protects against wall-clock NTP jumps occurring within a single process incarnation. Upon pod crash or cold restart, the monotonic counter resets, but the absolute wall-clock ceiling (`issued_at + ttl + SKEW_TOLERANCE`) unconditionally bounds the lease lifetime.
+- **Supersession & Conflict Resolution:** When multiple valid leases exist for the same `(flag_key, env)`:
+  - The winner is deterministically chosen by `issued_at DESC`, breaking ties with `lease_id (ULID) DESC`.
+  - Superseded leases are dropped immediately without waiting for TTL expiry.
 
 ### 5.4 Fail-Static Offline Behavior
 When the Control API is unreachable:
 - **Fail-Static:** The SDK continues honoring already-verified leases until their individual monotonic/wall deadlines elapse. Leases are never automatically extended.
+- **Air-Gapped Out-of-Band Channel:** If the Control API is down, operators can mount signed leases via ConfigMap directly into application pods.
 - **Delegate Continuity:** Regular evaluations fall through to the delegate provider unaffected.
-- **Partition Trade-off:** Revocation of a lease cannot reach partitioned SDKs; the lease will persist until its natural TTL expires. This bounded exposure is why `MAX_TTL` is strictly capped (default 60 minutes).
 
 ---
 
@@ -347,7 +415,7 @@ stateDiagram-v2
 ## 7. Relational Data Model (PostgreSQL)
 
 ```sql
--- Core Flag Registry (Synchronized from Git flags.yaml)
+-- Core Flag Registry (Synchronized from Git flags/<env>/*.yaml)
 CREATE TABLE flags (
     key VARCHAR(128) NOT NULL,
     env VARCHAR(64) NOT NULL,
@@ -360,7 +428,7 @@ CREATE TABLE flags (
     PRIMARY KEY (key, env)
 );
 
--- Break-Glass Emergency Leases
+-- Break-Glass Emergency Leases (Soft Reference to flags: no FK constraint)
 CREATE TABLE leases (
     lease_id VARCHAR(32) PRIMARY KEY, -- ULID
     flag_key VARCHAR(128) NOT NULL,
@@ -369,12 +437,12 @@ CREATE TABLE leases (
     sig TEXT NOT NULL,
     state VARCHAR(32) NOT NULL CHECK (state IN ('ACTIVE', 'SUPERSEDED', 'REVOKED', 'EXPIRED', 'PROMOTED')),
     issued_at TIMESTAMPTZ NOT NULL,
-    ttl_seconds INT NOT NULL CHECK (ttl_seconds > 0 AND ttl_seconds <= 3600),
+    ttl_seconds INT NOT NULL CHECK (ttl_seconds > 0 AND ttl_seconds <= 86400),
     expires_at TIMESTAMPTZ NOT NULL,
     created_by_kid VARCHAR(128) NOT NULL,
     promote_pr_url TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    FOREIGN KEY (flag_key, env) REFERENCES flags(key, env)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- NOTE: Unconstrained flag_key/env guarantees emergency overrides never fail during catalog sync lag
 );
 
 -- Partial Unique Index: Only ONE active lease per flag per environment
@@ -382,25 +450,43 @@ CREATE UNIQUE INDEX idx_active_lease_per_flag_env
 ON leases (flag_key, env) 
 WHERE state = 'ACTIVE';
 
--- Signed Lease Revocations
+CREATE INDEX idx_leases_expires_at ON leases (expires_at) WHERE state = 'ACTIVE';
+
+-- Signed Lease Revocations (Exact retention: expires_at mirrors lease target)
 CREATE TABLE revocations (
     lease_id VARCHAR(32) PRIMARY KEY REFERENCES leases(lease_id),
+    payload JSONB NOT NULL,
+    sig TEXT NOT NULL,
+    revoked_by_kid VARCHAR(128) NOT NULL,
+    revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL -- Target lease expires_at + SKEW_TOLERANCE
+);
+
+CREATE INDEX idx_revocations_expires_at ON revocations (expires_at);
+
+-- Signed Fast-Path Key Revocations
+CREATE TABLE key_revocations (
+    kid VARCHAR(128) PRIMARY KEY,
     payload JSONB NOT NULL,
     sig TEXT NOT NULL,
     revoked_by_kid VARCHAR(128) NOT NULL,
     revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Registered Microservice Workloads (Used for Stale Coverage Checks)
+-- Registered Microservice Workloads (Per-Flag Consumer Lifecycle)
 CREATE TABLE services (
     name VARCHAR(128) NOT NULL,
     env VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SILENT', 'RETIRED')),
+    first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen TIMESTAMPTZ NOT NULL,
+    silent_since TIMESTAMPTZ,
+    retired_at TIMESTAMPTZ,
     sdk_version VARCHAR(32) NOT NULL,
     PRIMARY KEY (name, env)
 );
 
--- Daily Aggregated Flag Telemetry (Zero Context Egress)
+-- Daily Aggregated Flag Telemetry (HOT-optimized fillfactor, sorted key updates)
 CREATE TABLE flag_usage_daily (
     flag_key VARCHAR(128) NOT NULL,
     env VARCHAR(64) NOT NULL,
@@ -411,18 +497,41 @@ CREATE TABLE flag_usage_daily (
     first_seen TIMESTAMPTZ NOT NULL,
     last_seen TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (flag_key, env, service, variant, usage_date)
+) WITH (fillfactor = 70);
+
+-- Asynchronous Staging Buffer for Audit Events (Zero request lock contention)
+CREATE TABLE audit_pending (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    actor VARCHAR(128) NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    payload JSONB NOT NULL
 );
 
--- Cryptographic Append-Only Audit Ledger
+-- Cryptographically Sealed Append-Only Audit Ledger
 CREATE TABLE audit_events (
     seq BIGSERIAL PRIMARY KEY,
-    ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ts TIMESTAMPTZ NOT NULL,
     actor VARCHAR(128) NOT NULL,
     event_type VARCHAR(64) NOT NULL,
     payload JSONB NOT NULL,
     prev_hash VARCHAR(64) NOT NULL,
     hash VARCHAR(64) NOT NULL
 );
+
+-- Incident & Audit Change Events (Powers synapse log pull-based attribution)
+CREATE TABLE change_events (
+    id BIGSERIAL PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL CHECK (event_type IN ('LEASE_CREATED', 'LEASE_REVOKED', 'LEASE_SUPERSEDED', 'LEASE_EXPIRED', 'LEASE_PROMOTED', 'GIT_MERGE')),
+    env VARCHAR(64) NOT NULL,
+    flag_key VARCHAR(128),
+    actor VARCHAR(128) NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    payload JSONB NOT NULL
+);
+
+CREATE INDEX idx_change_events_lookup ON change_events (env, occurred_at DESC);
+CREATE INDEX idx_change_events_flag ON change_events (flag_key, env, occurred_at DESC) WHERE flag_key IS NOT NULL;
 
 -- API Service & Automation Tokens
 CREATE TABLE api_tokens (
@@ -438,76 +547,89 @@ CREATE TABLE api_tokens (
 
 ---
 
-## 8. Tamper-Evident Audit Ledger & External Anchoring
+## 8. Tamper-Evident Audit Ledger & Asynchronous Sealer
 
-1. **Sequential Hash Chaining:** Every entry in `audit_events` includes:
-   $$\text{hash}_n = \text{SHA-256}(\text{hash}_{n-1} \parallel \text{RFC8785Canonical}(\text{event}_n))$$
-2. **Advisory Lock Serialization:** Concurrent writes are strictly serialized via Postgres advisory locks (`pg_advisory_xact_lock`), preventing split-chain forks.
-3. **External Checkpoint Anchoring:** To prevent a rogue database administrator from rewriting historical records:
-   - A scheduled cron job computes a signed **checkpoint**:
-     `{ "last_seq": 10452, "last_hash": "e3b0c442...", "timestamp": "2026-10-06T00:00:00Z" }`
-   - The checkpoint is signed with an isolated anchoring key and written to an immutable external target (a protected Git branch with signed commits, or an S3 bucket with Object Lock enabled).
-4. **Verification Utility:** SREs and compliance officers can run:
-   ```bash
-   synapse audit verify --from-genesis
-   ```
-   The CLI fetches the chain, recalculates all hashes, and validates them against external anchored checkpoints.
+### 8.1 Request-Path Decoupling
+In the same short database transaction as any administrative state change (e.g. lease creation, revocation, or Git promotion webhook), the Control API inserts an un-hashed record into `audit_pending` and an entry into `change_events`. No global advisory lock is acquired on the request path, ensuring zero lock contention or latency penalty during high-pressure incidents.
+
+### 8.2 In-Process Asynchronous Sealer
+A background sealing loop runs directly within the `control-api` service process, requiring no external secrets or separate long-running daemon:
+
+1. **Transaction-Level Advisory Locking:**
+   - To support multiple Control API replicas and compatibility with PgBouncer in transaction pooling mode, the sealer executes:
+     ```sql
+     SELECT pg_try_advisory_xact_lock(hashtext('synapse_audit_sealer'));
+     ```
+     inside each seal transaction. If another replica or connection currently holds the lock, `pg_try_advisory_xact_lock` returns `false`, and the tick skips cleanly without waiting.
+   - *Invariant:* Avoids session-level advisory locks (`pg_try_advisory_lock`), which silently break or leak when connections are recycled by pools or load balancers.
+2. **Defensive Loop Hygiene:**
+   - **Self-Rescheduling Timer:** Implemented using recursive `setTimeout` with an `isSealing` in-flight guard (never `setInterval`), preventing overlapping batch executions if an individual database batch experiences network or disk latency.
+   - **Exception Containment:** The sealing loop is wrapped in a top-level `try/catch` block, ensuring unexpected database errors or rejected promises log structured errors rather than crashing the Node.js runtime.
+   - **Capped Batch Size:** Each transaction processes at most **100 events** (`LIMIT 100`), preventing event-loop starvation and bounded heap consumption.
+   - **Graceful Shutdown:** The process registers a `SIGTERM` handler that waits for the active in-flight sealing batch to commit before closing the database pool and exiting.
+3. **Deterministic Seal Ordering:**
+   - Chain order is strictly defined as **seal order**, not insertion `id`.
+   - The sealer assigns contiguous sequence numbers (`seq`) in `audit_events`. Because concurrent requests may commit out of order into `audit_pending`, the sealer reads unsealed events ordered by `created_at ASC, id ASC`, computes:
+     $$\text{hash}_n = \text{SHA-256}(\text{hash}_{n-1} \parallel \text{RFC8785Canonical}(\text{event}_n))$$
+     inserts them into `audit_events`, and deletes them from `audit_pending` within the single locked transaction.
+4. **Stall Observability:**
+   - The sealer records the oldest pending event timestamp and exports `synapse_audit_pending_age_seconds`. An alert triggers if pending age exceeds 30 seconds, immediately highlighting any stalled sealer.
+
+### 8.3 Isolated External Checkpoint Signer
+To maintain strict cryptographic isolation between the read/write API and the external trust anchor:
+- **Separate Kubernetes CronJob:** Periodic checkpointing runs as an independent Kubernetes CronJob (`synapse-checkpoint-signer`), completely isolated from the `control-api` process.
+- **Isolated Key Material:** The CronJob possesses a dedicated, highly restricted Ed25519 anchoring key and a write-only IAM role to an immutable storage target (e.g., protected Git repository or AWS S3 Object Lock in Compliance Mode).
+- **Security Boundary:** Even if the `control-api` container or database connection is compromised, the attacker cannot forge historical checkpoints on the immutable external store.
+
+### 8.4 Verification Utility
+SREs and compliance auditors verify ledger integrity using:
+```bash
+synapse audit verify --from-genesis
+```
+The command recalculates the SHA-256 chain sequentially from genesis across `audit_events`, validates hash continuity, and verifies matching signed checkpoints against the external write-once store.
 
 ---
 
-## 9. Telemetry-Driven Flag Retirement (`synapse-purger`)
+## 9. Telemetry-Driven Stale Detection & Scanner (`synapse-purger`)
 
 ```mermaid
 flowchart TD
-    subgraph SignalQualification ["1. Qualification Engine"]
-        UsageDB[("flag_usage_daily")]
-        SvcDB[("services")]
-        Rule{"Candidate Rule Check:<br/>1. class == release<br/>2. Single variant >= 30 days<br/>3. 100% service coverage<br/>4. No active lease/promotion"}
+    subgraph SignalQualification ["1. Signal Qualification Engine"]
+        UsageDB[("flag_usage_daily<br/>(35-45 Day History)")]
+        SvcDB[("services<br/>(ACTIVE / SILENT / RETIRED)")]
+        Rule{"Candidate Rule Check:<br/>1. class == release<br/>2. Single variant >= 35-45 days<br/>3. All evaluating services ACTIVE or RETIRED<br/>4. Zero active leases / promotions"}
         UsageDB --> Rule
         SvcDB --> Rule
     end
 
-    subgraph ASTRefactoring ["2. AST Refactoring Pipeline (ts-morph)"]
-        Rule -->|"Qualified Candidate"| Clone["Clone Target App Repository"]
-        Clone --> Scan["Scan AST for Literal Flag Keys"]
-        Scan --> Pattern{"Pattern Supported?"}
-        Pattern -->|"Yes"| Rewrite["Inline winning branch<br/>Delete dead code<br/>Prune unused imports"]
-        Pattern -->|"No / Ambiguous"| Refuse["Emit Refusal Report"]
+    subgraph ReadOnlyScanner ["2. Read-Only Codebase Scanner (ts-morph)"]
+        Rule -->|"Qualified Flag"| Clone["Scan Target Repository Code"]
+        Clone --> Scan["Map Literal AST Call Sites & Callers"]
+        Scan --> ConsumerCheck{"AST Consumers match<br/>evaluated services?"}
+        ConsumerCheck -->|"Mismatch (Undeclared caller)"| Warn["Emit Warning Report"]
+        ConsumerCheck -->|"Match"| Export["Export (flag, winning_variant)"]
     end
 
-    subgraph VerificationGate ["3. Pre-Flight Verification Gate"]
-        Rewrite --> TypeCheck["tsc --noEmit"]
-        Rewrite --> Linter["npm run lint"]
-        Rewrite --> Tests["npm test"]
-    end
-
-    subgraph OutputAction ["4. Output Action"]
-        TypeCheck & Linter & Tests -->|"All Passed"| PR["Open GitHub Draft PR<br/>Attach telemetry evidence"]
-        Refuse --> Report["Publish Refusal Report to Issue / Log"]
+    subgraph ReportingSurface ["3. Reporting Surface"]
+        Export --> Issue["GitHub Issue / CLI Summary<br/>Structured input for Piranha / GritQL"]
+        Warn --> Refuse["Publish Refusal Report (Blocking services / complex AST)"]
     end
 ```
 
 ### 9.1 Stale Candidate Qualification Rule
-A flag qualifies as a `stale_candidate` if and only if all four conditions hold:
-1. **Lifecycle Class:** `class == 'release'`. (Flags categorized as `killswitch` or `permanent` are strictly excluded).
-2. **Invariance Window:** The flag has served a single variant continuously for $\ge 30\text{ days}$ (or had 0 evaluations for 30 days).
-3. **Telemetry Coverage:** Every service registered in `services` for the target environment has reported telemetry within the 30-day window. If any registered service is silent, the status is **unknown**, not unused.
-4. **Lease Quiescence:** No active emergency lease or recent promotion exists for the flag.
+A flag qualifies as a `stale_candidate` if and only if all five conditions hold:
+1. **Lifecycle Class:** `class == 'release'`. (`killswitch` and `permanent` flags are strictly excluded).
+2. **Invariance Window:** The flag has served a single variant continuously for $\ge 35\text{ to } 45\text{ days}$ (or had 0 evaluations across the entire window).
+3. **Per-Flag Consumer Coverage:** Every service $s$ that has recorded evaluations for the flag within data retention has status $\in \{\text{ACTIVE}, \text{RETIRED}\}$.
+   - If any evaluating service is `SILENT` (no heartbeat for $> 14\text{ days}$), the flag is blocked from retirement and highlighted as blocked by service $s$.
+   - SREs unblock retirement via `synapse service retire --service <name>`.
+4. **AST Reference Consistency:** A read-only AST scan of application repositories detects call sites only in known consumer services.
+5. **Lease Quiescence:** No active emergency lease or un-finalized promotion exists.
 
-### 9.2 Refactoring Scope & Refusal-by-Default
-`synapse-purger` operates on TypeScript codebases using `ts-morph`:
-
-* **Supported Patterns (V1):**
-  - Literal boolean check: `if (await client.getBooleanValue('flag-key', defaultVal))`
-  - Inverted boolean check: `if (!await client.getBooleanValue('flag-key', defaultVal))`
-  - Ternary operator: `const mode = (await client.getBooleanValue('k', false)) ? 'new' : 'old';`
-  - Single-use variable assignment: `const enabled = await client.getBooleanValue('k', false); if (enabled) { ... }`
-* **Strict Refusal-by-Default:** The purger will **refuse to modify code** and generate a **Refusal Report** if it encounters:
-  - Non-literal or dynamically constructed keys (`client.getBooleanValue(config.key)`).
-  - Wrapper functions that abstract client evaluation.
-  - Multi-variant string or JSON flags in v1.
-  - Flag references inside test mocks or fixtures that it cannot safely rewrite.
-* **Safety Invariant:** The purger GitHub App has permissions only to create branches and open Draft Pull Requests. **It has zero permission to merge code.**
+### 9.2 Scanner Scope & Security Boundaries
+* **Read-Only Scanner First:** `synapse-purger` operates strictly as a read-only AST scanner and candidate qualifier.
+* **No Untrusted Test Execution:** The purger **never** runs `npm test`, `npm run lint`, or arbitrary scripts inside target repositories while holding GitHub App credentials.
+* **Tool Interoperability:** Generates structured reports containing exact file paths, line numbers, and `(flag_key, winning_variant)` tuples. This report directly powers external battle-tested refactoring tools (e.g. Uber Piranha, GritQL) or human-reviewed pull requests.
 
 ---
 
@@ -516,11 +638,12 @@ A flag qualifies as a `stale_candidate` if and only if all four conditions hold:
 | Threat Scenario | Impact | Primary Architectural Mitigation | Residual Risk |
 |---|---|---|---|
 | **Compromised Control API or DB** | Malicious overrides injected into cluster | SDKs verify Ed25519 signatures against pinned keyset mounted from Git. Control plane cannot sign leases. | Bounded replay within active TTL window; delayed revocation if partitioned. |
-| **Stolen Operator Private Key** | Attacker signs unauthorized overrides | Short maximum TTL (30 min); key revocation committed to Git keyset; hardware tokens (YubiKey) where available. | Unauthorized override active until key is removed or lease expires. |
-| **Stolen Workload Service Token** | False telemetry injection; read state | Scoped tokens, hashed storage, rate limiting, IP binding where possible. | Poisoned usage metrics; purger outputs Draft PRs requiring human review. |
-| **Replay of Expired Lease** | Historic override re-applied | Dual-clock validation: `issued_at` + TTL + skew check combined with monotonic timer. | Severe node clock drift combined with cold pod restart (mitigated by server timestamp age checks). |
-| **Flawed Purger Code PR** | Code defect introduced into master | Purger runs `tsc --noEmit`, linters, and repository test suites; opens **Draft PR only**; human review required. | Flawed test suite in target repository that passes despite logic errors. |
-| **Database Tampering by DBA** | Historical audit trail modified | Append-only SHA-256 hash chaining combined with periodic signed checkpoints anchored to external object lock. | Modifications occurring between the last signed checkpoint and detection. |
+| **Stolen Operator Private Key** | Attacker signs unauthorized overrides | Fast-path key revocation envelope (`synapsestate/keyrevocation/v1\n`); SDK file-hash polling (10s); per-key `max_ttl_seconds` caps. | Window bounded by per-key TTL or fast-path revocation delivery. |
+| **Stolen Workload Service Token** | False telemetry injection; read state | Scoped tokens, hashed storage, rate limiting, isolated telemetry connection pool. | Poisoned usage metrics; purger outputs advisory reports, requiring human merge. |
+| **Replay of Expired Lease** | Historic override re-applied | Dual-clock validation: process-scoped monotonic timer combined with absolute wall-clock ceiling (`issued_at + ttl + SKEW_TOLERANCE`). | Severe node clock drift combined with cold pod restart (bounded by server timestamp age check). |
+| **Control API / DB Outage** | SRE blocked from mitigating active incident | Air-gapped fallback: SDK reads signed leases directly from `/etc/synapse/emergency-leases/` via `kubectl apply`. | Requires operator access to apply Kubernetes ConfigMaps directly. |
+| **Untrusted Code Execution in Purger** | Credential exfiltration via test/build scripts | Purger operates strictly as a read-only AST scanner; never executes target repository test suites or build commands. | Flawed AST parser logic in read-only analysis. |
+| **Database Tampering by DBA** | Historical audit trail modified | Append-only SHA-256 hash chaining sealed asynchronously, anchored to external object lock. | Modifications occurring between the last signed checkpoint and detection. |
 
 ---
 
@@ -532,9 +655,12 @@ A flag qualifies as a `stale_candidate` if and only if all four conditions hold:
   - `synapse_lease_transitions_total{from, to}`: State transition counter.
   - `synapse_lease_propagation_seconds`: Histogram of propagation latency.
   - `synapse_state_poll_duration_seconds`: Histogram of `/v1/sdk/state` request latency.
-  - `synapse_audit_chain_length`: Monotonic counter of audit events.
+  - `synapse_audit_pending_queue_size`: Depth of unsealed events in `audit_pending`.
+  - `synapse_audit_pending_age_seconds`: Age of the oldest unsealed event in `audit_pending` (alerts if > 30s).
+  - `synapse_audit_chain_length`: Monotonic counter of sealed audit events.
 - **Application SDK:**
   - `synapse_sdk_state_age_seconds`: Age of the most recently applied state generation.
+  - `synapse_sdk_keyset_age_seconds`: Elapsed time since the last successful keyset read from disk (alerts if > 15m).
   - `synapse_sdk_active_overrides`: Number of overrides currently applied in memory.
   - `synapse_sdk_poll_errors_total`: Counter of failed state poll requests.
   - `synapse_sdk_telemetry_dropped_total`: Counter of dropped telemetry batches.
@@ -543,21 +669,38 @@ A flag qualifies as a `stale_candidate` if and only if all four conditions hold:
 
 | Metric Boundary | Target Objective | Verification Strategy |
 |---|---|---|
-| **Lease Propagation Lag** | $p95 \le 10\text{ s}$ under 5s polling | Measured via server-clock delta under k6 load tests. |
+| **Lease Propagation Lag** | $p95 \le 10\text{ s}$ under long-polling | Measured via server-clock delta under k6 load tests. |
 | **Lease Lifetime Correctness** | **Zero** leases honored past `TTL + SKEW_TOLERANCE` | Validated via `fast-check` property tests and clock-skew chaos drills. |
-| **State API Availability** | 99.5% over 30 days (Single node) | Measured via blackbox probes. (SDKs fail-static during API downtime). |
+| **State API Availability** | 99.5% over 30 days (Single node) | Measured via blackbox probes. (SDKs fail-static; air-gapped fallback available). |
 | **Evaluation Path Safety** | 100% Availability (0 runtime crashes) | Automated exception handling falling through to delegate provider. |
 
 ### 11.3 Incident Attribution Engine ("What Changed?")
-1. Alertmanager receives an SLO burn-rate alert and sends a webhook to `POST /v1/alerts/webhook`.
-2. The Control API queries flag change events within a 30-minute window for the alerting service.
-3. Suspect events are ranked by:
-   - Temporal recency relative to the alert firing time.
-   - Microservice evaluation overlap (whether the alerting service actually called the flag).
-4. Results are posted as Grafana annotations and pushed to the alert notification channel, providing a suggested mitigation command:
-   ```bash
-   synapse lease create --flag checkout-v2 --env prod --value false --ttl 30m --reason "INC-142"
-   ```
+Rather than relying on fragile incoming webhooks, chat glue, or hard dependencies on third-party incident tooling, SynapseState provides a **pull-based investigation workflow** via the CLI:
+
+```bash
+synapse log --service checkout-service --since 30m [--offline] [--json]
+```
+
+1. **Change Event Retrieval:**
+   - **Online Mode (Default):** The CLI queries `GET /v1/changes?service=checkout-service&since=30m`. The Control API queries its `change_events` table (populated by Git merge webhooks and lease lifecycle actions), eliminating live GitHub API requests and keeping Git credentials off operator laptops.
+   - **Offline Mode (`--offline`):** If the Control API is unreachable during an infrastructure outage, the CLI falls back directly to the local Git clone (inspecting recent commits to `flags/<env>/`) and local lease files, ensuring attribution never creates a single point of failure.
+2. **Pure-Function Attribution Ranking:**
+   - Suspects are ranked by a deterministic, pure function in a shared core package:
+     ```typescript
+     export function rankSuspects(
+       events: ChangeEvent[], 
+       evaluations: FlagEvaluationRecord[], 
+       targetService: string
+     ): RankedSuspect[]
+     ```
+   - Ranks candidates by temporal recency combined with service-specific evaluation volume from `flag_usage_daily`.
+   - The `--json` flag allows seamless consumption by future automation, Slack bots, or dashboard panels without modifying ranking logic.
+3. **Type-Aware Mitigation Suggestions:**
+   - For identified suspect flags, the output generates an actionable, ready-to-run override command:
+     ```bash
+     synapse lease create --flag checkout-v2 --env prod --value false --ttl 30m --reason "INC-142: High error rate"
+     ```
+   - *Type Safety:* The suggested `--value` is derived dynamically from the flag registry or historical telemetry variants (e.g. suggesting `"off"`, `0`, or `false` based on the flag's schema), rather than blindly defaulting to boolean `false`.
 
 ---
 
@@ -566,19 +709,13 @@ A flag qualifies as a `stale_candidate` if and only if all four conditions hold:
 ### 12.1 Target Deployment Topology
 - **Local Environment:** `docker compose` running PostgreSQL, Control API, Demo App, Prometheus, and Grafana.
 - **Production Environment:** A single VM running **k3s**, structured into clean namespaces:
-  - `synapse-system`: Control API and PostgreSQL.
+  - `synapse-system`: Control API, Async Sealer, and PostgreSQL.
   - `observability`: Prometheus, Grafana, Alertmanager.
   - `workloads`: Application microservices running OpenFeature SDKs.
 
 ### 12.2 Infrastructure as Code (Terraform)
 - Automates virtual machine provisioning, firewall rules, DNS records, and S3 backup buckets.
-- Remote state with locking.
-- CI executes `terraform fmt`, `terraform validate`, and `terraform plan`. Apply is executed through manual GitHub Actions workflow dispatch with OIDC authentication.
-
-### 12.3 CI/CD & Supply-Chain Security
-- **PR Pipeline:** Lint, unit tests, property tests, conformance vector tests, container build, Trivy vulnerability scan, secret scanning, and Helm linting.
-- **Main Branch Merge:** Builds multi-stage Docker images with pinned distroless bases, generates CycloneDX SBOMs, signs container images with Cosign (keyless OIDC), pushes to GHCR, and deploys to `staging`.
-- **Release Tag (`v*`):** Promotes signed images to production, publishes the `@synapsestate/sdk` package to npm with provenance, and publishes GitHub release assets.
+- Remote state with locking; CI executes `terraform fmt`, `validate`, and `plan`.
 
 ---
 
@@ -587,12 +724,16 @@ A flag qualifies as a `stale_candidate` if and only if all four conditions hold:
 | Decision Point | Chosen Architecture | Rejected Alternative | Technical Rationale |
 |---|---|---|---|
 | **Flag Evaluation** | Delegate to existing OpenFeature provider | Custom evaluation engine & MurmurHash3 rollout DSL | Re-implementing evaluation adds zero novel value; OpenFeature standardizes evaluation. |
-| **State Delivery** | HTTP Polling with `ETag` (5s jitter) | gRPC / Protobuf streaming or Server-Sent Events | Polling meets the 10s propagation SLO, is trivial to test, has zero connection state churn, and mirrors standard server SDKs. |
-| **Local Transport** | In-Process Direct API Poll | In-Pod Sidecar daemon (`synapse-agent`) & UDS | Sidecars introduce complex pod startup coupling, mutating webhook injection, and memory overhead without aiding SLOs. |
-| **In-Process State** | Managed Language Heap Map | POSIX Shared Memory (`mmap`) | Eliminates `SIGSEGV`/`SIGBUS` crash hazards and native N-API compilation friction. |
-| **Language Stack** | TypeScript everywhere | Go Control Plane / Operator | Unifies engineering on a single language stack, allowing effort to focus on infrastructure, security, and reliability. |
-| **Override Security** | Operator Ed25519 signatures verified against Git keyset | Control-plane signed leases / mTLS transport only | Pinned keyset ensures that a compromised control plane cannot forge emergency overrides. |
-| **Lease Expiry** | Dual-clock rule (Monotonic + Wall) | Wall-clock only | Protects against NTP clock manipulations and stale replay attacks. |
-| **Git Reconciliation** | GitHub PR with human review as 2nd control | Automated direct-to-master commits | Preserves peer review discipline while ensuring 2 AM incident paths require only a single operator. |
-| **Audit Ledger** | SHA-256 Hash Chain + External Object Lock | Relational database table only / Blockchain | Provides tamper-evident non-repudiation with simple, cost-effective infrastructure. |
-| **Code Refactoring** | Draft PRs with refusal-by-default via `ts-morph` | Fully autonomous merges across multiple languages | Safety over coverage: automated tools must never break production builds. |
+| **State Delivery** | ETag Long-Polling (`wait=30s`) | 5s plain polling or Server-Sent Events (SSE) | Long-polling drops idle traffic 6×, delivers <100ms updates, avoids dual code paths and SSE reconnect storms. |
+| **Catalog Integrity** | Soft reference with CLI confirmation & rollout loop | Hard Foreign Key constraint & API existence check | Emergency overrides must never fail due to catalog sync lag. Rollout loop verifies operational success. |
+| **Audit Ledger** | Asynchronous single-writer sealer via `audit_pending` | Request-path advisory locks or dropping chain | Preserves tamper-evident completeness across un-signed events while completely removing lock contention from lease path. |
+| **Trust Root** | Git-pinned keyset with 10s hash polling + signed key revocations | Dynamic keyset served by Control API | Prevents control plane from resurrecting revoked keys. Hash polling eliminates pod restarts; signed fast-path evicts compromised keys immediately. |
+| **Emergency Fallback** | Air-gapped ConfigMap directory mount (`/etc/synapse/emergency-leases/`) | Total dependency on Control API / Postgres | Self-authenticating leases can be applied directly via `kubectl apply` during control plane outages. |
+| **Code Retirement** | Read-only AST scanner exporting candidate reports | Bespoke AST code rewriter executing test suites | Prevents executing untrusted repo code next to GitHub credentials. Focuses on novel telemetry-driven qualification. |
+| **Stale Coverage** | Per-flag evaluated consumers with explicit service retirement | 100% of all registered services or 7-day heartbeat | Prevents deadlocks from decommissioned services without breaking monthly cron/DR jobs. |
+| **Telemetry Ingestion** | 5m flushes, sorted keys, dedicated connection pool bulkhead | In-memory buffering with data loss or 60s upserts | Cuts database write volume 5×; sorted keys prevent deadlocks; bulkhead sheds load under stress with zero count loss. |
+| **Flag Storage** | Per-flag directory (`flags/<env>/<flag_key>.yaml`) with build-time merge | Single monolithic `flags.yaml` registry | Eliminates Git merge conflicts across independent flag promotions; charset validation prevents K8s ConfigMap and case-sensitivity collisions. |
+| **Incident Attribution** | Pull-based `synapse log` with shared pure ranker & `--offline` mode | Push-based Alertmanager webhook integration | Eliminates webhook parsing, Grafana token setup, and chat glue. Offline mode avoids Control API SPOF during incidents; JSON output preserves future bot seams. |
+| **Operator Key Storage** | Pluggable `Signer` with encrypted keyfile default (scrypt + AES-256-GCM + AAD) | OS Keychain library dependency or reusing `~/.ssh/id_ed25519` | Removes unmaintained native C dependencies (`keytar`); preserves trust domain separation from SSH; non-empty passphrase and 0600 mode checks guard disk keys. |
+| **Audit Sealer Execution** | In-process sealer with `pg_try_advisory_xact_lock` + CronJob checkpointer | Separate sealer daemon or in-process checkpoint signer | Eliminates daemon overhead while remaining PgBouncer-safe; isolates anchoring keys to a restricted external CronJob. |
+| **Keyset Fallback Cache** | Bounded in-memory cache (15m ceiling) with empty `{}` revoke-all | Unbounded cache or strict fail-stop on read error | Bounded staleness prevents honoring revoked keys indefinitely during volume mount failures, while transient retries prevent false evictions. |

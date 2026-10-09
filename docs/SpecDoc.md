@@ -15,12 +15,12 @@
 * **v2.0.0-GA-SPEC:** Monorepo architecture featuring a Go control plane, Kubernetes mutating webhook, native sidecar daemon (`synapse-agent`), local Unix domain sockets, and custom in-process evaluation engines in Go and TypeScript.
 * **v3.0.0-GA-SPEC (Current Architecture):** Post-pivot governance-layer architecture:
   * **Evaluation Delegation:** Replaced custom evaluation engines and targeting languages with direct delegation to standard OpenFeature providers (such as flagd in-process, JSON file provider, or Unleash). SynapseState acts as an `OverrideProvider` wrapper.
-  * **Elimination of Sidecars & IPC:** Removed in-pod sidecar daemons (`synapse-agent`), mutating admission webhooks, and local Unix domain socket IPC. Workload SDKs communicate directly with the Control API over standard HTTP polling with `ETag` conditional caching.
+  * **Elimination of Sidecars & IPC:** Removed in-pod sidecar daemons (`synapse-agent`), mutating admission webhooks, and local Unix domain socket IPC. Workload SDKs communicate directly with the Control API over ETag long-polling (`wait=30s`).
   * **Unified TypeScript Ecosystem:** Unified entire platform onto TypeScript/Node.js across SDK, CLI, Control API, Purger, and Next.js Dashboard.
   * **Pinned Keyset Trust Root:** Overrides are signed by operator Ed25519 keys and validated against a locally pinned, Git-audited keyset file, ensuring compromise of the Control API cannot lead to forged overrides.
   * **Dual-Clock Expiry Enforcement:** Combined monotonic elapsed time with wall-clock bounds to ensure zero leases survive past their intended lifespan.
-  * **Refusal-by-Default Code Pruning:** Focused `synapse-purger` on high-confidence literal-key TypeScript patterns with compiler verification (`tsc --noEmit`) and structured refusal reports.
-  * **Incident Attribution ("What Changed?"):** Added Alertmanager webhook integration to rank suspect flag events and provide copy-pasteable mitigation commands.
+  * **Read-Only Codebase Scanner:** Focused `synapse-purger` on telemetry qualification and read-only AST scanning, exporting structured candidate reports for external refactoring tools with zero untrusted code execution.
+  * **Incident Attribution ("What Changed?"):** Added pull-based `synapse log` CLI investigation and `GET /v1/changes` change feed with shared pure ranker to provide type-aware mitigation commands.
 
 ### 1.2 Target System Boundaries
 
@@ -40,16 +40,16 @@ The v3.0 release targets server-side microservices running Node.js / TypeScript.
 
 ## 2. Competitive Positioning Matrix
 
-| Dimension | flagd / OpenFeature Operator | Unleash (Self-Hosted OSS) | Uber Piranha | LaunchDarkly Enterprise | SynapseState v3.0 Specification |
+| Dimension | flagd / OpenFeature Operator | Unleash (Self-Hosted OSS) | Uber Piranha | LaunchDarkly Enterprise | SynapseState v3.1 Specification |
 |---|---|---|---|---|---|
 | **Primary Classification** | Evaluation engine & sync daemon | Full feature-management platform | Batch AST refactoring tool | Commercial SaaS platform | **Incident safety & lifecycle governance layer** |
 | **Evaluation Strategy** | In-process or socket RPC | In-process SDK cache | N/A (Build-time tool) | In-process SDK cache | **Delegates to existing OpenFeature provider** |
-| **Emergency Overrides** | Re-deploy or CRD edit | Dashboard toggle (bypasses Git) | N/A | Dashboard toggle (bypasses Git) | **Ed25519-signed leases with dual-clock auto-expiry** |
+| **Emergency Overrides** | Re-deploy or CRD edit | Dashboard toggle (bypasses Git) | N/A | Dashboard toggle (bypasses Git) | **Ed25519-signed leases with dual-clock auto-expiry & air-gapped fallback** |
 | **GitOps Drift Defense** | K8s CRD authoritative | Database authoritative | N/A | SaaS DB authoritative | **Git authoritative; PR promotion acts as 2nd approval** |
-| **Stale Detection** | None | Manual UI review | None (Requires flag as input) | UI stale markers | **Telemetry-driven; requires 100% service coverage** |
-| **Automated Cleanup** | None | None | Multi-language refactoring | Manual PR required | **ts-morph Draft PRs with refusal-by-default** |
-| **Transport Model** | gRPC sync stream | HTTP polling (15s default) | N/A | Streaming connection | **HTTP polling with ETag (5s + jitter)** |
-| **Trust Model** | Unauthenticated sync in baseline | Service token authentication | N/A | API key authentication | **Signed envelopes verified against pinned Git keyset** |
+| **Stale Detection** | None | Manual UI review | None (Requires flag as input) | UI stale markers | **Telemetry-driven; per-flag evaluated consumer coverage (35-45d)** |
+| **Code Cleanup Support** | None | None | Multi-language refactoring | Manual PR required | **Read-only AST scanner generating candidate reports for Piranha/GritQL** |
+| **Transport Model** | gRPC sync stream | HTTP polling (15s default) | N/A | Streaming connection | **ETag long-polling (`wait=30s`) with in-memory caching** |
+| **Trust Model** | Unauthenticated sync in baseline | Service token authentication | N/A | API key authentication | **Git-pinned keyset with 10s hash polling & signed key revocations** |
 
 ---
 
@@ -97,21 +97,32 @@ Revocations use domain prefix `"synapsestate/revocation/v1\n"` over canonical re
 }
 ```
 
+Signed key revocations use domain prefix `"synapsestate/keyrevocation/v1\n"` over canonical key revocation payload:
+```json
+{
+  "v": 1,
+  "kid": "compromised-key-id",
+  "revoked_at": "2026-10-06T02:25:00.000Z",
+  "revoked_by_kid": "security-lead",
+  "reason": "Laptop reported lost"
+}
+```
+
 ### 3.2 Dual-Clock Verification Algorithm
 Workload SDKs enforce strict monotonic and wall-clock expiry bounds:
 
-1. **Version & Keyset Lookup:** Verify `v == 1`. Lookup `kid` in locally pinned keyset. Reject if key is missing or revoked.
+1. **Version & Keyset Lookup:** Verify `v == 1`. Reject if `kid` is present in local `key_revocations`. Lookup `kid` in locally pinned keyset. Reject if key is missing or revoked.
 2. **Signature Verification:** Verify Ed25519 signature over domain-separated canonical payload.
-3. **TTL Validation:** Verify $0 < \text{ttl\_seconds} \le \text{SDK\_MAX\_TTL}$ (default 3600 seconds).
+3. **TTL Validation:** Verify $0 < \text{ttl\_seconds} \le \min(\text{SDK\_MAX\_TTL}, \text{key.max\_ttl\_seconds})$.
 4. **Anti-Future Skew Check:** Reject if $\text{issued\_at} > \text{now\_wall} + \text{SKEW\_TOLERANCE}$ (default 30 seconds).
-5. **Wall-Clock Expiration:**
+5. **Wall-Clock Expiration (Global Ceiling):**
    $$\text{wall\_expiry} = \text{issued\_at} + \text{ttl\_seconds} + \text{SKEW\_TOLERANCE}$$
    If $\text{now\_wall} \ge \text{wall\_expiry}$, mark lease expired.
-6. **Monotonic Expiration:** On first successful verification of `lease_id`:
+6. **Monotonic Expiration (Per Process Incarnation):** On first successful verification of `lease_id` within the current process:
    $$\text{mono\_expiry} = \text{now\_mono} + \text{ttl\_seconds}$$
 7. **Effective Expiration:**
    $$\text{effective\_expiry} = \min(\text{wall\_expiry}, \text{mono\_expiry})$$
-8. **Evaluation Activation:** An override is applied if and only if $\text{now\_mono} < \text{mono\_expiry}$ and $\text{now\_wall} < \text{wall\_expiry}$ and `lease_id` is not present in local revocations.
+8. **Evaluation Activation:** An override is applied if and only if $\text{now\_mono} < \text{mono\_expiry}$ and $\text{now\_wall} < \text{wall\_expiry}$ and `lease_id` is not present in local revocations. Conflict resolution between active leases selects `MAX(issued_at)` then `MAX(ULID)`.
 
 ---
 
@@ -187,10 +198,20 @@ Base path: `/v1`
 
 ### 5.1 Endpoints
 
-#### `GET /v1/sdk/state?env={env}`
-- **Headers:** `If-None-Match: "<etag>"`, `Authorization: Bearer <service_token>`
-- **Response 304:** Not Modified (empty body).
+#### `GET /v1/time`
 - **Response 200:**
+  ```json
+  {
+    "server_time": "2026-10-06T02:14:00.120Z"
+  }
+  ```
+- **Purpose:** Workstation clock synchronization before Ed25519 payload signing.
+
+#### `GET /v1/sdk/state?env={env}&wait={duration}`
+- **Query Parameters:** `env` (string, required), `wait` (duration string, e.g. `30s`, default `0s`, max `60s`).
+- **Headers:** `If-None-Match: "<etag>"`, `Authorization: Bearer <service_token>`
+- **Response 304:** Not Modified (empty body). Served directly from in-memory cache when `wait` timer elapses or on immediate poll.
+- **Response 200:** Immediate response on state change.
   ```json
   {
     "server_time": "2026-10-06T02:15:30.120Z",
@@ -203,18 +224,45 @@ Base path: `/v1`
     ],
     "revocations": [
       {
-        "payload": { ... },
+        "payload": { "lease_id": "01J...", ... },
+        "sig": "..."
+      }
+    ],
+    "key_revocations": [
+      {
+        "payload": { "kid": "compromised-key", ... },
         "sig": "..."
       }
     ]
   }
   ```
+  *(Revocations array only includes records where `expires_at >= server_time`).*
 
 #### `POST /v1/leases`
 - **Headers:** `Authorization: Bearer <operator_or_cli_token>`
 - **Body:** `{ "payload": { ... }, "sig": "..." }`
-- **Response 201:** `{ "lease_id": "01J...", "state": "ACTIVE" }`
+- **Response 201:** 
+  ```json
+  {
+    "lease_id": "01J9X57YTRPQ8A7F4E12345678",
+    "state": "ACTIVE",
+    "warnings": ["UNKNOWN_FLAG"]
+  }
+  ```
+  *(Soft reference: if the flag is absent from both the registry and telemetry, the override is accepted but emits an `UNKNOWN_FLAG` warning).*
 - **Response 409:** Conflict (an active lease already exists for this `(flag_key, env)`; requires `--supersede`).
+
+#### `GET /v1/leases/:id/rollout-status`
+- **Response 200:**
+  ```json
+  {
+    "lease_id": "01J9X57YTRPQ8A7F4E12345678",
+    "instances_observed": 38,
+    "instances_total": 40,
+    "evaluations_count": 1420,
+    "last_evaluation_at": "2026-10-06T02:16:00Z"
+  }
+  ```
 
 #### `POST /v1/leases/:id/promote`
 - **Headers:** `Authorization: Bearer <operator_token>`
@@ -225,6 +273,16 @@ Base path: `/v1`
 - **Body:** `{ "payload": { ... }, "sig": "..." }`
 - **Response 200:** `{ "lease_id": "01J...", "state": "REVOKED" }`
 
+#### `POST /v1/keys/revoke`
+- **Headers:** `Authorization: Bearer <security_lead_token>`
+- **Body:** `{ "payload": { "kid": "...", ... }, "sig": "..." }`
+- **Response 200:** `{ "kid": "...", "state": "REVOKED" }`
+
+#### `POST /v1/services/:name/retire`
+- **Headers:** `Authorization: Bearer <operator_token>`
+- **Body:** `{ "env": "prod", "reason": "Decommissioned in PR #412" }`
+- **Response 200:** `{ "service": "...", "status": "RETIRED" }`
+
 #### `POST /v1/telemetry/batches`
 - **Headers:** `Authorization: Bearer <service_token>`
 - **Body:**
@@ -232,100 +290,95 @@ Base path: `/v1`
   {
     "instance_id": "pod-checkout-79b8-x42",
     "batch_id": "01J...",
-    "window_start": "2026-10-06T02:14:00Z",
+    "window_start": "2026-10-06T02:10:00Z",
     "window_end": "2026-10-06T02:15:00Z",
     "metrics": [
-      { "flag_key": "checkout-v2", "variant": "false", "reason": "OVERRIDE", "count": 1420 },
-      { "flag_key": "cart-cache", "variant": "on", "reason": "TARGETING_MATCH", "count": 9520 }
+      { "flag_key": "cart-cache", "variant": "on", "reason": "TARGETING_MATCH", "count": 9520 },
+      { "flag_key": "checkout-v2", "variant": "false", "reason": "OVERRIDE", "count": 1420 }
     ],
     "propagation_lag_ms": 3200
   }
   ```
-- **Response 202:** Accepted.
+- **Response 202:** Accepted. (Handled via isolated connection pool; returns 429/503 during DB load spikes).
 
-#### `POST /v1/alerts/webhook`
-- **Headers:** Alertmanager Webhook Payload
+#### `GET /v1/changes?service={name}&env={env}&since={duration}`
+- **Query Parameters:** `service` (string, optional), `env` (string, required), `since` (duration string, e.g. `30m`, default `30m`).
+- **Headers:** `Authorization: Bearer <operator_token>`
 - **Response 200:**
   ```json
   {
-    "alert": "CheckoutHigh5xxBurnRate",
-    "suspects": [
+    "query": { "service": "checkout-service", "env": "prod", "since": "30m" },
+    "events": [
+      {
+        "id": 1042,
+        "event_type": "LEASE_CREATED",
+        "env": "prod",
+        "flag_key": "checkout-v2",
+        "actor": "sre-alice-2026-01",
+        "occurred_at": "2026-10-06T02:14:00Z",
+        "payload": { "lease_id": "01J...", "value": false }
+      },
+      {
+        "id": 1041,
+        "event_type": "GIT_MERGE",
+        "env": "prod",
+        "flag_key": "payment-v3",
+        "actor": "github-actions[bot]",
+        "occurred_at": "2026-10-06T02:05:00Z",
+        "payload": { "commit": "a1b2c3d", "pr": 412 }
+      }
+    ],
+    "evaluations": [
       {
         "flag_key": "checkout-v2",
-        "last_change_type": "LEASE_CREATED",
-        "last_change_time": "2026-10-06T02:14:00Z",
-        "score": 0.95,
-        "suggested_mitigation": "synapse lease create --flag checkout-v2 --env prod --value false --ttl 30m --reason \"INC-142\""
+        "variant": "false",
+        "eval_count": 1420
       }
     ]
   }
   ```
+- **Purpose:** Change feed powering `synapse log` pull-based attribution; isolates GitHub credentials from operator workstations and provides a clean integration seam for future chatops/alerting bots.
 
 ---
 
-## 6. Stale Detection & AST Refactoring (`synapse-purger`)
+## 6. Stale Detection & Scanner Engine (`synapse-purger`)
 
 ### 6.1 Mathematical Qualification Rule
-A flag $f$ in environment $E$ is qualified as a `stale_candidate` over observation window $\tau$ (30 days) if and only if:
+A flag $f$ in environment $E$ is qualified as a `stale_candidate` over observation window $\tau$ (35 to 45 days) if and only if:
 
 1. $\text{class}(f) = \text{release}$.
 2. Invariance:
    $$\exists v^* \text{ s.t. } \forall (v, t) \in \mathcal{U}(f, E, \tau), v = v^* \quad \lor \quad \vert{}\mathcal{U}(f, E, \tau)\vert{} = 0$$
-3. Coverage:
-   $$\forall s \in \text{Services}(E), \quad \text{last\_seen}(s) \ge \text{now} - \tau$$
-4. Quiescence:
+3. Per-Flag Consumer Coverage:
+   $$\forall s \in \text{Evaluators}(f, E, \tau), \quad \text{status}(s, E) \in \{\text{ACTIVE}, \text{RETIRED}\}$$
+   *(If any historical evaluator is `SILENT`, the flag is blocked until unblocked via `synapse service retire`).*
+4. AST Consistency:
+   $$\text{ASTReferences}(f, \text{Repos}) \subseteq \text{Evaluators}(f, E, \tau)$$
+   *(A read-only AST scan detects call sites only in known consumer services).*
+5. Quiescence:
    $$\text{active\_lease}(f, E) = \emptyset \quad \land \quad \text{last\_promotion}(f, E) < \text{now} - \tau$$
 
-### 6.2 Supported AST Patterns & Rewrite Transformations
-Using `ts-morph`:
-
-* **Case 1: Direct If-Statement**
-  ```typescript
-  // Before
-  if (await client.getBooleanValue('checkout-v2', false)) {
-    return runNewCheckout();
-  } else {
-    return runLegacyCheckout();
+### 6.2 Read-Only Scanner Scope & Candidate Reporting
+`synapse-purger` operates as a read-only scanner using `ts-morph`:
+- **Security Boundary:** The purger **never executes repo scripts, test suites, or package postinstalls** while holding GitHub App credentials.
+- **Reporting Format:** Emits structured reports with exact file lines and winning variants ready for external AST rewriting engines (Uber Piranha, GritQL) or human review.
+- **Structured Candidate / Refusal Schema:**
+  ```json
+  {
+    "flag_key": "checkout-v2",
+    "status": "QUALIFIED",
+    "winning_variant": "false",
+    "call_sites": [
+      {
+        "file": "src/services/checkout.ts",
+        "line": 42,
+        "code_snippet": "if (await client.getBooleanValue('checkout-v2', false))"
+      }
+    ],
+    "evaluating_services": ["checkout-service"],
+    "telemetry_window_days": 42
   }
-  // After (Winning variant: true)
-  return runNewCheckout();
   ```
-
-* **Case 2: Negated If-Statement**
-  ```typescript
-  // Before
-  if (!await client.getBooleanValue('checkout-v2', false)) {
-    return runLegacyCheckout();
-  }
-  // After (Winning variant: true)
-  // Branch removed completely
-  ```
-
-* **Case 3: Inline Ternary**
-  ```typescript
-  // Before
-  const engine = (await client.getBooleanValue('checkout-v2', false)) ? newEngine : oldEngine;
-  // After (Winning variant: true)
-  const engine = newEngine;
-  ```
-
-### 6.3 Structured Refusal Report Schema
-When ambiguous or unsupported syntax is encountered, the purger writes a JSON report:
-```json
-{
-  "flag_key": "checkout-v2",
-  "status": "REFUSED",
-  "reasons": [
-    {
-      "file": "src/services/checkout.ts",
-      "line": 42,
-      "code_snippet": "const key = getFlagKey(); client.getBooleanValue(key, false);",
-      "refusal_code": "DYNAMIC_FLAG_KEY",
-      "description": "Flag key is dynamically evaluated from expression and cannot be resolved statically."
-    }
-  ]
-}
-```
 
 ---
 
@@ -341,6 +394,9 @@ Language-neutral JSON test suites validate:
 6. `vector_expired_mono`: Monotonic time exceeds `first_seen_mono + ttl`; rejected.
 7. `vector_future_timestamp`: Timestamp in future beyond skew allowance; rejected.
 8. `vector_revocation`: Revocation present in watermark; rejected.
+9. `vector_keyfile_format`: Header versioning, scrypt parameters, AES-256-GCM ciphertext, and AAD binding validation.
+10. `vector_keyset_eviction`: Verification that removing a `kid` from the pinned keyset immediately evicts all active in-memory leases signed by that key.
+11. `vector_sealer_concurrency`: Sealer processes records strictly in seal order (`seq`) despite out-of-order `audit_pending` insertions, with restart continuity.
 
 ### 7.2 Fault Injection Scenarios
 1. **Control Plane Outage:** Terminate Control API. Verify that SDK continues serving verified active leases until expiry, then seamlessly falls through to delegate provider.

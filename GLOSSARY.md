@@ -5,11 +5,17 @@ This glossary establishes the canonical vocabulary for SynapseState. Every term 
 ### Audit Checkpoint
 A signed, periodic summary of the append-only audit ledger written to an external, write-once storage destination to detect and prevent unauthorized tampering.
 
+### Audit Sealer
+An asynchronous in-process single-writer background loop that consumes staged audit events from a buffer table, computes a sequential SHA-256 hash chain, and commits sealed records to an append-only ledger.
+
 ### Break-Glass Lease
 A short-lived, cryptographically signed emergency override issued by a single on-call operator to force a specific flag variant across a cluster during an active production incident.
 
 ### Change Attribution
-The automated process of correlating operational incidents (such as SLO burn-rate alerts) with recent feature flag modifications to identify likely causal changes and suggest mitigation actions.
+The process of correlating operational incidents with recent feature flag modifications to identify likely causal changes and suggest mitigation actions.
+
+### Change Event
+An immutable record of an operational state transition (such as a lease creation, revocation, promotion, or Git configuration merge) used for incident attribution and investigation.
 
 ### Delegate Provider
 An underlying, standard OpenFeature provider (such as flagd in-process, an in-memory JSON provider, or Unleash) that performs steady-state targeting and flag evaluation beneath SynapseState's governance wrapper.
@@ -47,11 +53,18 @@ A structured report emitted by the automated code refactoring engine (`synapse-p
 ### Revocation
 A cryptographically signed directive that prematurely terminates an active emergency lease before its scheduled expiration deadline.
 
+### Signer
+An extensible abstraction responsible for producing cryptographic signatures using operator keys, supporting implementations for password-protected encrypted keyfiles, operating system keyrings, or SSH agents.
+
 ### Stale Candidate
-A release flag that has served an invariant variant across all production services over a full observation window with 100% telemetry coverage, qualifying it for automated source code retirement.
+A release flag that has served an invariant variant across all evaluating consumer services over a full observation window (35 to 45 days) with active or retired coverage, qualifying it for source code retirement.
 
 ### Telemetry Coverage
-A verification prerequisite for stale flag detection requiring that every registered service in an environment has actively submitted evaluation metrics during the observation window.
+A verification prerequisite for stale flag detection requiring that every service that recorded evaluations for a flag within data retention is in an `ACTIVE` or explicitly `RETIRED` status.
 
 ### Telemetry Hook
 An OpenFeature evaluation hook that aggregates flag evaluation outcomes `(flag_key, variant, reason)` in memory without capturing or exporting contextual attributes or user identifiers.
+
+### Air-Gapped Override
+An emergency break-glass override applied directly to application workloads via mounted ConfigMap files (`kubectl apply`), bypassing the Control API during control-plane or database outages.
+
