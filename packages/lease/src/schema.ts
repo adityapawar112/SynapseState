@@ -34,6 +34,7 @@ export const LeasePayloadSchema = z.object({
     z.string(),
     z.number().finite("number value must be finite"),
     z.record(z.unknown()),
+    z.array(z.unknown()),
   ]),
   reason: z.string().min(1, "reason must not be empty"),
   issued_at: z
@@ -137,6 +138,9 @@ export type KeysetKey = z.infer<typeof KeysetKeySchema>;
  * Keyset dictionary mapping key ID to authorized key metadata.
  * An empty object `{}` is explicitly valid as an authoritative "revoke all keys" directive.
  */
-export const KeysetSchema = z.record(KeysetKeySchema);
+export const KeysetSchema = z.record(
+  z.string().min(1, "kid must not be empty"),
+  KeysetKeySchema,
+);
 
 export type Keyset = z.infer<typeof KeysetSchema>;

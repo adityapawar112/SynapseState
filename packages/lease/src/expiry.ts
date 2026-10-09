@@ -33,11 +33,11 @@ export interface LeaseExpiryParams {
   maxTtlSeconds?: number;
 }
 
-export interface LeaseExpiryEvaluation {
+export type ValidLeaseExpiry = {
   /** Whether the lease is currently active and eligible for override evaluation */
-  isValid: boolean;
-  /** Granular categorization of lease validity / expiration status */
-  status: ExpiryStatus;
+  isValid: true;
+  /** Granular categorization of lease validity status */
+  status: "VALID";
   /** Absolute wall-clock expiry ceiling timestamp (ms) */
   wallExpiryMs: number;
   /** Process-relative monotonic expiry timestamp (ms) */
@@ -48,9 +48,29 @@ export interface LeaseExpiryEvaluation {
   remainingMonoMs: number;
   /** Effective remaining duration in ms: min(remainingWallMs, remainingMonoMs) */
   remainingEffectiveMs: number;
-  /** Human-readable explanation if expired or invalid */
-  reason?: string;
-}
+  reason?: undefined;
+};
+
+export type InvalidLeaseExpiry = {
+  /** Whether the lease is currently active and eligible for override evaluation */
+  isValid: false;
+  /** Granular categorization of lease expiration / invalidity status */
+  status: Exclude<ExpiryStatus, "VALID">;
+  /** Absolute wall-clock expiry ceiling timestamp (ms) */
+  wallExpiryMs: number;
+  /** Process-relative monotonic expiry timestamp (ms) */
+  monoExpiryMs: number;
+  /** Remaining wall-clock validity duration in milliseconds */
+  remainingWallMs: number;
+  /** Remaining monotonic validity duration in milliseconds */
+  remainingMonoMs: number;
+  /** Effective remaining duration in ms: strictly 0 when invalid */
+  remainingEffectiveMs: 0;
+  /** Human-readable explanation of why the lease is expired or invalid */
+  reason: string;
+};
+
+export type LeaseExpiryEvaluation = ValidLeaseExpiry | InvalidLeaseExpiry;
 
 /**
  * Evaluates dual-clock expiry for emergency feature flag leases.

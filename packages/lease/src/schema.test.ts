@@ -133,6 +133,14 @@ describe("LeasePayloadSchema", () => {
       }).success,
     ).toBe(true);
 
+    // JSON array
+    expect(
+      LeasePayloadSchema.safeParse({
+        ...validPayload,
+        value: ["region-a", "region-b"],
+      }).success,
+    ).toBe(true);
+
     // Invalid values
     expect(
       LeasePayloadSchema.safeParse({ ...validPayload, value: NaN }).success,

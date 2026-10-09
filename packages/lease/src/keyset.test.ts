@@ -62,6 +62,13 @@ describe("Keyset Parser & Validator", () => {
     expect(getKey(keyset, "any-key")).toBeUndefined();
   });
 
+  it("throws TypeError on non-string, non-buffer inputs", () => {
+    // @ts-expect-error test runtime validation for untyped callers
+    expect(() => parseKeysetJson(123)).toThrow(TypeError);
+    // @ts-expect-error test runtime validation for untyped callers
+    expect(() => parseKeysetJson(null)).toThrow(TypeError);
+  });
+
   it("throws KeysetParseError on malformed JSON or empty string", () => {
     expect(() => parseKeysetJson("")).toThrow(KeysetParseError);
     expect(() => parseKeysetJson("{ not valid json")).toThrow(KeysetParseError);
@@ -71,6 +78,15 @@ describe("Keyset Parser & Validator", () => {
   it("throws KeysetValidationError on invalid keyset schema", () => {
     // Array instead of object
     expect(() => parseKeysetJson("[]")).toThrow(KeysetValidationError);
+
+    // Empty kid key
+    const emptyKidJson = JSON.stringify({
+      "": {
+        public_key: hexPublicKey,
+        role: "operator",
+      },
+    });
+    expect(() => parseKeysetJson(emptyKidJson)).toThrow(KeysetValidationError);
 
     // Invalid role
     const invalidRoleJson = JSON.stringify({

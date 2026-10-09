@@ -31,11 +31,17 @@ export class KeysetValidationError extends Error {
  * - Cryptographically verifies that each public_key entry resolves to a valid Ed25519 key.
  */
 export function parseKeysetJson(content: string | Buffer): Keyset {
+  if (typeof content !== "string" && !Buffer.isBuffer(content)) {
+    throw new TypeError(
+      `Expected string or Buffer for keyset, received ${content === null ? "null" : typeof content}`,
+    );
+  }
+
   const jsonString = Buffer.isBuffer(content)
     ? content.toString("utf8")
     : content;
 
-  if (typeof jsonString !== "string" || jsonString.trim().length === 0) {
+  if (jsonString.trim().length === 0) {
     throw new KeysetParseError("Keyset content cannot be empty");
   }
 
@@ -77,17 +83,14 @@ export function parseKeysetJson(content: string | Buffer): Keyset {
  * Retrieves a key entry for a given kid from a keyset dictionary safely.
  */
 export function getKey(keyset: Keyset, kid: string): KeysetKey | undefined {
-  if (Object.prototype.hasOwnProperty.call(keyset, kid)) {
-    return keyset[kid];
-  }
-  return undefined;
+  return Object.hasOwn(keyset, kid) ? keyset[kid] : undefined;
 }
 
 /**
  * Checks if a kid exists in the keyset dictionary safely.
  */
 export function hasKey(keyset: Keyset, kid: string): boolean {
-  return Object.prototype.hasOwnProperty.call(keyset, kid);
+  return Object.hasOwn(keyset, kid);
 }
 
 /**

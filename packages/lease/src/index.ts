@@ -56,6 +56,8 @@ export {
   type ExpiryStatus,
   type LeaseExpiryParams,
   type LeaseExpiryEvaluation,
+  type ValidLeaseExpiry,
+  type InvalidLeaseExpiry,
   evaluateLeaseExpiry,
   isLeaseActive,
 } from "./expiry.js";
