@@ -48,8 +48,8 @@ gantt
     dateFormat YYYY-MM-DD
     axisFormat %m/%d
     section MVP
-    Phase 1 - Foundation and Core SDK       :done, p1, 2026-10-06, 14d
-    Phase 2 - Deploy Control API on k3s     :active, p2, after p1, 14d
+    Phase 1 - Foundation and Core SDK       :active, p1, 2026-10-06, 14d
+    Phase 2 - Deploy Control API on k3s     :p2, after p1, 14d
     Phase 3 - Observe and SLO Verification  :p3, after p2, 14d
     Phase 4 - Incident Loop and Git PRs     :p4, after p3, 14d
     section Lifecycle and UI
@@ -64,16 +64,17 @@ gantt
 ## 5. Frontier & Phased Milestones
 
 ### Phase 1: Cryptographic Foundation & In-Process SDK (Weeks 1 – 2)
-**Deliverable:** Monorepo scaffolding, CI pipelines, Dockerfiles, `packages/lease`, `packages/sdk`, and language-neutral conformance suite.
+**Deliverable:** Monorepo scaffolding, CI pipelines, `packages/lease`, `packages/sdk`, and language-neutral conformance suite.
 
-* **1.1 Monorepo Workspace & Build Scaffolding (`packages/*`, `apps/*`):**
-  * Configure npm/pnpm workspaces for shared dependencies and TypeScript project references.
-  * Establish GitHub Actions CI: linting, formatting (`prettier`), type-checking, and unit tests.
-* **1.2 Cryptographic Lease Core (`packages/lease`):**
-  * Deterministic RFC 8785 JSON canonicalization.
-  * Ed25519 signing and verification with domain separation (`"synapsestate/lease/v1\n"` and `"synapsestate/keyrevocation/v1\n"`).
+* **1.1 Monorepo Workspace & Build Scaffolding (`packages/*`, `apps/*`):** `[DONE]`
+  * Configured pnpm workspaces for shared dependencies and TypeScript project references.
+  * Established GitHub Actions CI: linting, formatting (`prettier`), type-checking, and unit tests across all workspace packages.
+* **1.2 Cryptographic Lease Core (`packages/lease`):** `[ACTIVE]`
+  * Deterministic RFC 8785 JSON canonicalization (`canonicalizeJson` implemented).
+  * Ed25519 signing and verification with domain separation (`"synapsestate/lease/v1\n"`, `"synapsestate/revocation/v1\n"`, and `"synapsestate/keyrevocation/v1\n"`).
   * Dual-clock expiration validation logic: $\min(\text{wall\_expiry}, \text{mono\_expiry})$ with process-scoped monotonic lifetime.
-* **1.3 OpenFeature In-Process SDK (`packages/sdk`):**
+  * Pinned keyset Zod schema and parser.
+* **1.3 OpenFeature In-Process SDK (`packages/sdk`):** `[NEXT]`
   * `OverrideProvider`: Implements OpenFeature `Provider` interface; wraps any delegate provider.
   * In-memory verified lease map with thread-safe pointer references.
   * Keyset hot-reload: 10s file-hash polling on mounted ConfigMap volume; bounded in-memory fallback cache (15-minute staleness ceiling); valid empty JSON `{}` acts as "revoke all".
@@ -81,8 +82,20 @@ gantt
   * ETag long-polling client loop (`GET /v1/sdk/state?wait=30s`).
   * Fail-safe exception shielding: any internal error catches, increments metrics, and delegates to the underlying provider.
   * `TelemetryHook`: Zero-context `after`/`finally` hook recording `(flag_key, variant, reason)` with 5-minute flush interval and sorted keys.
-* **1.4 Golden Test Conformance Suite (`packages/conformance`):**
+* **1.4 Golden Test Conformance Suite (`packages/conformance`):** `[NEXT]`
   * Language-neutral test vectors covering valid signatures, tampered payloads, unknown `kid`, wall-clock expiry, monotonic expiry, future-dating, clock-skew tolerance, keyfile encryption format (scrypt + AES-256-GCM + AAD), keyset reload eviction, and sealer concurrency/seal order.
+  * Initial OpenFeature and cryptographic compatibility spike verified in `packages/conformance/src/compatibility.test.ts`.
+* **Recommended Branches & Pull Requests:**
+  * **PR 1 (`feat/lease-crypto-schemas`):** `feat(lease): implement Zod schemas, Ed25519 sign/verify, and dual-clock expiry` — `packages/lease/src/{schema.ts, crypto.ts, expiry.ts, keyset.ts, index.ts}`
+  * **PR 2 (`feat/conformance-golden-vectors`):** `test(conformance): language-neutral test vectors and JSON runner` — `packages/conformance/fixtures/*.json`, `packages/conformance/src/runner.ts`
+  * **PR 3 (`feat/sdk-override-provider`):** `feat(sdk): implement OverrideProvider, keyset watcher, and emergency directory scanner` — `packages/sdk/src/{provider.ts, lease-store.ts, keyset-watcher.ts, emergency-scanner.ts}`
+  * **PR 4 (`feat/sdk-long-poll-telemetry`):** `feat(sdk): ETag long-polling client loop and zero-context TelemetryHook` — `packages/sdk/src/{state-client.ts, telemetry-hook.ts, index.ts}`
+  * **PR 5 (`perf/sdk-microbenchmarks`):** `perf(sdk): microbenchmarks measuring OverrideProvider overhead vs bare delegate` — `packages/sdk/benchmarks/*`
+* **Security & Best Practice Review Checkpoints:**
+  * **Cryptographic Invariants:** Verify RFC 8785 canonicalization compliance (key sorting, whitespace, float serialization). Confirm Ed25519 uses `null` digest algorithm. Validate exact domain separation prefixes (`"synapsestate/lease/v1\n"`, `"synapsestate/revocation/v1\n"`, `"synapsestate/keyrevocation/v1\n"`).
+  * **Fail-Safe Hot Path (Invariant 1):** Audit every `resolve*Evaluation` branch; wrap all lookup and crypto operations in `try/catch` with automatic delegation to the underlying provider on error.
+  * **Zero-Context Telemetry (Invariant 5):** Static analysis confirming `hookContext.context` is never read, accessed, or exported.
+  * **Pinned Keyset Trust Root (Invariant 2):** Confirm SDK validates signatures strictly against locally mounted keyset; reject any key material originating from the Control API.
 * **Definition of Done:** 100% green CI; full conformance vector coverage; zero dependencies on native C/Rust binaries.
 
 ---
@@ -109,6 +122,18 @@ gantt
   * Independent Kubernetes CronJob (`synapse-checkpoint-signer`) with isolated credentials and write-only IAM role to external S3 Object Lock / protected Git branch.
   * Pod security standards: read-only root filesystems, non-root users, dropped capabilities.
   * Ingress routing with TLS termination via cert-manager.
+* **Recommended Branches & Pull Requests:**
+  * **PR 6 (`feat/control-api-db-schema`):** `feat(api): postgres migrations, connection pool isolation, and transaction helpers` — `apps/control-api/src/db/{migrations/*, pool.ts}`
+  * **PR 7 (`feat/control-api-state-delivery`):** `feat(api): time sync, lease ingestion, and ETag long-polling state endpoint` — `apps/control-api/src/routes/{time.ts, leases.ts, state.ts}`
+  * **PR 8 (`feat/control-api-audit-sealer`):** `feat(api): in-process audit sealer with postgres advisory transaction lock` — `apps/control-api/src/sealer/{sealer.ts, chain.ts}`
+  * **PR 9 (`feat/control-api-telemetry-changes`):** `feat(api): bulkhead telemetry batch endpoint and change-event feed` — `apps/control-api/src/routes/{telemetry.ts, changes.ts}`
+  * **PR 10 (`infra/docker-packaging`):** `ci(docker): multi-stage distroless Dockerfiles and GHCR image publishing` — `Dockerfile.control-api`, `Dockerfile.demo-shop`, `.github/workflows/docker.yml`
+  * **PR 11 (`infra/terraform-k3s-helm`):** `infra(deploy): terraform VM provisioning and Helm charts for k3s` — `deploy/terraform/*`, `deploy/helm/*`
+* **Security & Best Practice Review Checkpoints:**
+  * **SQL Injection & Connection Safety:** Parameterized queries only (`pg`). Verify separate pool instances for high-priority lease ingestion vs. low-priority telemetry flushes to prevent load-shedding starvation.
+  * **Concurrency & Advisory Lock Safety:** Audit `pg_try_advisory_xact_lock(hashtext('synapse_audit_sealer'))` for transaction-scoped behavior across PgBouncer transaction-mode pooling.
+  * **Container & Pod Hardening:** Enforce read-only root filesystems, non-root user (`USER 65532`), dropped capabilities (`ALL`), and `allowPrivilegeEscalation: false` in Helm templates.
+  * **Secret Management:** Database credentials and signing keys injected via Kubernetes Secrets; zero cleartext credentials in Git.
 * **Definition of Done:** Public HTTPS endpoint live; clean tag-triggered release deployment; working teardown and recreation scripts.
 
 ---
@@ -125,6 +150,13 @@ gantt
 * **3.3 Load & Stress Benchmarking (`load/k6`):**
   * k6 load test simulating 100 concurrent SDK long-polling instances and telemetry flushes.
   * Identify first saturation bottleneck and publish documented limits.
+* **Recommended Branches & Pull Requests:**
+  * **PR 12 (`feat/metrics-control-api-sdk`):** `feat(obs): prometheus metrics in control-api and SDK callbacks` — `apps/control-api/src/metrics/*`, `packages/sdk/src/metrics.ts`
+  * **PR 13 (`obs/dashboards-and-alerts`):** `obs(grafana): operations dashboard and alertmanager multi-window alert rules` — `deploy/helm/dashboards/*`, `deploy/helm/alerts/*`
+  * **PR 14 (`test/load-k6-benchmarks`):** `test(load): k6 long-polling load harness and documented saturation limits` — `load/k6/*`
+* **Security & Best Practice Review Checkpoints:**
+  * **Metric Cardinality Audit:** Ensure no high-cardinality labels (user IDs, context keys, lease IDs) are exposed in Prometheus metrics. Only bounded dimensions (`env`, `status_code`, `reason`).
+  * **Multi-Window Multi-Burn-Rate Verification:** Verify Alertmanager SLO rule formulas (14.4x 1h/6h, 6x 6h/3d) against Google SRE alerting standards without flapping.
 * **Definition of Done:** Working Grafana dashboard with real firing alert screenshots; published SLO verification report with measured numbers.
 
 ---
@@ -155,6 +187,17 @@ gantt
   * Drill 2: Clock-skew injection -> verify monotonic expiry enforcement per process.
   * Drill 3: Network partition during revocation -> verify bounded exposure to `expires_at`.
   * Drill 4: Write one formal postmortem report in `docs/postmortems/`.
+* **Recommended Branches & Pull Requests:**
+  * **PR 15 (`feat/cli-signer-and-keys`):** `feat(cli): EncryptedKeyfileSigner and key management commands` — `packages/cli/src/signer/*`, `packages/cli/src/commands/key.ts`
+  * **PR 16 (`feat/cli-lease-lifecycle`):** `feat(cli): lease create, rollout status polling, and emergency-apply` — `packages/cli/src/commands/lease.ts`
+  * **PR 17 (`feat/cli-incident-log-ranker`):** `feat(cli): synapse log incident investigation with pure rankSuspects` — `packages/cli/src/commands/log.ts`, `packages/cli/src/ranker.ts`
+  * **PR 18 (`feat/git-promotion-reconciliation`):** `feat(api): GitHub App PR promotion and merge webhook reconciliation` — `apps/control-api/src/github/*`, `packages/cli/src/commands/promote.ts`
+  * **PR 19 (`feat/audit-checkpoint-verifier`):** `feat(cli): isolated checkpoint signer CronJob and synapse audit verify` — `deploy/helm/cronjobs/*`, `packages/cli/src/commands/audit.ts`
+  * **PR 20 (`test/chaos-drills-and-postmortem`):** `docs(postmortem): scripted 90-second demo and chaos injection drill results` — `docs/postmortems/*`, `test/drills/*`
+* **Security & Best Practice Review Checkpoints:**
+  * **Key Storage Threat Model:** Verify AES-256-GCM encryption with `crypto.scrypt` (`N=32768, r=8, p=1`), AAD binding to `kid`, and POSIX file permission enforcement (`0600`) on `~/.synapse/keys/*.key`.
+  * **Git Dual-Control Approval (Invariant 4):** Verify `synapse promote` opens Draft PRs only; automated direct-to-main merges are strictly prohibited. Peer review serves as secondary approval.
+  * **Audit Chain Integrity (Invariant 7):** Verify `synapse audit verify` recomputes SHA-256 hashes from genesis independently rather than trusting database-stored hashes.
 * **Definition of Done:** Scripted 90-second demo executable end-to-end; one written postmortem from a deliberate failure drill.
 
 ---
@@ -172,6 +215,13 @@ gantt
   * Zero untrusted code execution: never runs `npm test` or build scripts inside the container.
 * **5.3 Structured Candidate & Refusal Reports:**
   * Output GitHub Issues or CLI reports with exact `(flag_key, winning_variant)` tuples and line numbers, ready for Piranha, GritQL, or manual PRs.
+* **Recommended Branches & Pull Requests:**
+  * **PR 21 (`feat/purger-quiescence-engine`):** `feat(purger): stale flag candidate qualification SQL rollups` — `apps/purger/src/qualification/*`
+  * **PR 22 (`feat/purger-ts-morph-scanner`):** `feat(purger): read-only ts-morph AST scanner and caller indexing` — `apps/purger/src/scanner/*`
+  * **PR 23 (`feat/purger-candidate-reports`):** `feat(purger): candidate extraction and refusal report generation` — `apps/purger/src/reports/*`
+* **Security & Best Practice Review Checkpoints:**
+  * **Untrusted Code Execution Boundary (Invariant 6):** Ensure `apps/purger` operates as a read-only AST parser; verify zero execution of `npm test`, `eval()`, or repository build scripts while holding GitHub credentials.
+  * **Refusal by Default:** Verify that any non-literal string argument (ternaries, variables, dynamic lookups) triggers an explicit Refusal Report rather than heuristic guesswork.
 * **Definition of Done:** Zero incorrect candidate qualifications on labeled corpus; published refusal and candidate reports.
 
 ---
@@ -186,6 +236,13 @@ gantt
 * **6.2 Push Incident Automation (Optional Extension):**
   * Optional webhook listener calling shared `rankSuspects` and `GET /v1/changes`.
   * Automatically creates Grafana annotations and suggests copy-pasteable `synapse lease create` commands in incident channels.
+* **Recommended Branches & Pull Requests:**
+  * **PR 24 (`feat/dashboard-nextjs-portal`):** `feat(dashboard): read-mostly operations portal with OIDC authentication` — `apps/dashboard/*`
+  * **PR 25 (`feat/dashboard-rbac-and-actions`):** `feat(dashboard): RBAC controls and lease promotion/revocation triggers` — `apps/dashboard/src/auth/*`, `apps/dashboard/src/api/*`
+  * **PR 26 (`feat/push-incident-webhook`):** `feat(api): optional alertmanager incident webhook and grafana annotations` — `apps/control-api/src/webhooks/*`
+* **Security & Best Practice Review Checkpoints:**
+  * **Signing Key Air-Gap:** Ensure the dashboard backend has no access to operator private keys and cannot sign emergency leases.
+  * **OIDC RBAC Audit:** Validate role enforcement (`viewer`, `operator`, `admin`), CSRF token protection, and secure cookie flags (`HttpOnly; Secure; SameSite=Strict`).
 * **Definition of Done:** Deployed, clickable dashboard linked from README; end-to-end incident attribution demonstrated.
 
 ---
@@ -210,7 +267,7 @@ To prevent scope creep and maintain strict project delivery:
 
 These decisions represent in-scope areas that depend on earlier milestone learnings and will graduate to formal decision tickets as the frontier advances:
 
-* **Open Question 1 (Metadata Reason Convention):** Finalize the exact OpenFeature resolution reason string and metadata structure (`reason: "OVERRIDE"` vs `"CACHED"`) after auditing the latest OpenFeature specification updates during Phase 1.
+* **Open Question 1 (Metadata Reason Convention — Resolved):** Confirmed in `packages/conformance/src/compatibility.test.ts`. OpenFeature `ResolutionDetails.reason` accepts `"OVERRIDE"`, with override details namespaced under `flagMetadata["synapse.*"]` (`synapse.override`, `synapse.lease_id`, `synapse.issued_by`, `synapse.effective_expiry`).
 * **Open Question 2 (TTL Bounds Calibration):** Establish the final default values for `MAX_TTL` (30m vs 60m) and `SKEW_TOLERANCE` (30s vs 60s) following initial clock-skew injection drills in Phase 3.
 * **Open Question 3 (PostgreSQL K8s Packaging):** Decide in a dedicated ADR between deploying PostgreSQL via a standard Bitnami Helm chart versus the CloudNativePG Kubernetes operator on k3s.
 * **Open Question 4 (Audit Checkpoint Anchor Target):** Select the permanent external anchoring target for signed audit checkpoints: an isolated, branch-protected Git repository branch vs. an S3 bucket with Object Lock enabled.

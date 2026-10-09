@@ -12,7 +12,9 @@
     "@synapsestate/sdk": "workspace:*"
   },
   "devDependencies": {
+    "@openfeature/server-sdk": "^1.23.0",
     "@types/node": "^22.13.0",
+    "canonicalize": "^2.0.0",
     "fast-check": "^3.23.0",
     "typescript": "^5.8.0",
     "vitest": "^3.0.0"
