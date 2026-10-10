@@ -11,9 +11,14 @@ import {
 import {
   parseKeysetJson,
   getKey,
+  canRevokeKey,
+  canonicalizeJson,
   verifyLease,
   verifyRevocation,
   verifyKeyRevocation,
+  verifyLeaseWithKeyset,
+  verifyRevocationWithKeyset,
+  verifyKeyRevocationWithKeyset,
   verifyEnvelope,
   evaluateLeaseExpiry,
   isLeaseActive,
@@ -89,7 +94,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
   });
 
   describe("Emergency Lease Vectors (fixtures/leases/)", () => {
-    it("verifies 100% of valid leases pass envelope, signature, and dual-clock validation", () => {
+    it("verifies 100% of valid leases pass envelope, keyset seam, signature, and dual-clock validation", () => {
       const validFixtures = readFixtureJson<{ cases: ValidLeaseVector[] }>(
         "leases/valid_leases.json"
       );
@@ -100,7 +105,18 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
       for (const validCase of validFixtures.cases) {
         const key = getKey(trustedKeyset, validCase.envelope.payload.kid);
         expect(key).toBeDefined();
+        // Cryptographic verification
         expect(verifyLease(validCase.envelope, key!.public_key)).toBe(true);
+        // Authoritative keyset policy seam verification
+        expect(verifyLeaseWithKeyset(validCase.envelope, trustedKeyset)).toBe(true);
+
+        // Deterministic RFC 8785 canonical serialization verification
+        if (validCase.expected.canonicalPayload) {
+          expect(canonicalizeJson(validCase.envelope.payload)).toBe(
+            validCase.expected.canonicalPayload
+          );
+        }
+
         expect(validCase.envelope.payload.flag_key).toBe(validCase.expected.flagKey);
         expect(validCase.envelope.payload.value).toEqual(validCase.expected.resolvedValue);
         expect(validCase.envelope.payload.kid).toBe(validCase.expected.kid);
@@ -137,7 +153,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
       const tamperedFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
         "leases/tampered_payload_leases.json"
       );
-      expect(tamperedFixtures.cases.length).toBe(7);
+      expect(tamperedFixtures.cases.length).toBe(8);
       const trustedKeyset = loadTrustedKeyset();
 
       // Direct verification: check that signature check strictly returns false on altered payload
@@ -146,6 +162,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         const key = getKey(trustedKeyset, envelope.payload.kid);
         expect(key).toBeDefined();
         expect(verifyLease(envelope, key!.public_key)).toBe(false);
+        expect(verifyLeaseWithKeyset(envelope, trustedKeyset)).toBe(false);
       }
 
       const report = runLeaseVectors();
@@ -153,15 +170,29 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         const result = report.results.find((r) => r.vectorId === tc.id);
         expect(result).toBeDefined();
         expect(result?.passed).toBe(true);
-        expect(result?.actualStatus).toBe("SIGNATURE_VERIFICATION_FAILED");
+        expect(result?.actualStatus).toBe("SIGNATURE_INVALID");
       }
     });
 
-    it("verifies tampered signature leases fail schema validation or cryptographic verification", () => {
+    it("verifies tampered signature leases fail schema validation or cryptographic verification (including base64url malleability)", () => {
       const tamperedSigFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
         "leases/tampered_sig_leases.json"
       );
-      expect(tamperedSigFixtures.cases.length).toBe(5);
+      expect(tamperedSigFixtures.cases.length).toBe(6);
+
+      // Verify canonical-base64url malleability vector specifically
+      const malleabilityCase = tamperedSigFixtures.cases.find(
+        (c) => c.id === "tampered_sig_canonical_base64url_malleability"
+      );
+      expect(malleabilityCase).toBeDefined();
+      const malleatedEnvelope = malleabilityCase!.envelope as LeaseEnvelope;
+      const trustedKeyset = loadTrustedKeyset();
+      const key = getKey(trustedKeyset, malleatedEnvelope.payload.kid);
+      expect(key).toBeDefined();
+      // Raw 64-byte decoding is identical, but non-canonical padding bits must cause failure
+      expect(Buffer.from(malleatedEnvelope.sig, "base64url").length).toBe(64);
+      expect(verifyLease(malleatedEnvelope, key!.public_key)).toBe(false);
+      expect(verifyLeaseWithKeyset(malleatedEnvelope, trustedKeyset)).toBe(false);
 
       const report = runLeaseVectors();
       for (const tc of tamperedSigFixtures.cases) {
@@ -170,6 +201,27 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         expect(result?.passed).toBe(true);
         expect(result?.actualStatus).toBe(tc.expectedFailure);
       }
+    });
+
+    it("verifies leases signed by unknown kid not in keyset are rejected under keyset-policy seam", () => {
+      const unknownKidFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
+        "leases/unknown_kid_leases.json"
+      );
+      expect(unknownKidFixtures.cases.length).toBe(1);
+      const trustedKeyset = loadTrustedKeyset();
+
+      const unknownCase = unknownKidFixtures.cases[0]!;
+      const envelope = unknownCase.envelope as LeaseEnvelope;
+      // Precondition: key is genuinely missing from trusted keyset
+      expect(getKey(trustedKeyset, envelope.payload.kid)).toBeUndefined();
+      // Keyset-policy seam must reject it
+      expect(verifyLeaseWithKeyset(envelope, trustedKeyset)).toBe(false);
+
+      const report = runLeaseVectors();
+      const result = report.results.find((r) => r.vectorId === unknownCase.id);
+      expect(result).toBeDefined();
+      expect(result?.passed).toBe(true);
+      expect(result?.actualStatus).toBe("UNKNOWN_KEY");
     });
 
     it("enforces Domain Separation Invariant: cross-domain signed leases fail verification", () => {
@@ -186,6 +238,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         expect(key).toBeDefined();
         // 1. Must fail lease verification
         expect(verifyLease(envelope, key!.public_key)).toBe(false);
+        expect(verifyLeaseWithKeyset(envelope, trustedKeyset)).toBe(false);
 
         // 2. Must pass under the actual domain used to sign it
         if (tc.id === "cross_domain_signed_with_revocation_prefix") {
@@ -219,8 +272,9 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         const envelope = tc.envelope as LeaseEnvelope;
         const key = getKey(trustedKeyset, envelope.payload.kid);
         expect(key).toBeDefined();
-        // Cryptographic signature is authentic
+        // Cryptographic signature & keyset policy are authentic
         expect(verifyLease(envelope, key!.public_key)).toBe(true);
+        expect(verifyLeaseWithKeyset(envelope, trustedKeyset)).toBe(true);
 
         // Expiry evaluation strictly marks lease invalid
         const evalResult = evaluateLeaseExpiry({
@@ -261,6 +315,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         const key = getKey(trustedKeyset, envelope.payload.kid);
         expect(key).toBeDefined();
         expect(verifyLease(envelope, key!.public_key)).toBe(true);
+        expect(verifyLeaseWithKeyset(envelope, trustedKeyset)).toBe(true);
 
         const evalResult = evaluateLeaseExpiry({
           issuedAt: envelope.payload.issued_at,
@@ -300,6 +355,10 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         const key = getKey(trustedKeyset, vc.envelope.payload.kid);
         expect(key).toBeDefined();
         expect(verifyRevocation(vc.envelope, key!.public_key)).toBe(true);
+        expect(verifyRevocationWithKeyset(vc.envelope, trustedKeyset)).toBe(true);
+        if (vc.expected.canonicalPayload) {
+          expect(canonicalizeJson(vc.envelope.payload)).toBe(vc.expected.canonicalPayload);
+        }
         expect(vc.envelope.payload.lease_id).toBe(vc.expected.leaseId);
         expect(vc.envelope.payload.kid).toBe(vc.expected.kid);
       }
@@ -329,6 +388,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
       const crossKey = getKey(trustedKeyset, crossEnvelope.payload.kid);
       expect(crossKey).toBeDefined();
       expect(verifyRevocation(crossEnvelope, crossKey!.public_key)).toBe(false);
+      expect(verifyRevocationWithKeyset(crossEnvelope, trustedKeyset)).toBe(false);
       expect(verifyEnvelope(LEASE_DOMAIN_PREFIX, crossEnvelope, crossKey!.public_key)).toBe(true);
 
       const report = runRevocationVectors();
@@ -353,8 +413,13 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         const signerKid = vc.envelope.payload.revoked_by_kid ?? vc.expected.kid;
         const key = getKey(trustedKeyset, signerKid);
         expect(key).toBeDefined();
-        expect(key!.role).toBe("admin");
+        // ARCHITECTURE.md:286 - Key revocation signer requires key_revoker permission
+        expect(canRevokeKey(key!)).toBe(true);
         expect(verifyKeyRevocation(vc.envelope, key!.public_key)).toBe(true);
+        expect(verifyKeyRevocationWithKeyset(vc.envelope, trustedKeyset, signerKid)).toBe(true);
+        if (vc.expected.canonicalPayload) {
+          expect(canonicalizeJson(vc.envelope.payload)).toBe(vc.expected.canonicalPayload);
+        }
         expect(vc.envelope.payload.kid).toBe(vc.expected.revokedKid);
       }
 
@@ -384,6 +449,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
       const crossKey = getKey(trustedKeyset, signerKid);
       expect(crossKey).toBeDefined();
       expect(verifyKeyRevocation(crossEnvelope, crossKey!.public_key)).toBe(false);
+      expect(verifyKeyRevocationWithKeyset(crossEnvelope, trustedKeyset, signerKid)).toBe(false);
       expect(verifyEnvelope(LEASE_DOMAIN_PREFIX, crossEnvelope, crossKey!.public_key)).toBe(true);
 
       const report = runKeyRevocationVectors();
@@ -399,7 +465,9 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
   describe("Complete Conformance Suite Execution", () => {
     it("executes all golden conformance vectors across all categories with 100% pass rate", () => {
       const suite = runConformanceSuite();
-      expect(suite.total).toBe(52); // 11 keyset + 27 lease + 7 revocation + 7 key revocation = 52 total checks
+      // 11 keyset + 30 lease (5 valid + 8 tampered payload + 6 tampered sig + 4 cross-domain + 4 expired + 2 future + 1 unknown kid)
+      // + 7 revocation (2 valid + 5 invalid) + 7 key revocation (2 valid + 5 invalid) = 55 total checks
+      expect(suite.total).toBe(55);
       expect(suite.failed).toBe(0);
       expect(suite.passed).toBe(suite.total);
 

@@ -1,7 +1,7 @@
 # SynapseState Handoff: Phase 1 — SDK OverrideProvider, Keyset Watcher & Emergency Scanner (`packages/sdk`)
 
-> **Target Session:** Implement PR 3 (`feat/sdk-override-provider`)  
-> **Repository:** `synapsestate/synapsestate`  
+> **Target Session:** Implement PR 3 (`feat/sdk-override-provider`)
+> **Repository:** `synapsestate/synapsestate`
 > **Primary Charter & Specs:**
 > - System Charter & Invariants: [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md)
 > - Authoritative Architecture: [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md)
@@ -16,15 +16,16 @@
 
 ### 1.1 PR 1 Completed: Cryptographic Lease Core & Schemas (`packages/lease`)
 - **Branch:** `feat/lease-crypto-schemas`
-- **PR URL:** [https://github.com/adityapawar112/SynapseState/pull/new/feat/lease-crypto-schemas](https://github.com/adityapawar112/SynapseState/pull/new/feat/lease-crypto-schemas)
-- **Delivered:** RFC 8785 canonicalization, Ed25519 signing/verification with domain prefixes, Zod schemas, dual-clock expiry validator (`evaluateLeaseExpiry`, `isLeaseActive`), and Git-pinned keyset parser (`parseKeysetJson`).
-- **Tests:** 58 unit and property tests passing.
+- **PR URL:** [https://github.com/adityapawar112/SynapseState/pull/1](https://github.com/adityapawar112/SynapseState/pull/1) (Merged to `main`)
+- **Delivered:** RFC 8785 canonicalization, Ed25519 signing/verification with domain prefixes, Zod schemas, dual-clock expiry validator (`evaluateLeaseExpiry`, `isLeaseActive`), and Git-pinned keyset parser and policy verifiers (`parseKeysetJson`, `verifyLeaseWithKeyset`, `verifyRevocationWithKeyset`, `verifyKeyRevocationWithKeyset`, `canRevokeKey`).
+- **Tests:** 91 unit and property tests passing in `packages/lease`.
 
 ### 1.2 PR 2 Completed: Conformance Golden Vectors & Runner (`packages/conformance`)
 - **Branch:** `feat/conformance-golden-vectors`
-- **PR URL:** [https://github.com/adityapawar112/SynapseState/pull/new/feat/conformance-golden-vectors](https://github.com/adityapawar112/SynapseState/pull/new/feat/conformance-golden-vectors)
-- **Delivered:** 13 deterministic JSON fixture files (52 test vectors) under [`fixtures/`](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/conformance/fixtures), reproducible fixture generator [`generate-fixtures.ts`](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/conformance/scripts/generate-fixtures.ts), pure TypeScript runner [`runner.ts`](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/conformance/src/runner.ts), and 21 passing test suites in `packages/conformance` with 0 superficial checks.
-- **Whole Monorepo Verification:** 83/83 tests passing, 0 build errors, 0 typecheck errors, 0 lint warnings.
+- **PR URL:** [https://github.com/adityapawar112/SynapseState/pull/2](https://github.com/adityapawar112/SynapseState/pull/2)
+- **Delivered:** 14 deterministic JSON fixture files (55 test vectors) under [`fixtures/`](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/conformance/fixtures), reproducible fixture generator [`generate-fixtures.ts`](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/conformance/scripts/generate-fixtures.ts), pure TypeScript runner [`runner.ts`](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/conformance/src/runner.ts) enforcing authoritative keyset-policy seams, canonical failure codes (`SIGNATURE_INVALID`, `UNKNOWN_KEY`, `UNAUTHORIZED_SIGNER`), canonical base64url malleability rejection, unknown-`kid` rejection, and single-byte payload mutation rejection.
+- **Tests:** 3 test files, 22 passing tests in `packages/conformance` with 0 superficial checks.
+- **Whole Monorepo Verification:** 117/117 tests passing, 0 build errors, 0 typecheck errors, 0 lint warnings.
 
 ---
 
@@ -66,11 +67,11 @@
    - **Keyset Eviction:** When `handleKeysetUpdate` is called, inspect all in-memory leases. If any lease was signed by a `kid` that was removed from `newKeyset` or revoked by key revocations, immediately evict that lease from memory.
 
 3. **`KeysetWatcher` ([`packages/sdk/src/keyset-watcher.ts`](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/sdk/src/keyset-watcher.ts)):**
-   - Hot-reload watcher monitoring a mounted Git-pinned keyset file (e.g. `/etc/synapse/keyset.json` or local path).
-   - Polls file hash (SHA-256) every 10 seconds (configurable) or watches fs events with hash debouncing.
+   - Hot-reload watcher monitoring a mounted Git-pinned keyset file at `/etc/synapse/keyset/keyset.json` (configurable for testing).
+   - **Invariant ([ARCHITECTURE.md:311-312](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md#L311)):** Polls file hash (`SHA-256(fileContent)`) every **10 seconds** (configurable). **Explicitly prohibits `fs.watch`** (which fails on Kubernetes symlink atomic swaps) and prohibits `subPath` mounts (which never receive ConfigMap updates).
    - Parses content via `parseKeysetJson` from `@synapsestate/lease`.
    - Authoritative empty keyset `{}`: immediately acts as "revoke all keys" directive.
-   - Bounded staleness fallback: If file read fails or becomes temporarily unreadable during Kubernetes ConfigMap projection, retain in-memory keyset for up to 15 minutes before failing closed.
+   - Bounded staleness fallback: If file read fails or becomes temporarily unreadable during Kubernetes ConfigMap projection, retain in-memory keyset for up to 15 minutes before failing static.
    - Emits change events / invokes callback on `LeaseStore` to evict invalidated keys.
    - Clean lifecycle: `start()` and `stop()` to release timers/watchers.
 
@@ -79,7 +80,9 @@
    - Scans directory (default: `/etc/synapse/emergency-leases/`, configurable for testing).
    - Reads all `*.json` files.
    - Parses each file as a `LeaseEnvelopeSchema`.
-   - Cryptographically verifies each envelope against the currently active trusted keyset using `verifyLease`.
+   - **Authoritative Keyset-Policy Seam:** Cryptographically verifies each envelope against the currently active trusted keyset using `verifyLeaseWithKeyset(envelope, keyset)` from `@synapsestate/lease` (strictly enforcing pinned-key membership, active key status, `lease_signer` permission, `max_ttl_seconds` policy ceiling, and Ed25519 signature validity).
+   - **Key-Revocation Denial:** Confirms the signing key has not been explicitly invalidated by active signed key revocations via `!isKeyRevoked(kid, keyRevocations)`.
+   - Prohibit using raw `verifyLease` directly for keyset validation (raw `verifyLease` accepts only a raw public key and bypasses membership, status, role, and TTL policies).
    - Ingests valid unexpired leases into `LeaseStore`.
    - Runs on startup and on periodic poll / directory change.
    - Ignores corrupted or invalid files without crashing (logs warnings).
@@ -94,7 +97,7 @@
 | Invariant | Non-Negotiable Rule | Verification Check |
 |---|---|---|
 | **Invariant 1: Fail-Safe Hot Path** | Any internal error in `OverrideProvider` MUST catch and delegate to underlying provider. Zero app crashes. | Simulate throwing exceptions inside `LeaseStore.getActiveLease` and verify delegate returns baseline value. |
-| **Invariant 2: Pinned Keyset Trust Root** | Keyset is strictly mounted from Git/disk. Control API never touches it. Empty keyset `{}` evicts all leases. | Test empty keyset immediately disables all active overrides. |
+| **Invariant 2: Pinned Keyset Trust Root** | Keyset is strictly mounted from Git/disk at `/etc/synapse/keyset/keyset.json`. Control API never touches it. Empty keyset `{}` evicts all leases. | Test empty keyset immediately disables all active overrides. |
 | **Invariant 3: Dual-Clock Expiry** | Leases evaluated with both monotonic time and wall clock bounds. Expired leases must never return override. | Inject time past TTL / clock skew and verify fallback to delegate. |
 | **Invariant 5: Zero-Context Privacy** | Provider methods receive `EvaluationContext`, but `OverrideProvider` and `LeaseStore` must NEVER log or egress it. | Inspect all provider method implementations to ensure `context` is passed strictly to `delegate`. |
 | **Air-Gapped Out-of-Band Fallback** | SREs applying signed leases into `/etc/synapse/emergency-leases/` must activate overrides without Control API. | Test `EmergencyScanner` ingesting signed fixture files into `LeaseStore`. |
@@ -120,9 +123,9 @@ Invoke these skills in the following order:
   - Wrap OpenFeature `Provider` interface, test boolean, string, number, and object evaluations.
   - Test fail-safe exception shielding (simulated internal errors falling through to delegate).
 - [ ] **Step 5 (TDD):** Implement `KeysetWatcher` and `keyset-watcher.test.ts`:
-  - 10s file polling, hash change detection, empty `{}` handling, fallback cache staleness ceiling.
+  - 10s file-hash polling on `/etc/synapse/keyset/keyset.json` (prohibiting `fs.watch`), hash change detection, empty `{}` handling, fallback cache staleness ceiling.
 - [ ] **Step 6 (TDD):** Implement `EmergencyScanner` and `emergency-scanner.test.ts`:
-  - Directory scanning of `*.json`, signature verification against keyset, ingestion into `LeaseStore`.
+  - Directory scanning of `*.json`, keyset policy verification via `verifyLeaseWithKeyset` + `isKeyRevoked`, ingestion into `LeaseStore`.
 - [ ] **Step 7:** Export all APIs from `packages/sdk/src/index.ts`.
 - [ ] **Step 8:** Run full monorepo verification: `pnpm test`, `pnpm -r run build`, `pnpm -r run typecheck`, and `pnpm run lint`.
 - [ ] **Step 9:** Commit using conventional commit format (`feat(sdk): implement OverrideProvider, keyset watcher, and emergency directory scanner`) and push to `origin/feat/sdk-override-provider`.

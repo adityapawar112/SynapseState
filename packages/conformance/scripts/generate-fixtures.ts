@@ -6,6 +6,7 @@ import {
   LEASE_DOMAIN_PREFIX,
   REVOCATION_DOMAIN_PREFIX,
   KEYREVOCATION_DOMAIN_PREFIX,
+  canonicalizeJson,
   signEnvelope,
   signLease,
   signRevocation,
@@ -309,6 +310,7 @@ export function generateAllFixtures() {
           resolvedValue: true,
           reason: "OVERRIDE",
           kid: KEYS.ops1.kid,
+          canonicalPayload: canonicalizeJson(validPayload1),
         },
         clockParams: {
           nowWallMs: baseTimestampMs + 300_000, // 5 min into 30 min lease
@@ -328,6 +330,7 @@ export function generateAllFixtures() {
           resolvedValue: "high-contrast-dark",
           reason: "OVERRIDE",
           kid: KEYS.ops2.kid,
+          canonicalPayload: canonicalizeJson(validPayload2),
         },
         clockParams: {
           nowWallMs: baseTimestampMs + 600_000,
@@ -346,6 +349,7 @@ export function generateAllFixtures() {
           resolvedValue: 500,
           reason: "OVERRIDE",
           kid: KEYS.ops1.kid,
+          canonicalPayload: canonicalizeJson(validPayload3),
         },
         clockParams: {
           nowWallMs: baseTimestampMs + 100_000,
@@ -364,6 +368,7 @@ export function generateAllFixtures() {
           resolvedValue: { sample_rate: 0.25, datacenter: "us-east-1" },
           reason: "OVERRIDE",
           kid: KEYS.admin1.kid,
+          canonicalPayload: canonicalizeJson(validPayload4),
         },
         clockParams: {
           nowWallMs: baseTimestampMs + 200_000,
@@ -382,6 +387,7 @@ export function generateAllFixtures() {
           resolvedValue: ["admin", "beta-tester", "internal"],
           reason: "OVERRIDE",
           kid: KEYS.admin2.kid,
+          canonicalPayload: canonicalizeJson(validPayload5),
         },
         clockParams: {
           nowWallMs: baseTimestampMs + 50_000,
@@ -406,7 +412,7 @@ export function generateAllFixtures() {
           payload: { ...validPayload1, value: false },
           sig: validEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_payload_flag_key_altered",
@@ -417,7 +423,7 @@ export function generateAllFixtures() {
           payload: { ...validPayload1, flag_key: "killswitch-payment-v3" },
           sig: validEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_payload_ttl_extended",
@@ -428,7 +434,7 @@ export function generateAllFixtures() {
           payload: { ...validPayload1, ttl_seconds: 7200 },
           sig: validEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_payload_issued_at_shifted",
@@ -439,7 +445,7 @@ export function generateAllFixtures() {
           payload: { ...validPayload1, issued_at: "2026-10-09T13:00:00.000Z" },
           sig: validEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_payload_kid_swapped",
@@ -450,7 +456,7 @@ export function generateAllFixtures() {
           payload: { ...validPayload1, kid: KEYS.admin1.kid },
           sig: validEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_payload_nonce_modified",
@@ -461,7 +467,7 @@ export function generateAllFixtures() {
           payload: { ...validPayload1, nonce: "nonce-tampered-12345" },
           sig: validEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_payload_env_changed",
@@ -472,7 +478,21 @@ export function generateAllFixtures() {
           payload: { ...validPayload1, env: "staging" },
           sig: validEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
+      },
+      {
+        id: "tampered_payload_single_byte_mutation",
+        description: "Exact single-byte mutation in canonical payload serialization post-signing",
+        type: "lease",
+        valid: false,
+        envelope: {
+          payload: {
+            ...validPayload1,
+            nonce: "monce-random-val-001", // single byte flip in nonce: 'n' (0x6e) -> 'm' (0x6d)
+          },
+          sig: validEnvelope1.sig,
+        },
+        expectedFailure: "SIGNATURE_INVALID",
       },
     ],
   };
@@ -486,6 +506,13 @@ export function generateAllFixtures() {
       ? "B" + origSig.slice(1)
       : "A" + origSig.slice(1);
 
+  // Canonical-base64url malleability (mutating unused padding bits of 86th char)
+  const b64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const lastSigChar = validEnvelope1.sig.slice(-1);
+  const lastCharIdx = b64Alphabet.indexOf(lastSigChar);
+  const malleatedLastChar = b64Alphabet[lastCharIdx ^ 1];
+  const malleatedSig = validEnvelope1.sig.slice(0, -1) + malleatedLastChar;
+
   const tamperedSigCases = {
     description: "Lease envelopes with corrupted, truncated, or malformed signatures",
     cases: [
@@ -498,7 +525,18 @@ export function generateAllFixtures() {
           payload: validPayload1,
           sig: bitFlippedSig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
+      },
+      {
+        id: "tampered_sig_canonical_base64url_malleability",
+        description: "Signature exhibits base64url padding malleability (non-canonical encoding of same 64 bytes)",
+        type: "lease",
+        valid: false,
+        envelope: {
+          payload: validPayload1,
+          sig: malleatedSig,
+        },
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_sig_truncated",
@@ -509,7 +547,7 @@ export function generateAllFixtures() {
           payload: validPayload1,
           sig: origSig.slice(0, 43),
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_sig_all_zeros",
@@ -520,7 +558,7 @@ export function generateAllFixtures() {
           payload: validPayload1,
           sig: Buffer.alloc(64, 0).toString("base64url"),
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "tampered_sig_invalid_base64url_chars",
@@ -711,6 +749,36 @@ export function generateAllFixtures() {
   };
   writeJson(path.join(FIXTURES_DIR, "leases/future_dated_leases.json"), futureDatedCases);
 
+  // 2.7 Unknown Kid Leases (Keyset Policy Seam)
+  const unknownKidPayload: LeasePayload = {
+    v: 1,
+    lease_id: "01J9X000000000000000000099",
+    env: "production",
+    flag_key: "unauthorized-rogue-override",
+    value: true,
+    reason: "INC-999: Rogue untrusted operator attempt",
+    issued_at: baseIso,
+    ttl_seconds: 600,
+    kid: KEYS.rogue.kid,
+    nonce: "nonce-rogue-val-001",
+  };
+  const unknownKidEnvelope = signLease(unknownKidPayload, KEYS.rogue.privateKey);
+
+  const unknownKidCases = {
+    description: "Lease envelopes signed by valid Ed25519 keys not present in the trusted keyset",
+    cases: [
+      {
+        id: "lease_unknown_kid_not_in_keyset",
+        description: "Signed lease with kid missing from Git-pinned keyset",
+        type: "lease",
+        valid: false,
+        envelope: unknownKidEnvelope,
+        expectedFailure: "UNKNOWN_KEY",
+      },
+    ],
+  };
+  writeJson(path.join(FIXTURES_DIR, "leases/unknown_kid_leases.json"), unknownKidCases);
+
   // ==========================================
   // 3. REVOCATIONS (fixtures/revocations/)
   // ==========================================
@@ -750,6 +818,7 @@ export function generateAllFixtures() {
         expected: {
           leaseId: "01J9X000000000000000000001",
           kid: KEYS.ops1.kid,
+          canonicalPayload: canonicalizeJson(validRevocationPayload1),
         },
       },
       {
@@ -761,6 +830,7 @@ export function generateAllFixtures() {
         expected: {
           leaseId: "01J9X000000000000000000002",
           kid: KEYS.admin1.kid,
+          canonicalPayload: canonicalizeJson(validRevocationPayload2),
         },
       },
     ],
@@ -782,7 +852,7 @@ export function generateAllFixtures() {
           },
           sig: validRevocationEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "revocation_tampered_sig",
@@ -796,7 +866,7 @@ export function generateAllFixtures() {
               ? "B" + validRevocationEnvelope1.sig.slice(1)
               : "A" + validRevocationEnvelope1.sig.slice(1),
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "revocation_cross_domain_lease_prefix",
@@ -822,7 +892,7 @@ export function generateAllFixtures() {
           },
           KEYS.rogue.privateKey
         ),
-        expectedFailure: "UNKNOWN_KEY_ID",
+        expectedFailure: "UNKNOWN_KEY",
       },
       {
         id: "revocation_malformed_timestamp",
@@ -881,6 +951,7 @@ export function generateAllFixtures() {
         expected: {
           kid: KEYS.admin1.kid,
           revokedKid: KEYS.ops2.kid,
+          canonicalPayload: canonicalizeJson(validKeyRevocationPayload1),
         },
       },
       {
@@ -892,6 +963,7 @@ export function generateAllFixtures() {
         expected: {
           kid: KEYS.admin2.kid,
           revokedKid: KEYS.ops1.kid,
+          canonicalPayload: canonicalizeJson(validKeyRevocationPayload2),
         },
       },
     ],
@@ -913,7 +985,7 @@ export function generateAllFixtures() {
           },
           sig: validKeyRevocationEnvelope1.sig,
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "key_revocation_tampered_sig",
@@ -927,7 +999,7 @@ export function generateAllFixtures() {
               ? "B" + validKeyRevocationEnvelope1.sig.slice(1)
               : "A" + validKeyRevocationEnvelope1.sig.slice(1),
         },
-        expectedFailure: "SIGNATURE_VERIFICATION_FAILED",
+        expectedFailure: "SIGNATURE_INVALID",
       },
       {
         id: "key_revocation_cross_domain",
@@ -969,7 +1041,7 @@ export function generateAllFixtures() {
           },
           KEYS.rogue.privateKey
         ),
-        expectedFailure: "UNKNOWN_KEY_ID",
+        expectedFailure: "UNKNOWN_KEY",
       },
     ],
   };

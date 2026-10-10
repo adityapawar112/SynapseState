@@ -5,6 +5,11 @@ import {
   parseKeysetJson,
   getKey,
   hasKey,
+  canRevokeLease,
+  canRevokeKey,
+  verifyLeaseWithKeyset,
+  verifyRevocationWithKeyset,
+  verifyKeyRevocationWithKeyset,
   resolvePublicKey,
   LEASE_DOMAIN_PREFIX,
   REVOCATION_DOMAIN_PREFIX,
@@ -13,9 +18,6 @@ import {
   LeaseEnvelopeSchema,
   RevocationEnvelopeSchema,
   KeyRevocationEnvelopeSchema,
-  verifyLease,
-  verifyRevocation,
-  verifyKeyRevocation,
   evaluateLeaseExpiry,
   isLeaseActive,
   type Keyset,
@@ -25,6 +27,7 @@ import {
 } from "@synapsestate/lease";
 import type {
   VectorResult,
+  VectorStatusCode,
   ConformanceSuiteReport,
   ValidLeaseVector,
   InvalidLeaseVector,
@@ -111,7 +114,7 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
       type: "keyset",
       passed: false,
       message: `Failed to parse valid keyset: ${String(err)}`,
-      actualStatus: "ERROR",
+      actualStatus: "INVALID",
       expectedStatus: "VALID",
     });
   }
@@ -126,7 +129,7 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
       type: "keyset",
       passed,
       message: passed ? undefined : "Empty keyset should produce 0 keys",
-      actualStatus: passed ? "VALID_EMPTY" : "INVALID_EMPTY",
+      actualStatus: passed ? "VALID_EMPTY" : "INVALID",
       expectedStatus: "VALID_EMPTY",
     });
   } catch (err) {
@@ -135,7 +138,7 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
       type: "keyset",
       passed: false,
       message: `Failed to parse empty keyset: ${String(err)}`,
-      actualStatus: "ERROR",
+      actualStatus: "INVALID",
       expectedStatus: "VALID_EMPTY",
     });
   }
@@ -153,8 +156,8 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
         type: "keyset",
         passed: false,
         message: `Expected error ${c.expectedError}, but parsing succeeded`,
-        expectedStatus: c.expectedError,
-        actualStatus: "SUCCESS",
+        expectedStatus: c.expectedError as VectorStatusCode,
+        actualStatus: "VALID",
       });
     } catch (err) {
       const errorName = err instanceof Error ? err.name : "UnknownError";
@@ -165,8 +168,8 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
         type: "keyset",
         passed,
         message: passed ? undefined : `Expected ${c.expectedError}, received ${errorName}`,
-        expectedStatus: c.expectedError,
-        actualStatus: errorName,
+        expectedStatus: c.expectedError as VectorStatusCode,
+        actualStatus: errorName as VectorStatusCode,
       });
     }
   }
@@ -188,12 +191,13 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
  * - cross_domain_leases.json
  * - expired_wall_clock_leases.json
  * - future_dated_leases.json
+ * - unknown_kid_leases.json
  */
 export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): ConformanceSuiteReport {
   const results: VectorResult[] = [];
   const trustedKeyset = loadTrustedKeyset(fixturesDir);
 
-  // 1. Valid leases
+  // 1. Valid leases (enforcing authoritative keyset-policy seam)
   const validData = readFixtureJson<{ cases: ValidLeaseVector[] }>(
     "leases/valid_leases.json",
     fixturesDir
@@ -223,18 +227,12 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       message = `Expected kid "${c.expected.kid}", got "${c.envelope.payload.kid}"`;
     }
 
-    // Key lookup
-    const key = getKey(trustedKeyset, c.envelope.payload.kid);
-    if (!key) {
+    // Authoritative Keyset-Policy Seam Verification
+    // Enforces: kid exists in keyset, active key status, lease_signer role, max_ttl_seconds ceiling, Ed25519 signature
+    const keysetValid = verifyLeaseWithKeyset(c.envelope, trustedKeyset);
+    if (!keysetValid) {
       passed = false;
-      message = `Key ${c.envelope.payload.kid} not found in trusted keyset`;
-    } else {
-      // Signature verification
-      const sigOk = verifyLease(c.envelope, key.public_key);
-      if (!sigOk) {
-        passed = false;
-        message = "Signature verification failed for valid lease";
-      }
+      message = "Authoritative verifyLeaseWithKeyset failed for valid lease";
     }
 
     // Dual-clock evaluation if clock params supplied
@@ -265,7 +263,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
     });
   }
 
-  // 2. Tampered payload leases (must fail signature verification)
+  // 2. Tampered payload leases (must fail signature verification via keyset seam)
   const tamperedPayloadData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
     "leases/tampered_payload_leases.json",
     fixturesDir
@@ -277,17 +275,19 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
     const schemaOk = LeaseEnvelopeSchema.safeParse(envelope).success;
 
     let passed = false;
-    let actualStatus = "UNKNOWN";
+    let actualStatus: VectorStatusCode = "UNKNOWN";
 
     if (!key) {
       actualStatus = "KEY_NOT_FOUND_PRECONDITION_FAILED";
     } else if (!schemaOk) {
       actualStatus = "SCHEMA_FAILED_PRECONDITION_FAILED";
     } else {
-      const sigOk = verifyLease(envelope, key.public_key);
+      const sigOk = verifyLeaseWithKeyset(envelope, trustedKeyset);
       if (!sigOk) {
-        actualStatus = "SIGNATURE_VERIFICATION_FAILED";
-        passed = true;
+        actualStatus = "SIGNATURE_INVALID";
+        passed =
+          c.expectedFailure === "SIGNATURE_INVALID" ||
+          (c.expectedFailure as string) === "SIGNATURE_VERIFICATION_FAILED";
       } else {
         actualStatus = "VALID_SIGNATURE";
       }
@@ -299,7 +299,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       passed,
       message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
-      expectedStatus: c.expectedFailure,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
     });
   }
 
@@ -310,7 +310,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   );
   for (const c of tamperedSigData.cases) {
     let passed = false;
-    let actualStatus = "UNKNOWN";
+    let actualStatus: VectorStatusCode = "UNKNOWN";
 
     const schemaRes = LeaseEnvelopeSchema.safeParse(c.envelope);
     if (!schemaRes.success) {
@@ -322,10 +322,12 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       if (!key) {
         actualStatus = "KEY_NOT_FOUND_PRECONDITION_FAILED";
       } else {
-        const sigOk = verifyLease(envelope, key.public_key);
+        const sigOk = verifyLeaseWithKeyset(envelope, trustedKeyset);
         if (!sigOk) {
-          actualStatus = "SIGNATURE_VERIFICATION_FAILED";
-          passed = c.expectedFailure === "SIGNATURE_VERIFICATION_FAILED";
+          actualStatus = "SIGNATURE_INVALID";
+          passed =
+            c.expectedFailure === "SIGNATURE_INVALID" ||
+            (c.expectedFailure as string) === "SIGNATURE_VERIFICATION_FAILED";
         } else {
           actualStatus = "VALID_SIGNATURE";
         }
@@ -338,7 +340,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       passed,
       message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
-      expectedStatus: c.expectedFailure,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
     });
   }
 
@@ -353,14 +355,14 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
     const schemaOk = LeaseEnvelopeSchema.safeParse(envelope).success;
 
     let passed = false;
-    let actualStatus = "UNKNOWN";
+    let actualStatus: VectorStatusCode = "UNKNOWN";
 
     if (!key) {
       actualStatus = "KEY_NOT_FOUND_PRECONDITION_FAILED";
     } else if (!schemaOk) {
       actualStatus = "SCHEMA_FAILED_PRECONDITION_FAILED";
     } else {
-      const leaseSigOk = verifyLease(envelope, key.public_key);
+      const leaseSigOk = verifyLeaseWithKeyset(envelope, trustedKeyset);
 
       // Cryptographic verification: Prove that the signature IS mathematically valid under its original domain,
       // and rejected strictly by LEASE_DOMAIN_PREFIX separation.
@@ -391,7 +393,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       passed,
       message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
-      expectedStatus: c.expectedFailure,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
     });
   }
 
@@ -403,15 +405,15 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   for (const c of expiredData.cases) {
     const envelope = c.envelope as LeaseEnvelope;
     const key = getKey(trustedKeyset, envelope.payload.kid);
-    const sigOk = key ? verifyLease(envelope, key.public_key) : false;
+    const sigOk = key ? verifyLeaseWithKeyset(envelope, trustedKeyset) : false;
 
     let passed = false;
-    let actualStatus = "INVALID";
+    let actualStatus: VectorStatusCode = "INVALID";
 
     if (!key) {
       actualStatus = "KEY_NOT_FOUND_PRECONDITION_FAILED";
     } else if (!sigOk) {
-      actualStatus = "SIGNATURE_VERIFICATION_FAILED";
+      actualStatus = "SIGNATURE_INVALID";
     } else if (c.clockParams) {
       const expiry = evaluateLeaseExpiry({
         issuedAt: envelope.payload.issued_at,
@@ -423,7 +425,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
         ttlSeconds: envelope.payload.ttl_seconds,
         ...c.clockParams,
       });
-      actualStatus = expiry.status;
+      actualStatus = expiry.status as VectorStatusCode;
       passed = !expiry.isValid && !active && expiry.remainingEffectiveMs === 0 && expiry.status === c.expectedFailure;
     }
 
@@ -433,7 +435,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       passed,
       message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
-      expectedStatus: c.expectedFailure,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
     });
   }
 
@@ -445,15 +447,15 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   for (const c of futureData.cases) {
     const envelope = c.envelope as LeaseEnvelope;
     const key = getKey(trustedKeyset, envelope.payload.kid);
-    const sigOk = key ? verifyLease(envelope, key.public_key) : false;
+    const sigOk = key ? verifyLeaseWithKeyset(envelope, trustedKeyset) : false;
 
     let passed = false;
-    let actualStatus = "INVALID";
+    let actualStatus: VectorStatusCode = "INVALID";
 
     if (!key) {
       actualStatus = "KEY_NOT_FOUND_PRECONDITION_FAILED";
     } else if (!sigOk) {
-      actualStatus = "SIGNATURE_VERIFICATION_FAILED";
+      actualStatus = "SIGNATURE_INVALID";
     } else if (c.clockParams) {
       const expiry = evaluateLeaseExpiry({
         issuedAt: envelope.payload.issued_at,
@@ -465,7 +467,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
         ttlSeconds: envelope.payload.ttl_seconds,
         ...c.clockParams,
       });
-      actualStatus = expiry.status;
+      actualStatus = expiry.status as VectorStatusCode;
       passed = !expiry.isValid && !active && expiry.remainingEffectiveMs === 0 && expiry.status === c.expectedFailure;
     }
 
@@ -475,7 +477,43 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       passed,
       message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
-      expectedStatus: c.expectedFailure,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
+    });
+  }
+
+  // 7. Unknown Kid leases (Keyset Policy Seam)
+  const unknownKidData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
+    "leases/unknown_kid_leases.json",
+    fixturesDir
+  );
+  for (const c of unknownKidData.cases) {
+    const envelope = c.envelope as LeaseEnvelope;
+    const schemaRes = LeaseEnvelopeSchema.safeParse(envelope);
+
+    let passed = false;
+    let actualStatus: VectorStatusCode = "UNKNOWN";
+
+    if (!schemaRes.success) {
+      actualStatus = "SCHEMA_VALIDATION_FAILED";
+    } else if (!hasKey(trustedKeyset, envelope.payload.kid)) {
+      actualStatus = "UNKNOWN_KEY";
+      // Authoritative seam must fail
+      const keysetValid = verifyLeaseWithKeyset(envelope, trustedKeyset);
+      passed =
+        (c.expectedFailure === "UNKNOWN_KEY" ||
+          (c.expectedFailure as string) === "UNKNOWN_KEY_ID") &&
+        !keysetValid;
+    } else {
+      actualStatus = "VALID_SIGNATURE";
+    }
+
+    results.push({
+      vectorId: c.id,
+      type: "lease",
+      passed,
+      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      actualStatus,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
     });
   }
 
@@ -497,7 +535,7 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
   const results: VectorResult[] = [];
   const trustedKeyset = loadTrustedKeyset(fixturesDir);
 
-  // 1. Valid revocations
+  // 1. Valid revocations (enforcing authoritative keyset-policy seam)
   const validData = readFixtureJson<{ cases: ValidRevocationVector[] }>(
     "revocations/valid_revocations.json",
     fixturesDir
@@ -521,16 +559,12 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
       message = `Expected kid "${c.expected.kid}", got "${c.envelope.payload.kid}"`;
     }
 
-    const key = getKey(trustedKeyset, c.envelope.payload.kid);
-    if (!key) {
+    // Authoritative Keyset-Policy Seam: verifyRevocationWithKeyset
+    // Enforces: kid in keyset, active key status, lease_signer role, Ed25519 signature
+    const revOk = verifyRevocationWithKeyset(c.envelope, trustedKeyset);
+    if (!revOk) {
       passed = false;
-      message = `Key ${c.envelope.payload.kid} not found in keyset`;
-    } else {
-      const sigOk = verifyRevocation(c.envelope, key.public_key);
-      if (!sigOk) {
-        passed = false;
-        message = "Revocation signature verification failed";
-      }
+      message = "Authoritative verifyRevocationWithKeyset failed for valid revocation";
     }
 
     results.push({
@@ -550,7 +584,7 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
   );
   for (const c of invalidData.cases) {
     let passed = false;
-    let actualStatus = "UNKNOWN";
+    let actualStatus: VectorStatusCode = "UNKNOWN";
 
     const schemaRes = RevocationEnvelopeSchema.safeParse(c.envelope);
     if (!schemaRes.success) {
@@ -559,23 +593,32 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
     } else {
       const envelope = c.envelope as RevocationEnvelope;
       if (!hasKey(trustedKeyset, envelope.payload.kid)) {
-        actualStatus = "UNKNOWN_KEY_ID";
-        passed = c.expectedFailure === "UNKNOWN_KEY_ID";
+        actualStatus = "UNKNOWN_KEY";
+        passed =
+          c.expectedFailure === "UNKNOWN_KEY" ||
+          (c.expectedFailure as string) === "UNKNOWN_KEY_ID";
       } else {
         const key = getKey(trustedKeyset, envelope.payload.kid)!;
-        const sigOk = verifyRevocation(envelope, key.public_key);
-        if (!sigOk) {
-          // Cryptographic domain proof check for cross-domain case
-          if (c.id === "revocation_cross_domain_lease_prefix") {
-            const authenticUnderLeasePrefix = verifyEnvelope(LEASE_DOMAIN_PREFIX, envelope, key.public_key);
-            actualStatus = authenticUnderLeasePrefix ? "DOMAIN_SEPARATION_MISMATCH" : "SIGNATURE_CORRUPTED";
-            passed = c.expectedFailure === "DOMAIN_SEPARATION_MISMATCH" && authenticUnderLeasePrefix;
-          } else {
-            actualStatus = "SIGNATURE_VERIFICATION_FAILED";
-            passed = c.expectedFailure === "SIGNATURE_VERIFICATION_FAILED";
-          }
+        if (!canRevokeLease(key)) {
+          actualStatus = "UNAUTHORIZED_SIGNER";
+          passed = c.expectedFailure === "UNAUTHORIZED_SIGNER";
         } else {
-          actualStatus = "VALID_SIGNATURE";
+          const revOk = verifyRevocationWithKeyset(envelope, trustedKeyset);
+          if (!revOk) {
+            // Cryptographic domain proof check for cross-domain case
+            if (c.id === "revocation_cross_domain_lease_prefix") {
+              const authenticUnderLeasePrefix = verifyEnvelope(LEASE_DOMAIN_PREFIX, envelope, key.public_key);
+              actualStatus = authenticUnderLeasePrefix ? "DOMAIN_SEPARATION_MISMATCH" : "SIGNATURE_CORRUPTED";
+              passed = c.expectedFailure === "DOMAIN_SEPARATION_MISMATCH" && authenticUnderLeasePrefix;
+            } else {
+              actualStatus = "SIGNATURE_INVALID";
+              passed =
+                c.expectedFailure === "SIGNATURE_INVALID" ||
+                (c.expectedFailure as string) === "SIGNATURE_VERIFICATION_FAILED";
+            }
+          } else {
+            actualStatus = "VALID_SIGNATURE";
+          }
         }
       }
     }
@@ -586,7 +629,7 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
       passed,
       message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
-      expectedStatus: c.expectedFailure,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
     });
   }
 
@@ -608,7 +651,7 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
   const results: VectorResult[] = [];
   const trustedKeyset = loadTrustedKeyset(fixturesDir);
 
-  // 1. Valid key revocations
+  // 1. Valid key revocations (enforcing authoritative keyset-policy seam & key_revoker role)
   const validData = readFixtureJson<{ cases: ValidKeyRevocationVector[] }>(
     "key_revocations/valid_key_revocations.json",
     fixturesDir
@@ -634,19 +677,12 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
       message = `Expected signer kid "${c.expected.kid}", got "${signerKid}"`;
     }
 
-    const key = getKey(trustedKeyset, signerKid);
-    if (!key) {
+    // Authoritative Keyset-Policy Seam: verifyKeyRevocationWithKeyset (ARCHITECTURE.md:286)
+    // Enforces: revoked_by_kid in keyset, active key status, canRevokeKey (requires key_revoker role), Ed25519 signature
+    const keyRevOk = verifyKeyRevocationWithKeyset(c.envelope, trustedKeyset, signerKid);
+    if (!keyRevOk) {
       passed = false;
-      message = `Signer key ${signerKid} not in keyset`;
-    } else if (key.role !== "admin") {
-      passed = false;
-      message = `Key revocation signer must have role "admin", got "${key.role}"`;
-    } else {
-      const sigOk = verifyKeyRevocation(c.envelope, key.public_key);
-      if (!sigOk) {
-        passed = false;
-        message = "Key revocation signature verification failed";
-      }
+      message = "Authoritative verifyKeyRevocationWithKeyset failed for valid key revocation";
     }
 
     results.push({
@@ -666,7 +702,7 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
   );
   for (const c of invalidData.cases) {
     let passed = false;
-    let actualStatus = "UNKNOWN";
+    let actualStatus: VectorStatusCode = "UNKNOWN";
 
     const schemaRes = KeyRevocationEnvelopeSchema.safeParse(c.envelope);
     if (!schemaRes.success) {
@@ -676,23 +712,28 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
       const envelope = c.envelope as KeyRevocationEnvelope;
       const signerKid = envelope.payload.revoked_by_kid ?? envelope.payload.kid;
       if (!hasKey(trustedKeyset, signerKid)) {
-        actualStatus = "UNKNOWN_KEY_ID";
-        passed = c.expectedFailure === "UNKNOWN_KEY_ID";
+        actualStatus = "UNKNOWN_KEY";
+        passed =
+          c.expectedFailure === "UNKNOWN_KEY" ||
+          (c.expectedFailure as string) === "UNKNOWN_KEY_ID";
       } else {
         const key = getKey(trustedKeyset, signerKid)!;
-        if (key.role !== "admin") {
+        // Check architectural key revocation permission (canRevokeKey per ARCHITECTURE.md:286)
+        if (!canRevokeKey(key)) {
           actualStatus = "UNAUTHORIZED_SIGNER";
           passed = c.expectedFailure === "UNAUTHORIZED_SIGNER";
         } else {
-          const sigOk = verifyKeyRevocation(envelope, key.public_key);
+          const sigOk = verifyKeyRevocationWithKeyset(envelope, trustedKeyset, signerKid);
           if (!sigOk) {
             if (c.id === "key_revocation_cross_domain") {
               const authenticUnderLeasePrefix = verifyEnvelope(LEASE_DOMAIN_PREFIX, envelope, key.public_key);
               actualStatus = authenticUnderLeasePrefix ? "DOMAIN_SEPARATION_MISMATCH" : "SIGNATURE_CORRUPTED";
               passed = c.expectedFailure === "DOMAIN_SEPARATION_MISMATCH" && authenticUnderLeasePrefix;
             } else {
-              actualStatus = "SIGNATURE_VERIFICATION_FAILED";
-              passed = c.expectedFailure === "SIGNATURE_VERIFICATION_FAILED";
+              actualStatus = "SIGNATURE_INVALID";
+              passed =
+                c.expectedFailure === "SIGNATURE_INVALID" ||
+                (c.expectedFailure as string) === "SIGNATURE_VERIFICATION_FAILED";
             }
           } else {
             actualStatus = "VALID_SIGNATURE";
@@ -707,7 +748,7 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
       passed,
       message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
-      expectedStatus: c.expectedFailure,
+      expectedStatus: c.expectedFailure as VectorStatusCode,
     });
   }
 

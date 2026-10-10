@@ -16,7 +16,7 @@
         },
         "sig": "53827SkO9YwAZDv0J6E_u3B7asYxfhfoBN30gWyiaULk53YzGF9w1Mt6C08k8zaTGuRfWnkra15WU8PLOUF1CQ"
       },
-      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+      "expectedFailure": "SIGNATURE_INVALID"
     },
     {
       "id": "key_revocation_tampered_sig",
@@ -33,7 +33,7 @@
         },
         "sig": "A3827SkO9YwAZDv0J6E_u3B7asYxfhfoBN30gWyiaULk53YzGF9w1Mt6C08k8zaTGuRfWnkra15WU8PLOUF1CQ"
       },
-      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+      "expectedFailure": "SIGNATURE_INVALID"
     },
     {
       "id": "key_revocation_cross_domain",
@@ -84,7 +84,7 @@
         },
         "sig": "UM0VHX4DOgLvDuu4X6qmT82_-uZX5sbWXYbCYIqlbYn0UmBjrO59em9jmAE4LFjfOZjraDtOyrix5QU2TiRLAw"
       },
-      "expectedFailure": "UNKNOWN_KEY_ID"
+      "expectedFailure": "UNKNOWN_KEY"
     }
   ]
 }

@@ -18,7 +18,8 @@
       },
       "expected": {
         "kid": "admin-root-01",
-        "revokedKid": "ops-secondary-02"
+        "revokedKid": "ops-secondary-02",
+        "canonicalPayload": "{\"kid\":\"ops-secondary-02\",\"reason\":\"INC-996: Operator workstation lost; credential revoked\",\"revoked_at\":\"2026-10-09T12:30:00.000Z\",\"revoked_by_kid\":\"admin-root-01\",\"v\":1}"
       }
     },
     {
@@ -38,7 +39,8 @@
       },
       "expected": {
         "kid": "admin-backup-02",
-        "revokedKid": "ops-primary-01"
+        "revokedKid": "ops-primary-01",
+        "canonicalPayload": "{\"kid\":\"ops-primary-01\",\"reason\":\"Planned key rotation by backup administrator\",\"revoked_at\":\"2026-10-09T12:35:00.000Z\",\"revoked_by_kid\":\"admin-backup-02\",\"v\":1}"
       }
     }
   ]

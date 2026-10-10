@@ -18,7 +18,8 @@
       },
       "expected": {
         "leaseId": "01J9X000000000000000000001",
-        "kid": "ops-primary-01"
+        "kid": "ops-primary-01",
+        "canonicalPayload": "{\"kid\":\"ops-primary-01\",\"lease_id\":\"01J9X000000000000000000001\",\"reason\":\"INC-991: Payment incident resolved; emergency lease recalled\",\"revoked_at\":\"2026-10-09T12:15:00.000Z\",\"v\":1}"
       }
     },
     {
@@ -38,7 +39,8 @@
       },
       "expected": {
         "leaseId": "01J9X000000000000000000002",
-        "kid": "admin-root-01"
+        "kid": "admin-root-01",
+        "canonicalPayload": "{\"kid\":\"admin-root-01\",\"lease_id\":\"01J9X000000000000000000002\",\"reason\":\"Administrative override revocation\",\"revoked_at\":\"2026-10-09T12:20:00.000Z\",\"v\":1}"
       }
     }
   ]

@@ -1,0 +1,27 @@
+{
+  "description": "Lease envelopes signed by valid Ed25519 keys not present in the trusted keyset",
+  "cases": [
+    {
+      "id": "lease_unknown_kid_not_in_keyset",
+      "description": "Signed lease with kid missing from Git-pinned keyset",
+      "type": "lease",
+      "valid": false,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000099",
+          "env": "production",
+          "flag_key": "unauthorized-rogue-override",
+          "value": true,
+          "reason": "INC-999: Rogue untrusted operator attempt",
+          "issued_at": "2026-10-09T12:00:00.000Z",
+          "ttl_seconds": 600,
+          "kid": "untrusted-rogue-01",
+          "nonce": "nonce-rogue-val-001"
+        },
+        "sig": "IJfv7KQoME-DswX6nJe7usk6cDOY91SFLtfy3OgBkpWpYscP6GewC44G_wej10B152e-ngkLNavz9D8SKFhRCQ"
+      },
+      "expectedFailure": "UNKNOWN_KEY"
+    }
+  ]
+}

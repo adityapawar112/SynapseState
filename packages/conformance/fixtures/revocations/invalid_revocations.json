@@ -16,7 +16,7 @@
         },
         "sig": "D3a22DWPSsxdkR9tsqXqKc6dYh6Ox3Y4tTGTJZ8sqIQj88cRLE27d5wNv8OqU9fWBk6Sq0pP0qFWxSqxp656Aw"
       },
-      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+      "expectedFailure": "SIGNATURE_INVALID"
     },
     {
       "id": "revocation_tampered_sig",
@@ -33,7 +33,7 @@
         },
         "sig": "A3a22DWPSsxdkR9tsqXqKc6dYh6Ox3Y4tTGTJZ8sqIQj88cRLE27d5wNv8OqU9fWBk6Sq0pP0qFWxSqxp656Aw"
       },
-      "expectedFailure": "SIGNATURE_VERIFICATION_FAILED"
+      "expectedFailure": "SIGNATURE_INVALID"
     },
     {
       "id": "revocation_cross_domain_lease_prefix",
@@ -67,7 +67,7 @@
         },
         "sig": "GVKyOGL3mFHHTImLOnzGHW_pJtgxCflE5dgaPgPrdlU8SCwHhD0QMsRUe5AirX5_iSSRBINb3_-Zhw2-sYzmCA"
       },
-      "expectedFailure": "UNKNOWN_KEY_ID"
+      "expectedFailure": "UNKNOWN_KEY"
     },
     {
       "id": "revocation_malformed_timestamp",

@@ -59,20 +59,52 @@ export interface ValidLeaseVector {
     resolvedValue: unknown;
     reason: "OVERRIDE";
     kid: string;
+    canonicalPayload?: string;
   };
   clockParams?: VectorClockParams;
 }
 
 /**
- * Categorization of expected failure modes for invalid lease test vectors.
+ * Standardized status codes returned by the conformance vector runner.
  */
-export type LeaseFailureCategory =
+export type VectorStatusCode =
+  | "VALID"
+  | "VALID_EMPTY"
+  | "VALID_SIGNATURE"
+  | "SIGNATURE_INVALID"
+  | "SIGNATURE_VERIFICATION_FAILED" // backward-compatibility alias
+  | "UNKNOWN_KEY"
+  | "UNKNOWN_KEY_ID" // backward-compatibility alias
+  | "UNAUTHORIZED_SIGNER"
+  | "KEY_INACTIVE"
+  | "TTL_EXCEEDED"
   | "SCHEMA_VALIDATION_FAILED"
-  | "SIGNATURE_VERIFICATION_FAILED"
   | "DOMAIN_SEPARATION_MISMATCH"
   | "EXPIRED_WALL_CLOCK"
   | "EXPIRED_MONOTONIC"
   | "FUTURE_DATED"
+  | "KEY_NOT_FOUND_PRECONDITION_FAILED"
+  | "SCHEMA_FAILED_PRECONDITION_FAILED"
+  | "SIGNATURE_INVALID_UNDER_BOTH_DOMAINS"
+  | "SIGNATURE_CORRUPTED"
+  | "INVALID"
+  | "UNKNOWN";
+
+/**
+ * Categorization of expected failure modes for invalid lease test vectors.
+ */
+export type LeaseFailureCategory =
+  | "SIGNATURE_INVALID"
+  | "UNKNOWN_KEY"
+  | "UNAUTHORIZED_SIGNER"
+  | "KEY_INACTIVE"
+  | "TTL_EXCEEDED"
+  | "SCHEMA_VALIDATION_FAILED"
+  | "DOMAIN_SEPARATION_MISMATCH"
+  | "EXPIRED_WALL_CLOCK"
+  | "EXPIRED_MONOTONIC"
+  | "FUTURE_DATED"
+  | "SIGNATURE_VERIFICATION_FAILED"
   | "UNKNOWN_KEY_ID";
 
 /**
@@ -100,6 +132,7 @@ export interface ValidRevocationVector {
   expected: {
     leaseId: string;
     kid: string;
+    canonicalPayload?: string;
   };
 }
 
@@ -107,9 +140,13 @@ export interface ValidRevocationVector {
  * Categorization of expected failure modes for invalid revocation test vectors.
  */
 export type RevocationFailureCategory =
+  | "SIGNATURE_INVALID"
+  | "UNKNOWN_KEY"
+  | "UNAUTHORIZED_SIGNER"
+  | "KEY_INACTIVE"
   | "SCHEMA_VALIDATION_FAILED"
-  | "SIGNATURE_VERIFICATION_FAILED"
   | "DOMAIN_SEPARATION_MISMATCH"
+  | "SIGNATURE_VERIFICATION_FAILED"
   | "UNKNOWN_KEY_ID";
 
 /**
@@ -136,6 +173,7 @@ export interface ValidKeyRevocationVector {
   expected: {
     kid: string;
     revokedKid: string;
+    canonicalPayload?: string;
   };
 }
 
@@ -143,10 +181,13 @@ export interface ValidKeyRevocationVector {
  * Categorization of expected failure modes for invalid key revocation test vectors.
  */
 export type KeyRevocationFailureCategory =
-  | "SCHEMA_VALIDATION_FAILED"
-  | "SIGNATURE_VERIFICATION_FAILED"
-  | "DOMAIN_SEPARATION_MISMATCH"
+  | "SIGNATURE_INVALID"
+  | "UNKNOWN_KEY"
   | "UNAUTHORIZED_SIGNER"
+  | "KEY_INACTIVE"
+  | "SCHEMA_VALIDATION_FAILED"
+  | "DOMAIN_SEPARATION_MISMATCH"
+  | "SIGNATURE_VERIFICATION_FAILED"
   | "UNKNOWN_KEY_ID";
 
 /**
@@ -192,8 +233,8 @@ export interface VectorResult {
   type: "keyset" | "lease" | "revocation" | "key_revocation";
   passed: boolean;
   message?: string;
-  actualStatus?: string;
-  expectedStatus?: string;
+  actualStatus?: VectorStatusCode;
+  expectedStatus?: VectorStatusCode;
 }
 
 /**
