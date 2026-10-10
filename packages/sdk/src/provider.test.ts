@@ -372,4 +372,40 @@ describe("OverrideProvider", () => {
     expect(p.events).toBeUndefined();
     expect(p.status).toBeUndefined();
   });
+
+  it("wires and exposes StateClient and TelemetryHook when controlApiUrl is provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 304,
+      headers: new Headers(),
+    });
+
+    const p = new OverrideProvider(delegate, {
+      leaseStore,
+      controlApiUrl: "https://control-api.synapse.internal",
+      serviceToken: "test-token",
+      env: "staging",
+      longPollWaitSeconds: 15,
+      telemetryFlushIntervalMs: 10_000,
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    const stateClient = p.getStateClient();
+    const telemetryHook = p.getTelemetryHook();
+
+    expect(stateClient).toBeDefined();
+    expect(telemetryHook).toBeDefined();
+
+    // Verify hooks includes telemetryHook
+    expect(p.hooks).toContain(telemetryHook);
+
+    await p.initialize();
+    expect(stateClient?.isRunning()).toBe(true);
+
+    await p.onClose();
+    expect(stateClient?.isRunning()).toBe(false);
+  });
 });
+

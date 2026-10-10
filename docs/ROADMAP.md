@@ -69,12 +69,12 @@ gantt
 * **1.1 Monorepo Workspace & Build Scaffolding (`packages/*`, `apps/*`):** `[DONE]`
   * Configured pnpm workspaces for shared dependencies and TypeScript project references.
   * Established GitHub Actions CI: linting, formatting (`prettier`), type-checking, and unit tests across all workspace packages.
-* **1.2 Cryptographic Lease Core (`packages/lease`):** `[ACTIVE]`
+* **1.2 Cryptographic Lease Core (`packages/lease`):** `[COMPLETED - PR 1]`
   * Deterministic RFC 8785 JSON canonicalization (`canonicalizeJson` implemented).
   * Ed25519 signing and verification with domain separation (`"synapsestate/lease/v1\n"`, `"synapsestate/revocation/v1\n"`, and `"synapsestate/keyrevocation/v1\n"`).
   * Dual-clock expiration validation logic: $\min(\text{wall\_expiry}, \text{mono\_expiry})$ with process-scoped monotonic lifetime.
   * Pinned keyset Zod schema and parser.
-* **1.3 OpenFeature In-Process SDK (`packages/sdk`):** `[NEXT]`
+* **1.3 OpenFeature In-Process SDK (`packages/sdk`):** `[COMPLETED - PR 3 & PR 4]`
   * `OverrideProvider`: Implements OpenFeature `Provider` interface; wraps any delegate provider.
   * In-memory verified lease map with thread-safe pointer references.
   * Keyset hot-reload: 10s file-hash polling on mounted ConfigMap volume; bounded in-memory fallback cache (15-minute staleness ceiling); valid empty JSON `{}` acts as "revoke all".
@@ -88,9 +88,9 @@ gantt
 * **Recommended Branches & Pull Requests:**
   * **PR 1 (`feat/lease-crypto-schemas`):** `feat(lease): implement Zod schemas, Ed25519 sign/verify, and dual-clock expiry` — `packages/lease/src/{schema.ts, crypto.ts, expiry.ts, keyset.ts, index.ts}` `[COMPLETED]`
   * **PR 2 (`feat/conformance-golden-vectors`):** `test(conformance): language-neutral test vectors and JSON runner` — `packages/conformance/fixtures/*.json`, `packages/conformance/src/runner.ts` `[COMPLETED]`
-  * **PR 3 (`feat/sdk-override-provider`):** `feat(sdk): implement OverrideProvider, keyset watcher, and emergency directory scanner` — `packages/sdk/src/{provider.ts, lease-store.ts, keyset-watcher.ts, emergency-scanner.ts}`
-  * **PR 4 (`feat/sdk-long-poll-telemetry`):** `feat(sdk): ETag long-polling client loop and zero-context TelemetryHook` — `packages/sdk/src/{state-client.ts, telemetry-hook.ts, index.ts}`
-  * **PR 5 (`perf/sdk-microbenchmarks`):** `perf(sdk): microbenchmarks measuring OverrideProvider overhead vs bare delegate` — `packages/sdk/benchmarks/*`
+  * **PR 3 (`feat/sdk-override-provider`):** `feat(sdk): implement OverrideProvider, keyset watcher, and emergency directory scanner` — `packages/sdk/src/{provider.ts, lease-store.ts, keyset-watcher.ts, emergency-scanner.ts}` `[COMPLETED]`
+  * **PR 4 (`feat/sdk-long-poll-telemetry`):** `feat(sdk): ETag long-polling client loop and zero-context TelemetryHook` — `packages/sdk/src/{state-client.ts, telemetry-hook.ts, ulid.ts, index.ts}` `[COMPLETED]`
+  * **PR 5 (`perf/sdk-microbenchmarks`):** `perf(sdk): microbenchmarks measuring OverrideProvider overhead vs bare delegate` — `packages/sdk/benchmarks/*` `[NEXT]`
 * **Security & Best Practice Review Checkpoints:**
   * **Cryptographic Invariants:** Verify RFC 8785 canonicalization compliance (key sorting, whitespace, float serialization). Confirm Ed25519 uses `null` digest algorithm. Validate exact domain separation prefixes (`"synapsestate/lease/v1\n"`, `"synapsestate/revocation/v1\n"`, `"synapsestate/keyrevocation/v1\n"`).
   * **Fail-Safe Hot Path (Invariant 1):** Audit every `resolve*Evaluation` branch; wrap all lookup and crypto operations in `try/catch` with automatic delegation to the underlying provider on error.

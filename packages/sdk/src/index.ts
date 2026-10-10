@@ -24,6 +24,26 @@ export {
   type EmergencyScannerExtendedOptions,
 } from "./emergency-scanner.js";
 
+// ETag Long-Polling State Synchronization Client
+export {
+  StateClient,
+  StateSyncPayloadSchema,
+  DEFAULT_LONG_POLL_WAIT_SECONDS,
+  DEFAULT_BACKOFF_INITIAL_MS,
+  DEFAULT_BACKOFF_MAX_MS,
+  type StatePollResult,
+} from "./state-client.js";
+
+// Zero-Context Telemetry Hook & Aggregator (Invariant 5)
+export {
+  TelemetryHook,
+  DEFAULT_TELEMETRY_FLUSH_INTERVAL_MS,
+  DEFAULT_TELEMETRY_MAX_DISTINCT_METRICS,
+} from "./telemetry-hook.js";
+
+// Crockford Base32 ULID Generator
+export { generateUlid } from "./ulid.js";
+
 // SDK Types & Configurations
 export type {
   ActiveLease,
@@ -31,6 +51,11 @@ export type {
   KeysetWatcherOptions,
   EmergencyScannerOptions,
   OverrideProviderOptions,
+  StateClientOptions,
+  StateSyncPayload,
+  TelemetryHookOptions,
+  TelemetryBatchPayload,
+  TelemetryMetricItem,
 } from "./types.js";
 
 // Re-export cryptographic lease foundation
