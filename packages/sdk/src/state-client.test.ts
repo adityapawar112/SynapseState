@@ -311,6 +311,44 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
     expect(store.getActiveLease("checkout-v2")).toBeDefined();
   });
 
+  it("Fail-Static Authentication Failure: retains active leases and logs distinct warning on HTTP 401/403", async () => {
+    const existingLease = createLease();
+    store.addLease(existingLease);
+    expect(store.getActiveLease("checkout-v2")).toBeDefined();
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+    });
+
+    const warnMock = vi.fn();
+    const client = new StateClient({
+      controlApiUrl: "https://control-api.synapse.internal",
+      leaseStore: store,
+      serviceToken: "expired-token",
+      fetch: fetchMock as unknown as typeof fetch,
+      logger: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: warnMock,
+        error: vi.fn(),
+      },
+    });
+
+    const res = await client.pollOnce();
+    expect(res.status).toBe("error");
+    // Leases must NEVER be evicted on auth failure (fail-static)
+    expect(store.getActiveLease("checkout-v2")).toBeDefined();
+    // Warning must specifically highlight authentication failure and serviceToken
+    expect(warnMock).toHaveBeenCalledWith(
+      expect.stringContaining("Authentication/Authorization failure"),
+    );
+    expect(warnMock).toHaveBeenCalledWith(
+      expect.stringContaining("serviceToken"),
+    );
+  });
+
   it("validates response schema and rejects malformed payloads without crashing", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -340,8 +378,9 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
     expect(warnMock).toHaveBeenCalled();
   });
 
-  it("lifecycle: start() begins background long-polling loop and stop() aborts it cleanly", async () => {
+  it("lifecycle: start() begins background long-polling loop and stop() aborts it cleanly without spurious warnings", async () => {
     let callCount = 0;
+    const warnMock = vi.fn();
     const fetchMock = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
       callCount++;
       // Simulate long-poll wait
@@ -365,6 +404,12 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
       controlApiUrl: "https://control-api.synapse.internal",
       leaseStore: store,
       fetch: fetchMock as unknown as typeof fetch,
+      logger: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: warnMock,
+        error: vi.fn(),
+      },
     });
 
     expect(client.isRunning()).toBe(false);
@@ -375,7 +420,43 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(callCount).toBeGreaterThanOrEqual(1);
 
-    client.stop();
+    // Call stop() while next poll is in-flight: should abort cleanly without calling warn
+    await client.stop();
     expect(client.isRunning()).toBe(false);
+    expect(warnMock).not.toHaveBeenCalled();
+
+    // Calling stop() again when already stopped is a safe no-op
+    await client.stop();
+  });
+
+  it("removes abort event listener from signal after sleep resolves to prevent listener leaks", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+    });
+
+    const client = new StateClient({
+      controlApiUrl: "https://control-api.synapse.internal",
+      leaseStore: store,
+      fetch: fetchMock as unknown as typeof fetch,
+      backoffInitialMs: 100,
+    });
+
+    const addListenerSpy = vi.spyOn(AbortSignal.prototype, "addEventListener");
+    const removeListenerSpy = vi.spyOn(AbortSignal.prototype, "removeEventListener");
+
+    await client.start();
+
+    // Advance fake timer to execute poll, trigger error backoff, and complete sleep
+    await vi.advanceTimersByTimeAsync(200);
+
+    // Verify removeEventListener was called for the abort listener
+    expect(addListenerSpy).toHaveBeenCalledWith("abort", expect.any(Function), { once: true });
+    expect(removeListenerSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+
+    await client.stop();
+    addListenerSpy.mockRestore();
+    removeListenerSpy.mockRestore();
   });
 });

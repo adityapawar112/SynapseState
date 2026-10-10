@@ -87,13 +87,29 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
       },
     ]);
 
-    // Stringify entire flushed batch and ensure zero context/PII exists anywhere
+    // Verify exact key sets: strictly zero context or unexpected properties in batch or metrics
+    const allowedBatchKeys = new Set([
+      "instance_id",
+      "batch_id",
+      "window_start",
+      "window_end",
+      "metrics",
+      "propagation_lag_ms",
+      "dropped_count",
+    ]);
+    expect(Object.keys(batch!).every((k) => allowedBatchKeys.has(k))).toBe(true);
+
+    for (const metric of batch!.metrics) {
+      const keys = Object.keys(metric).sort();
+      expect(keys).toEqual(["count", "flag_key", "reason", "variant"]);
+    }
+
+    // Stringify entire flushed batch and ensure zero context/PII values exist anywhere
     const serialized = JSON.stringify(batch);
     expect(serialized).not.toContain("super-secret-user");
     expect(serialized).not.toContain("4111-2222-3333-4444");
     expect(serialized).not.toContain("uuid-9999");
     expect(serialized).not.toContain("targetingKey");
-    expect(serialized).not.toContain("context");
     expect(serialized).not.toContain("secretCreditCard");
   });
 
@@ -200,6 +216,7 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
 
     const batch = await hook.flush();
     expect(batch?.metrics.length).toBe(maxCapacity);
+    expect(batch?.dropped_count).toBe(400);
 
     // After flush, buffer should be reset
     expect(hook.getDistinctCount()).toBe(0);

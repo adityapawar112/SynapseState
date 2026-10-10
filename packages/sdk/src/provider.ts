@@ -121,6 +121,8 @@ export class OverrideProvider implements Provider {
         serviceToken: opts.serviceToken,
         fetch: opts.fetch,
         logger: this.logger,
+        // SLO Linkage: Returns measured lease propagation lag from the most recent successful poll.
+        // Omitted (undefined) when no successful HTTP 200 state sync has completed yet.
         getPropagationLagMs: () => this.stateClient?.getLastPropagationLagMs(),
       });
     }
@@ -240,7 +242,7 @@ export class OverrideProvider implements Provider {
   async onClose(): Promise<void> {
     try {
       if (this.stateClient) {
-        this.stateClient.stop();
+        await this.stateClient.stop();
       }
       if (this.telemetryHook) {
         await this.telemetryHook.stop();

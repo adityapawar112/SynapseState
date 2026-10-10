@@ -98,6 +98,7 @@ export class StateClient {
 
   /**
    * Returns last measured lease propagation lag in milliseconds.
+   * Returns undefined if no successful HTTP 200 sync has completed yet.
    */
   getLastPropagationLagMs(): number | undefined {
     return this.lastPropagationLagMs;
@@ -107,6 +108,8 @@ export class StateClient {
    * Executes a single state polling cycle.
    */
   async pollOnce(externalSignal?: AbortSignal): Promise<StatePollResult> {
+    const activeSignal = externalSignal ?? this.abortController?.signal;
+
     try {
       const url = `${this.controlApiUrl}/v1/sdk/state?env=${encodeURIComponent(this.env)}&wait=${this.waitSeconds}s`;
       const headers: Record<string, string> = {
@@ -123,7 +126,7 @@ export class StateClient {
       const response = await this.fetchFn(url, {
         method: "GET",
         headers,
-        signal: externalSignal,
+        signal: activeSignal,
       });
 
       // 1. HTTP 304 Not Modified
@@ -189,13 +192,29 @@ export class StateClient {
         return { status: 200, etag: this.currentEtag };
       }
 
-      // Non-200 / Non-304 HTTP errors (e.g. 500, 502, 503, 401)
+      // 3. HTTP 401 / 403 Authentication / Authorization failure
+      if (response.status === 401 || response.status === 403) {
+        this.logger?.warn?.(
+          `[SynapseState] State API returned HTTP ${response.status} (Authentication/Authorization failure). Verify serviceToken configuration. Existing active leases continue to be honored fail-static until TTL expiration.`,
+        );
+        return { status: "error" };
+      }
+
+      // 4. Non-200 / Non-304 HTTP errors (e.g. 500, 502, 503)
       this.logger?.warn?.(
         `[SynapseState] State API returned HTTP ${response.status} ${response.statusText ?? ""}`,
       );
       return { status: "error" };
     } catch (err) {
-      if (externalSignal?.aborted || this.abortController?.signal.aborted) {
+      const isAborted =
+        activeSignal?.aborted ||
+        externalSignal?.aborted ||
+        this.abortController?.signal.aborted ||
+        (err instanceof Error &&
+          (err.name === "AbortError" ||
+            err.message.toLowerCase().includes("aborted")));
+
+      if (isAborted) {
         return { status: "error", error: err };
       }
 
@@ -221,15 +240,25 @@ export class StateClient {
 
   /**
    * Stops the background long-polling loop and aborts any in-flight HTTP request.
+   * Awaits completion of the running loop promise to guarantee clean shutdown.
    */
-  stop(): void {
+  async stop(): Promise<void> {
     if (!this.running) {
       return;
     }
 
     this.running = false;
-    this.abortController?.abort();
-    this.abortController = undefined;
+    const controller = this.abortController;
+    controller?.abort();
+
+    try {
+      if (this.loopPromise) {
+        await this.loopPromise;
+      }
+    } finally {
+      this.abortController = undefined;
+      this.loopPromise = undefined;
+    }
   }
 
   /**
@@ -237,14 +266,15 @@ export class StateClient {
    */
   private async runLoop(): Promise<void> {
     while (this.running) {
-      if (this.abortController?.signal.aborted) {
+      const signal = this.abortController?.signal;
+      if (signal?.aborted) {
         break;
       }
 
       try {
-        const result = await this.pollOnce(this.abortController?.signal);
+        const result = await this.pollOnce(signal);
 
-        if (!this.running) {
+        if (!this.running || signal?.aborted) {
           break;
         }
 
@@ -257,22 +287,23 @@ export class StateClient {
             this.currentBackoffMs * 2,
           );
 
-          await this.sleep(delay, this.abortController?.signal);
+          await this.sleep(delay, signal);
         } else {
           // Immediate re-issue of next poll on 200 or 304
           this.currentBackoffMs = this.backoffInitialMs;
         }
       } catch {
-        if (!this.running) {
+        if (!this.running || signal?.aborted) {
           break;
         }
-        await this.sleep(this.currentBackoffMs, this.abortController?.signal);
+        await this.sleep(this.currentBackoffMs, signal);
       }
     }
   }
 
   /**
    * Abortable sleep helper for backoff delays.
+   * Cleans up signal listener to avoid memory leaks during long-running backoff loops.
    */
   private sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
@@ -282,17 +313,16 @@ export class StateClient {
       }
 
       const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
         resolve();
       }, ms);
 
-      signal?.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        { once: true },
-      );
+      function onAbort(): void {
+        clearTimeout(timer);
+        resolve();
+      }
+
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 }

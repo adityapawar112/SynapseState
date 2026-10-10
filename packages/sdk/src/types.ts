@@ -203,6 +203,7 @@ export interface TelemetryBatchPayload {
   window_end: string; // ISO 8601
   metrics: TelemetryMetricItem[];
   propagation_lag_ms?: number;
+  dropped_count?: number;
 }
 
 /**

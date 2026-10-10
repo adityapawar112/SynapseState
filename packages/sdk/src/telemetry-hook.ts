@@ -185,11 +185,18 @@ export class TelemetryHook implements Hook {
     const currentMap = this.metricsMap;
     const currentWindowStart = this.windowStart;
     const currentWindowEnd = new Date().toISOString();
+    const currentDroppedCount = this.droppedCount;
 
     // Reset buffer for the next collection window
     this.metricsMap = new Map();
     this.windowStart = currentWindowEnd;
     this.droppedCount = 0;
+
+    if (currentDroppedCount > 0) {
+      this.logger?.warn?.(
+        `[SynapseState] Telemetry bulkhead limit reached: dropped ${currentDroppedCount} distinct metric tuples in window`,
+      );
+    }
 
     // Convert map to metrics list
     const metrics: TelemetryMetricItem[] = [];
@@ -221,6 +228,7 @@ export class TelemetryHook implements Hook {
       window_end: currentWindowEnd,
       metrics,
       ...(propagationLagMs !== undefined ? { propagation_lag_ms: propagationLagMs } : {}),
+      ...(currentDroppedCount > 0 ? { dropped_count: currentDroppedCount } : {}),
     };
 
     // Invoke custom onFlush hook if registered
