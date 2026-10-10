@@ -14,6 +14,7 @@ import type {
   ActiveLease,
   LeaseStoreMetrics,
 } from "./types.js";
+import type { Keyset } from "@synapsestate/lease";
 import { KeysetWatcher } from "./keyset-watcher.js";
 import { EmergencyScanner } from "./emergency-scanner.js";
 import { StateClient } from "./state-client.js";
@@ -78,7 +79,7 @@ export class OverrideProvider implements Provider {
         keysetPath: opts.keysetPath,
         pollIntervalMs: opts.keysetPollIntervalMs,
         maxStaleMs: opts.keysetCacheMaxStaleMs,
-        onKeysetUpdate: (newKeyset) => {
+        onKeysetUpdate: (newKeyset: Keyset) => {
           this.leaseStore.handleKeysetUpdate(newKeyset);
         },
         logger: this.logger,

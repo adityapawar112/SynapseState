@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { HookContext, EvaluationDetails } from "@openfeature/server-sdk";
 import { ULID_REGEX } from "@synapsestate/lease";
 import { TelemetryHook } from "./telemetry-hook.js";
+import type { TelemetryBatchPayload } from "./types.js";
 
 describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
   beforeEach(() => {
@@ -52,7 +53,7 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
     const flushedBatches: unknown[] = [];
     const hook = new TelemetryHook({
       instanceId: "pod-checkout-test-1",
-      onFlush: (batch) => {
+      onFlush: (batch: TelemetryBatchPayload) => {
         flushedBatches.push(batch);
       },
     });
@@ -308,7 +309,7 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
   it("flushes remaining buffered metrics on stop()", async () => {
     const flushedBatches: unknown[] = [];
     const hook = new TelemetryHook({
-      onFlush: (batch) => {
+      onFlush: (batch: TelemetryBatchPayload) => {
         flushedBatches.push(batch);
       },
     });
