@@ -1,0 +1,59 @@
+{
+  "description": "Invalid keyset test vectors that must fail parsing or validation",
+  "cases": [
+    {
+      "id": "keyset_invalid_role",
+      "description": "Keyset entry contains unauthorized role 'superuser'",
+      "raw": "{\"ops-1\":{\"public_key\":\"_Qo7QXvXuOQwYtrgpBGEmBWDJb2a8pj_C6EWC9o6s8k\",\"role\":\"superuser\"}}",
+      "expectedError": "KeysetValidationError"
+    },
+    {
+      "id": "keyset_malformed_key_bytes",
+      "description": "Keyset entry public_key contains invalid characters",
+      "raw": "{\"ops-1\":{\"public_key\":\"not-a-valid-key!!@@##$$\",\"role\":\"operator\"}}",
+      "expectedError": "KeysetValidationError"
+    },
+    {
+      "id": "keyset_wrong_length_public_key",
+      "description": "Keyset entry public_key is 16 bytes instead of 32 bytes",
+      "raw": "{\"ops-1\":{\"public_key\":\"MDEyMzQ1Njc4OWFiY2RlZg\",\"role\":\"operator\"}}",
+      "expectedError": "KeysetValidationError"
+    },
+    {
+      "id": "keyset_negative_max_ttl",
+      "description": "Keyset entry max_ttl_seconds is negative",
+      "raw": "{\"ops-1\":{\"public_key\":\"_Qo7QXvXuOQwYtrgpBGEmBWDJb2a8pj_C6EWC9o6s8k\",\"role\":\"operator\",\"max_ttl_seconds\":-100}}",
+      "expectedError": "KeysetValidationError"
+    },
+    {
+      "id": "keyset_excessive_max_ttl",
+      "description": "Keyset entry max_ttl_seconds exceeds 86400 (24h)",
+      "raw": "{\"ops-1\":{\"public_key\":\"_Qo7QXvXuOQwYtrgpBGEmBWDJb2a8pj_C6EWC9o6s8k\",\"role\":\"operator\",\"max_ttl_seconds\":90000}}",
+      "expectedError": "KeysetValidationError"
+    },
+    {
+      "id": "keyset_empty_kid",
+      "description": "Keyset entry has empty string kid key",
+      "raw": "{\"\":{\"public_key\":\"_Qo7QXvXuOQwYtrgpBGEmBWDJb2a8pj_C6EWC9o6s8k\",\"role\":\"operator\"}}",
+      "expectedError": "KeysetValidationError"
+    },
+    {
+      "id": "keyset_malformed_json_syntax",
+      "description": "Keyset content is syntactically invalid JSON",
+      "raw": "{\n  \"ops-1\": { unquoted_key: true \n}",
+      "expectedError": "KeysetParseError"
+    },
+    {
+      "id": "keyset_whitespace_only",
+      "description": "Keyset content is empty whitespace string",
+      "raw": "   \n\t  \r\n  ",
+      "expectedError": "KeysetParseError"
+    },
+    {
+      "id": "keyset_array_root",
+      "description": "Keyset root is a JSON array instead of dictionary object",
+      "raw": "[{\"kid\":\"ops-1\",\"public_key\":\"_Qo7QXvXuOQwYtrgpBGEmBWDJb2a8pj_C6EWC9o6s8k\",\"role\":\"operator\"}]",
+      "expectedError": "KeysetValidationError"
+    }
+  ]
+}

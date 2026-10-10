@@ -1,0 +1,47 @@
+{
+  "description": "Valid lease revocation envelopes signed with REVOCATION_DOMAIN_PREFIX",
+  "cases": [
+    {
+      "id": "valid_revocation_ops_signed",
+      "description": "Valid lease revocation signed by operator",
+      "type": "revocation",
+      "valid": true,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000001",
+          "revoked_at": "2026-10-09T12:15:00.000Z",
+          "kid": "ops-primary-01",
+          "reason": "INC-991: Payment incident resolved; emergency lease recalled"
+        },
+        "sig": "D3a22DWPSsxdkR9tsqXqKc6dYh6Ox3Y4tTGTJZ8sqIQj88cRLE27d5wNv8OqU9fWBk6Sq0pP0qFWxSqxp656Aw"
+      },
+      "expected": {
+        "leaseId": "01J9X000000000000000000001",
+        "kid": "ops-primary-01",
+        "canonicalPayload": "{\"kid\":\"ops-primary-01\",\"lease_id\":\"01J9X000000000000000000001\",\"reason\":\"INC-991: Payment incident resolved; emergency lease recalled\",\"revoked_at\":\"2026-10-09T12:15:00.000Z\",\"v\":1}"
+      }
+    },
+    {
+      "id": "valid_revocation_admin_signed",
+      "description": "Valid lease revocation signed by root admin",
+      "type": "revocation",
+      "valid": true,
+      "envelope": {
+        "payload": {
+          "v": 1,
+          "lease_id": "01J9X000000000000000000002",
+          "revoked_at": "2026-10-09T12:20:00.000Z",
+          "kid": "admin-root-01",
+          "reason": "Administrative override revocation"
+        },
+        "sig": "QMNPPpwvG8tgFHR_ZC13vx5XUhwlOBaX9xbZsoRgvIidLAN2CXagommmGGHVDCFgKOjkIlkoDH083hUF6SkmCw"
+      },
+      "expected": {
+        "leaseId": "01J9X000000000000000000002",
+        "kid": "admin-root-01",
+        "canonicalPayload": "{\"kid\":\"admin-root-01\",\"lease_id\":\"01J9X000000000000000000002\",\"reason\":\"Administrative override revocation\",\"revoked_at\":\"2026-10-09T12:20:00.000Z\",\"v\":1}"
+      }
+    }
+  ]
+}
