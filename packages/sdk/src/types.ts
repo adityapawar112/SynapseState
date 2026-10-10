@@ -3,6 +3,8 @@ import type {
   LeaseEnvelope,
   Keyset,
   KeyRevocationPayload,
+  RevocationEnvelope,
+  KeyRevocationEnvelope,
 } from "@synapsestate/lease";
 import type { LeaseStore } from "./lease-store.js";
 
@@ -111,6 +113,152 @@ export interface EmergencyScannerOptions {
 }
 
 /**
+ * State synchronization payload received from GET /v1/sdk/state.
+ */
+export interface StateSyncPayload {
+  server_time: string;
+  registry_version: number;
+  active_leases: LeaseEnvelope[];
+  revocations: RevocationEnvelope[];
+  key_revocations: KeyRevocationEnvelope[];
+}
+
+/**
+ * Configuration options for the ETag long-polling StateClient.
+ */
+export interface StateClientOptions {
+  /**
+   * Base URL of the SynapseState Control API (e.g. "http://localhost:3000").
+   */
+  controlApiUrl: string;
+
+  /**
+   * In-memory LeaseStore to reconcile verified leases into.
+   */
+  leaseStore: LeaseStore;
+
+  /**
+   * Target deployment environment to query (e.g. "prod", "staging").
+   * Default: "prod"
+   */
+  env?: string;
+
+  /**
+   * Long-poll wait duration in seconds (sent as ?wait={duration}s).
+   * Default: 30
+   */
+  waitSeconds?: number;
+
+  /**
+   * Optional bearer service token for authentication.
+   */
+  serviceToken?: string;
+
+  /**
+   * Optional initial ETag value to include in If-None-Match header.
+   */
+  initialEtag?: string;
+
+  /**
+   * Initial backoff delay in ms on network or server error.
+   * Default: 1000 (1s)
+   */
+  backoffInitialMs?: number;
+
+  /**
+   * Maximum backoff delay in ms on repeated errors.
+   * Default: 30_000 (30s)
+   */
+  backoffMaxMs?: number;
+
+  /**
+   * Optional custom fetch implementation (for testing and dependency injection).
+   */
+  fetch?: typeof fetch;
+
+  /**
+   * Optional logger.
+   */
+  logger?: Logger;
+}
+
+/**
+ * Single flag evaluation telemetry counter tuple.
+ * Invariant 5: Contains strictly zero context, user IDs, or targeting attributes.
+ */
+export interface TelemetryMetricItem {
+  flag_key: string;
+  variant: string;
+  reason: string;
+  count: number;
+}
+
+/**
+ * Batch payload sent to POST /v1/telemetry/batches.
+ */
+export interface TelemetryBatchPayload {
+  instance_id: string;
+  batch_id: string; // 26-char Crockford ULID
+  window_start: string; // ISO 8601
+  window_end: string; // ISO 8601
+  metrics: TelemetryMetricItem[];
+  propagation_lag_ms?: number;
+}
+
+/**
+ * Configuration options for the zero-context TelemetryHook.
+ */
+export interface TelemetryHookOptions {
+  /**
+   * Base URL of the SynapseState Control API (e.g. "http://localhost:3000").
+   */
+  controlApiUrl?: string;
+
+  /**
+   * Unique pod or instance identifier (e.g. "pod-checkout-79b8-x42").
+   * Default: os.hostname() or generated unique ID.
+   */
+  instanceId?: string;
+
+  /**
+   * Periodic batch flush interval in milliseconds.
+   * Default: 300_000 (5 minutes)
+   */
+  flushIntervalMs?: number;
+
+  /**
+   * Maximum distinct (flag_key, variant, reason) metric tuples retained in memory ring buffer.
+   * Default: 5000
+   */
+  maxDistinctMetrics?: number;
+
+  /**
+   * Optional bearer service token for authentication.
+   */
+  serviceToken?: string;
+
+  /**
+   * Function returning the latest measured lease propagation lag in ms.
+   */
+  getPropagationLagMs?: () => number | undefined;
+
+  /**
+   * Optional custom flush handler (useful for testing or out-of-band export).
+   */
+  onFlush?: (batch: TelemetryBatchPayload) => Promise<void> | void;
+
+  /**
+   * Optional custom fetch implementation (for testing and dependency injection).
+   */
+  fetch?: typeof fetch;
+
+  /**
+   * Optional logger.
+   */
+  logger?: Logger;
+}
+
+/**
  * Configuration options for OverrideProvider.
  */
 export interface OverrideProviderOptions {
@@ -177,6 +325,56 @@ export interface OverrideProviderOptions {
    * Default: 86_400 (24 hours)
    */
   maxTtlSeconds?: number;
+
+  /**
+   * Base URL of the SynapseState Control API (e.g. "http://localhost:3000").
+   */
+  controlApiUrl?: string;
+
+  /**
+   * Bearer service token for Control API authentication.
+   */
+  serviceToken?: string;
+
+  /**
+   * Deployment environment name (e.g. "prod", "staging").
+   * Default: "prod"
+   */
+  env?: string;
+
+  /**
+   * Duration in seconds for Control API long-polling wait parameter.
+   * Default: 30
+   */
+  longPollWaitSeconds?: number;
+
+  /**
+   * Interval in milliseconds for periodic telemetry flushing.
+   * Default: 300_000 (5 minutes)
+   */
+  telemetryFlushIntervalMs?: number;
+
+  /**
+   * Workload instance identifier for telemetry reporting.
+   */
+  instanceId?: string;
+
+  /**
+   * Whether to enable ETag long-polling state synchronization client.
+   * Default: true if controlApiUrl is provided, false otherwise.
+   */
+  enableLongPolling?: boolean;
+
+  /**
+   * Whether to enable zero-context TelemetryHook.
+   * Default: true if controlApiUrl is provided, false otherwise.
+   */
+  enableTelemetry?: boolean;
+
+  /**
+   * Optional custom fetch implementation passed to StateClient and TelemetryHook.
+   */
+  fetch?: typeof fetch;
 
   /**
    * Optional logger conforming to OpenFeature Logger interface.

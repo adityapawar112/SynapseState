@@ -12,7 +12,8 @@
   "dependencies": {
     "@openfeature/core": "^1.12.0",
     "@openfeature/server-sdk": "^1.23.0",
-    "@synapsestate/lease": "workspace:*"
+    "@synapsestate/lease": "workspace:*",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
