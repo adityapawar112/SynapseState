@@ -224,6 +224,9 @@ importers:
       '@synapsestate/lease':
         specifier: workspace:*
         version: link:../lease
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.13.0

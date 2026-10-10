@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { formatPublicKeyToBase64Url } from "@synapsestate/lease";
+import { formatPublicKeyToBase64Url, type Keyset } from "@synapsestate/lease";
 import { KeysetWatcher } from "./keyset-watcher.js";
 
 describe("KeysetWatcher", () => {
@@ -65,7 +65,7 @@ describe("KeysetWatcher", () => {
     watcher = new KeysetWatcher({
       keysetPath,
       pollIntervalMs: 50,
-      onKeysetUpdate: (k) => {
+      onKeysetUpdate: (k: Keyset) => {
         updates.push({ ...k });
       },
     });
@@ -105,7 +105,7 @@ describe("KeysetWatcher", () => {
     watcher = new KeysetWatcher({
       keysetPath,
       pollIntervalMs: 50,
-      onKeysetUpdate: (k) => {
+      onKeysetUpdate: (k: Keyset) => {
         latestKeyset = { ...k };
       },
     });

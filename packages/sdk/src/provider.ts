@@ -14,8 +14,11 @@ import type {
   ActiveLease,
   LeaseStoreMetrics,
 } from "./types.js";
+import type { Keyset } from "@synapsestate/lease";
 import { KeysetWatcher } from "./keyset-watcher.js";
 import { EmergencyScanner } from "./emergency-scanner.js";
+import { StateClient } from "./state-client.js";
+import { TelemetryHook } from "./telemetry-hook.js";
 
 /**
  * OpenFeature OverrideProvider wrapper implementing Invariant 1 (Fail-Safe Hot Path)
@@ -36,6 +39,8 @@ export class OverrideProvider implements Provider {
   private readonly leaseStore: LeaseStore;
   private readonly keysetWatcher?: KeysetWatcher;
   private readonly emergencyScanner?: EmergencyScanner;
+  private readonly stateClient?: StateClient;
+  private readonly telemetryHook?: TelemetryHook;
   private readonly logger?: Logger;
 
   private internalErrorsCount = 0;
@@ -74,7 +79,7 @@ export class OverrideProvider implements Provider {
         keysetPath: opts.keysetPath,
         pollIntervalMs: opts.keysetPollIntervalMs,
         maxStaleMs: opts.keysetCacheMaxStaleMs,
-        onKeysetUpdate: (newKeyset) => {
+        onKeysetUpdate: (newKeyset: Keyset) => {
           this.leaseStore.handleKeysetUpdate(newKeyset);
         },
         logger: this.logger,
@@ -90,13 +95,49 @@ export class OverrideProvider implements Provider {
         logger: this.logger,
       });
     }
+
+    // Initialize StateClient if enabled or controlApiUrl is provided
+    const enableLongPolling =
+      opts.enableLongPolling ?? Boolean(opts.controlApiUrl);
+    if (enableLongPolling && opts.controlApiUrl) {
+      this.stateClient = new StateClient({
+        controlApiUrl: opts.controlApiUrl,
+        leaseStore: this.leaseStore,
+        env: opts.env,
+        waitSeconds: opts.longPollWaitSeconds,
+        serviceToken: opts.serviceToken,
+        fetch: opts.fetch,
+        logger: this.logger,
+      });
+    }
+
+    // Initialize TelemetryHook if enabled or controlApiUrl is provided
+    const enableTelemetry =
+      opts.enableTelemetry ?? Boolean(opts.controlApiUrl);
+    if (enableTelemetry) {
+      this.telemetryHook = new TelemetryHook({
+        controlApiUrl: opts.controlApiUrl,
+        instanceId: opts.instanceId,
+        flushIntervalMs: opts.telemetryFlushIntervalMs,
+        serviceToken: opts.serviceToken,
+        fetch: opts.fetch,
+        logger: this.logger,
+        // SLO Linkage: Returns measured lease propagation lag from the most recent successful poll.
+        // Omitted (undefined) when no successful HTTP 200 state sync has completed yet.
+        getPropagationLagMs: () => this.stateClient?.getLastPropagationLagMs(),
+      });
+    }
   }
 
   get hooks(): Hook[] | undefined {
     try {
-      return this.delegate.hooks;
+      const delegateHooks = this.delegate.hooks ?? [];
+      if (this.telemetryHook) {
+        return [...delegateHooks, this.telemetryHook];
+      }
+      return delegateHooks.length > 0 ? delegateHooks : undefined;
     } catch {
-      return undefined;
+      return this.telemetryHook ? [this.telemetryHook] : undefined;
     }
   }
 
@@ -138,6 +179,20 @@ export class OverrideProvider implements Provider {
   }
 
   /**
+   * Returns StateClient instance if enabled.
+   */
+  getStateClient(): StateClient | undefined {
+    return this.stateClient;
+  }
+
+  /**
+   * Returns TelemetryHook instance if enabled.
+   */
+  getTelemetryHook(): TelemetryHook | undefined {
+    return this.telemetryHook;
+  }
+
+  /**
    * Returns operational metrics including internal errors count.
    */
   getMetrics(): LeaseStoreMetrics {
@@ -167,6 +222,12 @@ export class OverrideProvider implements Provider {
       if (this.emergencyScanner) {
         await this.emergencyScanner.start();
       }
+      if (this.stateClient) {
+        await this.stateClient.start();
+      }
+      if (this.telemetryHook) {
+        this.telemetryHook.start();
+      }
     } catch (err) {
       this.internalErrorsCount++;
       this.logger?.warn?.(
@@ -181,6 +242,12 @@ export class OverrideProvider implements Provider {
    */
   async onClose(): Promise<void> {
     try {
+      if (this.stateClient) {
+        await this.stateClient.stop();
+      }
+      if (this.telemetryHook) {
+        await this.telemetryHook.stop();
+      }
       if (this.emergencyScanner) {
         this.emergencyScanner.stop();
       }
