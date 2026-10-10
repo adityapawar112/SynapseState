@@ -178,7 +178,7 @@ export function formatPublicKeyToBase64Url(
  * Low-level signing function that prepends a domain separation prefix,
  * serializes payload via RFC 8785 canonicalization, and computes an Ed25519 signature.
  */
-function signEnvelope<T>(
+export function signEnvelope<T>(
   domainPrefix: string,
   payload: T,
   privateKeyInput: PrivateKeyInput,
@@ -202,7 +202,7 @@ function signEnvelope<T>(
  * Low-level verification function.
  * Fails closed (returns false) on any verification mismatch, malformed payload, or invalid key.
  */
-function verifyEnvelope<T>(
+export function verifyEnvelope<T>(
   domainPrefix: string,
   envelope: { payload: T; sig: string },
   publicKeyInput: PublicKeyInput,

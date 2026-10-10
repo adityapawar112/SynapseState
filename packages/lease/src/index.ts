@@ -48,6 +48,8 @@ export {
   resolvePrivateKey,
   formatPublicKeyToHex,
   formatPublicKeyToBase64Url,
+  signEnvelope,
+  verifyEnvelope,
   signLease,
   verifyLease,
   signRevocation,
