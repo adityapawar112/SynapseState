@@ -344,4 +344,32 @@ describe("OverrideProvider", () => {
     await p.onClose?.();
     expect(closeSpy).toHaveBeenCalled();
   });
+
+  it("safely handles throwing getters on delegate provider without crashing", () => {
+    const throwingDelegate = new InMemoryProvider({}) as unknown as Provider;
+    Object.defineProperty(throwingDelegate, "hooks", {
+      get() {
+        throw new Error("Corrupt delegate hooks getter");
+      },
+    });
+    Object.defineProperty(throwingDelegate, "events", {
+      get() {
+        throw new Error("Corrupt delegate events getter");
+      },
+    });
+    Object.defineProperty(throwingDelegate, "status", {
+      get() {
+        throw new Error("Corrupt delegate status getter");
+      },
+    });
+
+    const p = new OverrideProvider(throwingDelegate, {
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+
+    expect(p.hooks).toBeUndefined();
+    expect(p.events).toBeUndefined();
+    expect(p.status).toBeUndefined();
+  });
 });

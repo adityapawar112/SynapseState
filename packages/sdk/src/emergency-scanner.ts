@@ -16,9 +16,7 @@ import type { LeaseStore } from "./lease-store.js";
 export const DEFAULT_EMERGENCY_DIR = "/etc/synapse/emergency-leases";
 export const DEFAULT_EMERGENCY_POLL_INTERVAL_MS = 10_000;
 
-export interface EmergencyScannerExtendedOptions extends EmergencyScannerOptions {
-  leaseStore?: LeaseStore;
-}
+export type EmergencyScannerExtendedOptions = EmergencyScannerOptions;
 
 /**
  * Out-of-band air-gapped emergency override channel (ADR 0003, ARCHITECTURE.md:320).
@@ -40,7 +38,7 @@ export class EmergencyScanner {
   private timer?: NodeJS.Timeout;
   private readonly processedFileHashes = new Map<string, string>();
 
-  constructor(options?: EmergencyScannerExtendedOptions) {
+  constructor(options?: EmergencyScannerOptions) {
     this.emergencyDir = options?.emergencyDir ?? DEFAULT_EMERGENCY_DIR;
     this.pollIntervalMs =
       options?.pollIntervalMs ?? DEFAULT_EMERGENCY_POLL_INTERVAL_MS;
@@ -120,6 +118,18 @@ export class EmergencyScanner {
         .filter((e) => e.isFile() && e.name.endsWith(".json"))
         .map((e) => e.name);
 
+      // Prune deleted files from hash tracking
+      for (const trackedFile of this.processedFileHashes.keys()) {
+        if (!jsonFiles.includes(trackedFile)) {
+          this.processedFileHashes.delete(trackedFile);
+        }
+      }
+
+      // Opportunistically sweep expired leases from store during poll
+      if (this.leaseStore) {
+        this.leaseStore.evictExpiredLeases();
+      }
+
       let ingestedCount = 0;
       const currentKeyset = this.getKeyset();
       const currentRevocations = this.getKeyRevocations();
@@ -132,6 +142,11 @@ export class EmergencyScanner {
             .createHash("sha256")
             .update(content, "utf8")
             .digest("hex");
+
+          // Skip unchanged files that have already been verified and ingested
+          if (this.processedFileHashes.get(fileName) === hash) {
+            continue;
+          }
 
           let parsed: unknown;
           try {

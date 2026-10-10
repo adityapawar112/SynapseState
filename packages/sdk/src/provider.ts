@@ -93,15 +93,27 @@ export class OverrideProvider implements Provider {
   }
 
   get hooks(): Hook[] | undefined {
-    return this.delegate.hooks;
+    try {
+      return this.delegate.hooks;
+    } catch {
+      return undefined;
+    }
   }
 
   get events(): Provider["events"] {
-    return this.delegate.events;
+    try {
+      return this.delegate.events;
+    } catch {
+      return undefined;
+    }
   }
 
   get status(): ServerProviderStatus | undefined {
-    return this.delegate.status;
+    try {
+      return this.delegate.status;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -139,6 +151,10 @@ export class OverrideProvider implements Provider {
 
   /**
    * Lifecycle initialize: invokes delegate initialization and starts background watchers if enabled.
+   *
+   * NOTE: This method must be called (e.g. via OpenFeature.setProviderAndWait) to start the
+   * KeysetWatcher and EmergencyScanner and seed the initial trusted keyset from disk into LeaseStore.
+   * Re-throws delegate initialization failures so OpenFeature is aware of setup failures.
    */
   async initialize(context?: EvaluationContext): Promise<void> {
     try {

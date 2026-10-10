@@ -85,6 +85,11 @@ export interface EmergencyScannerOptions {
   pollIntervalMs?: number;
 
   /**
+   * Optional LeaseStore instance to ingest discovered leases into.
+   */
+  leaseStore?: LeaseStore;
+
+  /**
    * Optional function returning the currently active trusted Keyset.
    */
   getKeyset?: () => Keyset;

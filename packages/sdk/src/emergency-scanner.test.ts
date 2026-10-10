@@ -108,6 +108,10 @@ describe("EmergencyScanner", () => {
 
     expect(leaseStore.getActiveLease("payment-v2")?.value).toBe("emergency-on");
     expect(leaseStore.getActiveLease("auth-rate-limit")?.value).toBe(false);
+
+    // Subsequent scan with unchanged files skips re-verification and returns 0
+    const secondScan = await scanner.scanOnce();
+    expect(secondScan).toBe(0);
   });
 
   it("rejects files with invalid signatures or tampered content without crashing", async () => {
