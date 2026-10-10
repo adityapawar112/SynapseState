@@ -14,7 +14,8 @@ export type ExpiryStatus =
   | "EXPIRED_MONOTONIC"
   | "FUTURE_DATED"
   | "INVALID_TIMESTAMP"
-  | "TTL_EXCEEDED";
+  | "TTL_EXCEEDED"
+  | "INVALID_PARAMETERS";
 
 export interface LeaseExpiryParams {
   /** ISO 8601 UTC timestamp when lease was issued */
@@ -85,18 +86,45 @@ export type LeaseExpiryEvaluation = ValidLeaseExpiry | InvalidLeaseExpiry;
 export function evaluateLeaseExpiry(
   params: LeaseExpiryParams,
 ): LeaseExpiryEvaluation {
-  const nowWall = params.nowWallMs ?? Date.now();
-  const nowMono = params.nowMonoMs ?? performance.now();
-  const skewTolerance = params.skewToleranceMs ?? DEFAULT_SKEW_TOLERANCE_MS;
-  const maxTtl = params.maxTtlSeconds ?? DEFAULT_MAX_TTL_SECONDS;
-
-  // TTL bounds validation
+  // Validate ttlSeconds: must be finite integer
   if (
     typeof params.ttlSeconds !== "number" ||
     !Number.isFinite(params.ttlSeconds) ||
-    params.ttlSeconds <= 0 ||
-    params.ttlSeconds > maxTtl
+    !Number.isInteger(params.ttlSeconds)
   ) {
+    return {
+      isValid: false,
+      status: "INVALID_PARAMETERS",
+      wallExpiryMs: 0,
+      monoExpiryMs: 0,
+      remainingWallMs: 0,
+      remainingMonoMs: 0,
+      remainingEffectiveMs: 0,
+      reason: `ttl_seconds (${params.ttlSeconds}) must be a finite integer`,
+    };
+  }
+
+  const maxTtl = params.maxTtlSeconds ?? DEFAULT_MAX_TTL_SECONDS;
+  if (
+    typeof maxTtl !== "number" ||
+    !Number.isFinite(maxTtl) ||
+    !Number.isInteger(maxTtl) ||
+    maxTtl <= 0
+  ) {
+    return {
+      isValid: false,
+      status: "INVALID_PARAMETERS",
+      wallExpiryMs: 0,
+      monoExpiryMs: 0,
+      remainingWallMs: 0,
+      remainingMonoMs: 0,
+      remainingEffectiveMs: 0,
+      reason: `maxTtlSeconds (${maxTtl}) must be a positive finite integer`,
+    };
+  }
+
+  // TTL range check (<= 0 or > maxTtl)
+  if (params.ttlSeconds <= 0 || params.ttlSeconds > maxTtl) {
     return {
       isValid: false,
       status: "TTL_EXCEEDED",
@@ -106,6 +134,68 @@ export function evaluateLeaseExpiry(
       remainingMonoMs: 0,
       remainingEffectiveMs: 0,
       reason: `ttl_seconds (${params.ttlSeconds}) must be positive and <= ${maxTtl}`,
+    };
+  }
+
+  if (
+    typeof params.firstSeenMonoMs !== "number" ||
+    !Number.isFinite(params.firstSeenMonoMs)
+  ) {
+    return {
+      isValid: false,
+      status: "INVALID_PARAMETERS",
+      wallExpiryMs: 0,
+      monoExpiryMs: 0,
+      remainingWallMs: 0,
+      remainingMonoMs: 0,
+      remainingEffectiveMs: 0,
+      reason: "firstSeenMonoMs must be a finite number",
+    };
+  }
+
+  const nowWall = params.nowWallMs ?? Date.now();
+  if (typeof nowWall !== "number" || !Number.isFinite(nowWall)) {
+    return {
+      isValid: false,
+      status: "INVALID_PARAMETERS",
+      wallExpiryMs: 0,
+      monoExpiryMs: 0,
+      remainingWallMs: 0,
+      remainingMonoMs: 0,
+      remainingEffectiveMs: 0,
+      reason: "nowWallMs must be a finite number",
+    };
+  }
+
+  const nowMono = params.nowMonoMs ?? performance.now();
+  if (typeof nowMono !== "number" || !Number.isFinite(nowMono)) {
+    return {
+      isValid: false,
+      status: "INVALID_PARAMETERS",
+      wallExpiryMs: 0,
+      monoExpiryMs: 0,
+      remainingWallMs: 0,
+      remainingMonoMs: 0,
+      remainingEffectiveMs: 0,
+      reason: "nowMonoMs must be a finite number",
+    };
+  }
+
+  const skewTolerance = params.skewToleranceMs ?? DEFAULT_SKEW_TOLERANCE_MS;
+  if (
+    typeof skewTolerance !== "number" ||
+    !Number.isFinite(skewTolerance) ||
+    skewTolerance < 0
+  ) {
+    return {
+      isValid: false,
+      status: "INVALID_PARAMETERS",
+      wallExpiryMs: 0,
+      monoExpiryMs: 0,
+      remainingWallMs: 0,
+      remainingMonoMs: 0,
+      remainingEffectiveMs: 0,
+      reason: "skewToleranceMs must be a non-negative finite number",
     };
   }
 

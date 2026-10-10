@@ -1,9 +1,11 @@
 // @synapsestate/lease — Cryptographic Lease Core & Expiry Engine
 
 // Domain Separation Prefixes
-export const LEASE_DOMAIN_PREFIX = "synapsestate/lease/v1\n";
-export const REVOCATION_DOMAIN_PREFIX = "synapsestate/revocation/v1\n";
-export const KEYREVOCATION_DOMAIN_PREFIX = "synapsestate/keyrevocation/v1\n";
+export {
+  LEASE_DOMAIN_PREFIX,
+  REVOCATION_DOMAIN_PREFIX,
+  KEYREVOCATION_DOMAIN_PREFIX,
+} from "./domains.js";
 
 // RFC 8785 JSON Canonicalization Scheme (JCS)
 export { canonicalizeJson } from "./canonicalize.js";
@@ -13,6 +15,13 @@ export {
   FLAG_KEY_REGEX,
   BASE64URL_REGEX,
   ULID_REGEX,
+  KID_REGEX,
+  FORBIDDEN_KID_NAMES,
+  KidSchema,
+  KEY_ROLE_VALUES,
+  type KeyRole,
+  KEY_STATUS_VALUES,
+  type KeyStatus,
   LeasePayloadSchema,
   type LeasePayload,
   LeaseEnvelopeSchema,
@@ -39,8 +48,6 @@ export {
   resolvePrivateKey,
   formatPublicKeyToHex,
   formatPublicKeyToBase64Url,
-  signEnvelope,
-  verifyEnvelope,
   signLease,
   verifyLease,
   signRevocation,
@@ -62,12 +69,19 @@ export {
   isLeaseActive,
 } from "./expiry.js";
 
-// Keyset Parser & Validator
+// Keyset Parser, Policy Enforcement & Verification
 export {
   KeysetParseError,
   KeysetValidationError,
   parseKeysetJson,
   getKey,
   hasKey,
+  isKeyActive,
+  canSignLease,
+  canRevokeLease,
+  canRevokeKey,
   isKeyRevoked,
+  verifyLeaseWithKeyset,
+  verifyRevocationWithKeyset,
+  verifyKeyRevocationWithKeyset,
 } from "./keyset.js";

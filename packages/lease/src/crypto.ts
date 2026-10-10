@@ -4,7 +4,7 @@ import {
   LEASE_DOMAIN_PREFIX,
   REVOCATION_DOMAIN_PREFIX,
   KEYREVOCATION_DOMAIN_PREFIX,
-} from "./index.js";
+} from "./domains.js";
 import {
   BASE64URL_REGEX,
   type LeasePayload,
@@ -178,7 +178,7 @@ export function formatPublicKeyToBase64Url(
  * Low-level signing function that prepends a domain separation prefix,
  * serializes payload via RFC 8785 canonicalization, and computes an Ed25519 signature.
  */
-export function signEnvelope<T>(
+function signEnvelope<T>(
   domainPrefix: string,
   payload: T,
   privateKeyInput: PrivateKeyInput,
@@ -202,7 +202,7 @@ export function signEnvelope<T>(
  * Low-level verification function.
  * Fails closed (returns false) on any verification mismatch, malformed payload, or invalid key.
  */
-export function verifyEnvelope<T>(
+function verifyEnvelope<T>(
   domainPrefix: string,
   envelope: { payload: T; sig: string },
   publicKeyInput: PublicKeyInput,

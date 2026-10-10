@@ -39,12 +39,22 @@ describe("LeasePayloadSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects empty lease_id", () => {
-    const result = LeasePayloadSchema.safeParse({
-      ...validPayload,
-      lease_id: "",
-    });
-    expect(result.success).toBe(false);
+  it("rejects empty or invalid lease_id (must be 26-char Crockford ULID)", () => {
+    expect(
+      LeasePayloadSchema.safeParse({ ...validPayload, lease_id: "" }).success,
+    ).toBe(false);
+    expect(
+      LeasePayloadSchema.safeParse({
+        ...validPayload,
+        lease_id: "not-a-valid-ulid",
+      }).success,
+    ).toBe(false);
+    expect(
+      LeasePayloadSchema.safeParse({
+        ...validPayload,
+        lease_id: "01J9X57YTRPQ8A7F4E1234567", // 25 chars
+      }).success,
+    ).toBe(false);
   });
 
   it("validates flag_key charset invariant ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", () => {
@@ -380,6 +390,48 @@ describe("KeysetSchema", () => {
       role: "superuser",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("supports explicit roles array and status", () => {
+    const keyWithRoles = {
+      public_key: "some-key",
+      roles: ["lease_signer", "key_revoker"],
+      status: "active" as const,
+    };
+    const result = KeysetKeySchema.safeParse(keyWithRoles);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.roles).toContain("lease_signer");
+      expect(result.data.roles).toContain("key_revoker");
+      expect(result.data.status).toBe("active");
+    }
+  });
+
+  it("rejects keyset entry with neither role nor roles", () => {
+    const invalidEntry = {
+      public_key: "some-key",
+    };
+    expect(KeysetKeySchema.safeParse(invalidEntry).success).toBe(false);
+  });
+
+  it("rejects prototype property names as kid", () => {
+    expect(
+      KeysetSchema.safeParse({
+        __proto__: {
+          public_key: "key",
+          role: "operator",
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      KeysetSchema.safeParse({
+        constructor: {
+          public_key: "key",
+          role: "operator",
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects invalid max_ttl_seconds", () => {

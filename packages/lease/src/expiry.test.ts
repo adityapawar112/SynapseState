@@ -272,4 +272,104 @@ describe("Dual-Clock Expiry Validator", () => {
       );
     });
   });
+
+  describe("Parameter Validation & Rejection (INVALID_PARAMETERS)", () => {
+    it("rejects fractional or non-integer ttlSeconds", () => {
+      const result = evaluateLeaseExpiry({
+        issuedAt: baseIssuedAt,
+        ttlSeconds: 1.5,
+        firstSeenMonoMs: 10_000,
+        nowWallMs: baseIssuedAtMs,
+        nowMonoMs: 10_000,
+      });
+
+      expect(result.isValid).toBe(false);
+      expect(result.status).toBe("INVALID_PARAMETERS");
+      expect(result.reason).toContain("finite integer");
+    });
+
+    it("rejects NaN or non-finite nowMonoMs", () => {
+      const result = evaluateLeaseExpiry({
+        issuedAt: baseIssuedAt,
+        ttlSeconds: 600,
+        firstSeenMonoMs: 10_000,
+        nowWallMs: baseIssuedAtMs,
+        nowMonoMs: Number.NaN,
+      });
+
+      expect(result.isValid).toBe(false);
+      expect(result.status).toBe("INVALID_PARAMETERS");
+      expect(result.reason).toContain("nowMonoMs");
+    });
+
+    it("rejects NaN or non-finite nowWallMs", () => {
+      const result = evaluateLeaseExpiry({
+        issuedAt: baseIssuedAt,
+        ttlSeconds: 600,
+        firstSeenMonoMs: 10_000,
+        nowWallMs: Number.NaN,
+        nowMonoMs: 10_000,
+      });
+
+      expect(result.isValid).toBe(false);
+      expect(result.status).toBe("INVALID_PARAMETERS");
+      expect(result.reason).toContain("nowWallMs");
+    });
+
+    it("rejects NaN or non-finite firstSeenMonoMs", () => {
+      const result = evaluateLeaseExpiry({
+        issuedAt: baseIssuedAt,
+        ttlSeconds: 600,
+        firstSeenMonoMs: Number.NaN,
+        nowWallMs: baseIssuedAtMs,
+        nowMonoMs: 10_000,
+      });
+
+      expect(result.isValid).toBe(false);
+      expect(result.status).toBe("INVALID_PARAMETERS");
+      expect(result.reason).toContain("firstSeenMonoMs");
+    });
+
+    it("rejects negative or NaN skewToleranceMs", () => {
+      const resultNegative = evaluateLeaseExpiry({
+        issuedAt: baseIssuedAt,
+        ttlSeconds: 600,
+        firstSeenMonoMs: 10_000,
+        nowWallMs: baseIssuedAtMs,
+        nowMonoMs: 10_000,
+        skewToleranceMs: -100,
+      });
+
+      expect(resultNegative.isValid).toBe(false);
+      expect(resultNegative.status).toBe("INVALID_PARAMETERS");
+      expect(resultNegative.reason).toContain("skewToleranceMs");
+
+      const resultNaN = evaluateLeaseExpiry({
+        issuedAt: baseIssuedAt,
+        ttlSeconds: 600,
+        firstSeenMonoMs: 10_000,
+        nowWallMs: baseIssuedAtMs,
+        nowMonoMs: 10_000,
+        skewToleranceMs: Number.NaN,
+      });
+
+      expect(resultNaN.isValid).toBe(false);
+      expect(resultNaN.status).toBe("INVALID_PARAMETERS");
+    });
+
+    it("rejects non-positive or non-integer maxTtlSeconds", () => {
+      const resultZero = evaluateLeaseExpiry({
+        issuedAt: baseIssuedAt,
+        ttlSeconds: 600,
+        firstSeenMonoMs: 10_000,
+        nowWallMs: baseIssuedAtMs,
+        nowMonoMs: 10_000,
+        maxTtlSeconds: 0,
+      });
+
+      expect(resultZero.isValid).toBe(false);
+      expect(resultZero.status).toBe("INVALID_PARAMETERS");
+      expect(resultZero.reason).toContain("maxTtlSeconds");
+    });
+  });
 });
