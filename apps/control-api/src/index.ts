@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 
+export * from "./db/index.js";
+
 export const server = Fastify({
   logger: true,
 });
