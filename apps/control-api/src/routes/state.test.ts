@@ -13,13 +13,17 @@ import {
 import { buildServer } from "../app.js";
 import { leasePool, closePools } from "../db/pool.js";
 import { generateUlid } from "@synapsestate/sdk";
+import { runMigrations } from "../db/migrator.js";
 
 describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
   let app: FastifyInstance;
   let operatorKey: ReturnType<typeof crypto.generateKeyPairSync>;
   let testKeyset: Keyset;
+  const env = "state-test-env";
 
   beforeAll(async () => {
+    await runMigrations(leasePool);
+
     operatorKey = crypto.generateKeyPairSync("ed25519");
     const pubB64 = formatPublicKeyToBase64Url(operatorKey.publicKey);
 
@@ -36,6 +40,7 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
     app = buildServer({
       leasePool,
       keyset: testKeyset,
+      fastifyOptions: { logger: false },
     });
     await app.ready();
   });
@@ -46,16 +51,19 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
   });
 
   beforeEach(async () => {
-    await leasePool.query("DELETE FROM revocations");
-    await leasePool.query("DELETE FROM leases");
-    await leasePool.query("DELETE FROM change_events");
-    await leasePool.query("DELETE FROM audit_pending");
+    await leasePool.query(
+      "DELETE FROM revocations WHERE lease_id IN (SELECT lease_id FROM leases WHERE env = $1)",
+      [env]
+    );
+    await leasePool.query("DELETE FROM leases WHERE env = $1", [env]);
+    await leasePool.query("DELETE FROM change_events WHERE env = $1", [env]);
+    await leasePool.query("DELETE FROM flags WHERE env = $1", [env]);
   });
 
   it("returns immediate HTTP 200 with complete payload and ETag header on initial request", async () => {
     const res = await app.inject({
       method: "GET",
-      url: "/v1/sdk/state?env=test-env",
+      url: `/v1/sdk/state?env=${env}`,
     });
 
     expect(res.statusCode).toBe(200);
@@ -80,14 +88,14 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
     // 1. Initial fetch
     const firstRes = await app.inject({
       method: "GET",
-      url: "/v1/sdk/state?env=test-env",
+      url: `/v1/sdk/state?env=${env}`,
     });
     const etag = firstRes.headers["etag"] as string;
 
     // 2. Poll with matching If-None-Match and wait=0s
     const secondRes = await app.inject({
       method: "GET",
-      url: "/v1/sdk/state?env=test-env&wait=0s",
+      url: `/v1/sdk/state?env=${env}&wait=0s`,
       headers: {
         "if-none-match": etag,
       },
@@ -100,14 +108,14 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
   it("suspends long-polling request and returns HTTP 304 upon wait timeout if unchanged", async () => {
     const firstRes = await app.inject({
       method: "GET",
-      url: "/v1/sdk/state?env=test-env",
+      url: `/v1/sdk/state?env=${env}`,
     });
     const etag = firstRes.headers["etag"] as string;
 
     const start = Date.now();
     const pollRes = await app.inject({
       method: "GET",
-      url: "/v1/sdk/state?env=test-env&wait=1s",
+      url: `/v1/sdk/state?env=${env}&wait=1s`,
       headers: {
         "if-none-match": etag,
       },
@@ -122,14 +130,14 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
     // 1. Initial state
     const initialRes = await app.inject({
       method: "GET",
-      url: "/v1/sdk/state?env=test-env",
+      url: `/v1/sdk/state?env=${env}`,
     });
     const initialEtag = initialRes.headers["etag"] as string;
 
     // 2. Start suspended long-poll waiting for up to 5 seconds
     const longPollPromise = app.inject({
       method: "GET",
-      url: "/v1/sdk/state?env=test-env&wait=5s",
+      url: `/v1/sdk/state?env=${env}&wait=5s`,
       headers: {
         "if-none-match": initialEtag,
       },
@@ -142,7 +150,7 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
     const payload: LeasePayload = {
       v: 1,
       lease_id: leaseId,
-      env: "test-env",
+      env,
       flag_key: "test-wake-flag",
       value: "variant-b",
       reason: "Emergency wake up test",
@@ -177,7 +185,6 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
   });
 
   it("immediately wakes up suspended long-poll request when an active lease is revoked", async () => {
-    const env = "test-env";
     const leaseId = generateUlid();
 
     // 1. Ingest lease

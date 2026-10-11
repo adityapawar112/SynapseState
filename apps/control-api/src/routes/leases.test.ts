@@ -13,18 +13,20 @@ import {
 import { generateUlid } from "@synapsestate/sdk";
 import { buildServer } from "../app.js";
 import { leasePool, closePools } from "../db/pool.js";
+import { runMigrations } from "../db/migrator.js";
 
 describe("Lease Ingestion & Revocation Routes", () => {
   let app: FastifyInstance;
   let operatorKey: ReturnType<typeof crypto.generateKeyPairSync>;
   let operatorPubB64: string;
   let testKeyset: Keyset;
+  const env = "leases-test-env";
 
   function createTestLease(overrides?: Partial<LeasePayload>): LeasePayload {
     return {
       v: 1,
       lease_id: generateUlid(),
-      env: "test-env",
+      env,
       flag_key: "test-flag",
       value: true,
       reason: "Incident mitigation override",
@@ -37,6 +39,8 @@ describe("Lease Ingestion & Revocation Routes", () => {
   }
 
   beforeAll(async () => {
+    await runMigrations(leasePool);
+
     operatorKey = crypto.generateKeyPairSync("ed25519");
     operatorPubB64 = formatPublicKeyToBase64Url(operatorKey.publicKey);
 
@@ -69,12 +73,15 @@ describe("Lease Ingestion & Revocation Routes", () => {
   });
 
   beforeEach(async () => {
-    // Clean test state before each run
-    await leasePool.query("DELETE FROM revocations");
-    await leasePool.query("DELETE FROM leases");
-    await leasePool.query("DELETE FROM change_events");
-    await leasePool.query("DELETE FROM audit_pending");
-    await leasePool.query("DELETE FROM flags WHERE key LIKE 'test-%'");
+    // Clean test state before each run scoped to this test environment
+    await leasePool.query(
+      "DELETE FROM revocations WHERE lease_id IN (SELECT lease_id FROM leases WHERE env = $1)",
+      [env]
+    );
+    await leasePool.query("DELETE FROM leases WHERE env = $1", [env]);
+    await leasePool.query("DELETE FROM change_events WHERE env = $1", [env]);
+    await leasePool.query("DELETE FROM audit_pending WHERE actor = 'sre-alice'");
+    await leasePool.query("DELETE FROM flags WHERE env = $1", [env]);
   });
 
   it("ingests a valid signed emergency lease and returns 201 Created with UNKNOWN_FLAG warning", async () => {
@@ -125,7 +132,7 @@ describe("Lease Ingestion & Revocation Routes", () => {
       `INSERT INTO flags (key, env, class, owner, description)
        VALUES ($1, $2, 'release', 'team-checkout', 'Checkout flag')
        ON CONFLICT (key, env) DO NOTHING`,
-      [flagKey, "test-env"]
+      [flagKey, env]
     );
 
     const payload = createTestLease({
@@ -150,12 +157,10 @@ describe("Lease Ingestion & Revocation Routes", () => {
 
   it("supersedes existing active lease for (flag_key, env) in the same transaction", async () => {
     const flagKey = "test-supersede-flag";
-    const env = "test-env";
 
     // First lease
     const payload1 = createTestLease({
       flag_key: flagKey,
-      env,
       value: true,
       reason: "Initial override",
     });
@@ -171,7 +176,6 @@ describe("Lease Ingestion & Revocation Routes", () => {
     // Second lease replacing the first
     const payload2 = createTestLease({
       flag_key: flagKey,
-      env,
       value: false,
       reason: "Updated override with inverted value",
       ttl_seconds: 900,
@@ -194,8 +198,8 @@ describe("Lease Ingestion & Revocation Routes", () => {
 
     // Verify LEASE_SUPERSEDED change event was recorded
     const supersededChanges = await leasePool.query(
-      "SELECT * FROM change_events WHERE event_type = 'LEASE_SUPERSEDED' AND flag_key = $1",
-      [flagKey]
+      "SELECT * FROM change_events WHERE event_type = 'LEASE_SUPERSEDED' AND flag_key = $1 AND env = $2",
+      [flagKey, env]
     );
     expect(supersededChanges.rows).toHaveLength(1);
     expect(supersededChanges.rows[0].payload).toMatchObject({
@@ -206,11 +210,9 @@ describe("Lease Ingestion & Revocation Routes", () => {
 
   it("returns 409 Conflict if supersede=false and an active lease exists", async () => {
     const flagKey = "test-conflict-flag";
-    const env = "test-env";
 
     const payload1 = createTestLease({
       flag_key: flagKey,
-      env,
       value: true,
       reason: "Initial override",
     });
@@ -224,7 +226,6 @@ describe("Lease Ingestion & Revocation Routes", () => {
 
     const payload2 = createTestLease({
       flag_key: flagKey,
-      env,
       value: false,
       reason: "Conflicting override without supersede",
     });
@@ -329,12 +330,10 @@ describe("Lease Ingestion & Revocation Routes", () => {
   });
 
   it("revokes an active lease via POST /v1/leases/:id/revoke", async () => {
-    const env = "test-env";
     const flagKey = "test-revoked-flag";
 
     // 1. Create active lease
     const payload = createTestLease({
-      env,
       flag_key: flagKey,
     });
     const envelope = signLease(payload, operatorKey.privateKey);
@@ -381,8 +380,8 @@ describe("Lease Ingestion & Revocation Routes", () => {
 
     // Verify change event
     const changeRow = await leasePool.query(
-      "SELECT * FROM change_events WHERE event_type = 'LEASE_REVOKED' AND flag_key = $1",
-      [flagKey]
+      "SELECT * FROM change_events WHERE event_type = 'LEASE_REVOKED' AND flag_key = $1 AND env = $2",
+      [flagKey, env]
     );
     expect(changeRow.rows).toHaveLength(1);
   });

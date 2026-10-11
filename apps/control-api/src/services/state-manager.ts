@@ -125,12 +125,14 @@ export class StateManager {
         sig: row.sig,
       }));
 
-      // 2. Query unexpired revocations (bounded retention per ARCHITECTURE §4.1)
+      // 2. Query unexpired revocations for this environment (bounded retention per ARCHITECTURE §4.1)
       const revocationsRes = await client.query<{ payload: unknown; sig: string; expires_at: Date }>(
-        `SELECT payload, sig, expires_at 
-         FROM revocations 
-         WHERE expires_at >= NOW() 
-         ORDER BY lease_id ASC`
+        `SELECT r.payload, r.sig, r.expires_at 
+         FROM revocations r
+         JOIN leases l ON r.lease_id = l.lease_id
+         WHERE l.env = $1 AND r.expires_at >= NOW() 
+         ORDER BY r.lease_id ASC`,
+        [env]
       );
 
       const revocations: RevocationEnvelope[] = revocationsRes.rows.map((row) => ({

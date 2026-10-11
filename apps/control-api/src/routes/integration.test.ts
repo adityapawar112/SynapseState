@@ -19,6 +19,7 @@ import {
 } from "@synapsestate/sdk";
 import { buildServer } from "../app.js";
 import { leasePool, closePools } from "../db/pool.js";
+import { runMigrations } from "../db/migrator.js";
 
 describe("End-to-End Control API & SDK StateClient Integration", () => {
   let app: FastifyInstance;
@@ -28,6 +29,8 @@ describe("End-to-End Control API & SDK StateClient Integration", () => {
   let leaseStore: LeaseStore;
 
   beforeAll(async () => {
+    await runMigrations(leasePool);
+
     operatorKey = crypto.generateKeyPairSync("ed25519");
     const pubB64 = formatPublicKeyToBase64Url(operatorKey.publicKey);
 
@@ -64,9 +67,12 @@ describe("End-to-End Control API & SDK StateClient Integration", () => {
     const env = "e2e-env";
     const flagKey = "e2e-payment-v2";
 
-    // Clean DB
-    await leasePool.query("DELETE FROM revocations");
-    await leasePool.query("DELETE FROM leases");
+    // Clean DB for isolated e2e environment
+    await leasePool.query(
+      "DELETE FROM revocations WHERE lease_id IN (SELECT lease_id FROM leases WHERE env = $1)",
+      [env]
+    );
+    await leasePool.query("DELETE FROM leases WHERE env = $1", [env]);
 
     // 1. Initialize SDK StateClient
     const stateClient = new StateClient({
