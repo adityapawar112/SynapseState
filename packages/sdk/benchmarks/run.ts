@@ -18,7 +18,6 @@ interface BenchmarkRow {
   latencyMeanNs: number;
   latencyRme: number;
   latencyP75Ns: number;
-  latencyP95Ns: number;
   latencyP99Ns: number;
   samples: number;
 }
@@ -27,7 +26,9 @@ interface OverheadComparison {
   name: string;
   baselineName: string;
   baselineLatencyNs: number;
+  baselineRme: number;
   candidateLatencyNs: number;
+  candidateRme: number;
   deltaNs: number;
   ratio: number;
   percentOverhead: number;
@@ -43,11 +44,6 @@ function extractTaskRow(suiteName: string, task: Task): BenchmarkRow {
   const latencyMeanNs = result.latency.mean * 1_000_000;
   const latencyP75Ns = (result.latency.p75 ?? result.latency.p50) * 1_000_000;
   const latencyP99Ns = (result.latency.p99 ?? result.latency.max) * 1_000_000;
-  // Estimate p95 using p75 and p99 if p95 isn't directly exposed by tinybench
-  const latencyP95Ns =
-    result.latency.p99 !== undefined && result.latency.p75 !== undefined
-      ? ((result.latency.p75 + result.latency.p99) / 2) * 1_000_000
-      : latencyMeanNs;
 
   return {
     suite: suiteName,
@@ -57,21 +53,28 @@ function extractTaskRow(suiteName: string, task: Task): BenchmarkRow {
     latencyMeanNs,
     latencyRme: result.latency.rme,
     latencyP75Ns,
-    latencyP95Ns,
     latencyP99Ns,
     samples: result.latency.samplesCount,
   };
 }
 
 function formatNs(ns: number): string {
-  if (ns < 1000) {
+  if (Math.abs(ns) < 1000) {
     return `${ns.toFixed(1)} ns`;
   }
   return `${(ns / 1000).toFixed(2)} µs`;
 }
 
-function formatOps(ops: number): string {
-  return `${Math.round(ops).toLocaleString("en-US")} ops/s`;
+function formatMeanWithRme(ns: number, rme: number): string {
+  return `${formatNs(ns)} (±${rme.toFixed(2)}%)`;
+}
+
+function formatOps(ops: number, rme?: number): string {
+  const formatted = `${Math.round(ops).toLocaleString("en-US")} ops/s`;
+  if (rme !== undefined) {
+    return `${formatted} (±${rme.toFixed(2)}%)`;
+  }
+  return formatted;
 }
 
 async function runBenchmarkSuite(): Promise<void> {
@@ -95,6 +98,9 @@ async function runBenchmarkSuite(): Promise<void> {
   console.log(`Platform / OS:        ${osType}`);
   console.log(`CPU Architecture:     ${cpuModel} (${cpuCores} logical cores)`);
   console.log(`Host Memory:          ${totalMemGb} GB total`);
+  console.log(
+    "Harness Config:       tinybench@6.2.2 (time: 500ms, warmup: 100ms)",
+  );
   console.log("=".repeat(80));
 
   const fx = createBenchmarkFixtures();
@@ -400,7 +406,9 @@ async function runBenchmarkSuite(): Promise<void> {
         name: pair.candidate,
         baselineName: pair.baseline,
         baselineLatencyNs: base.latencyMeanNs,
+        baselineRme: base.latencyRme,
         candidateLatencyNs: cand.latencyMeanNs,
+        candidateRme: cand.latencyRme,
         deltaNs,
         ratio,
         percentOverhead,
@@ -418,29 +426,32 @@ async function runBenchmarkSuite(): Promise<void> {
   const printTable = (title: string, rows: BenchmarkRow[]) => {
     console.log(`\n### ${title}`);
     console.log(
-      "| Operation".padEnd(60) +
+      "| Operation".padEnd(52) +
         "| Throughput (ops/s)".padStart(24) +
-        "| Mean Latency".padStart(16) +
-        "| p95 Latency".padStart(16) +
+        "| Mean Latency (±RME)".padStart(24) +
+        "| p75 Latency".padStart(15) +
+        "| p99 Latency".padStart(15) +
         "| Samples".padStart(10) +
         " |",
     );
     console.log(
       "| " +
-        "-".repeat(58) +
+        "-".repeat(50) +
         " | " +
         "-".repeat(22) +
         " | " +
-        "-".repeat(14) +
+        "-".repeat(22) +
         " | " +
-        "-".repeat(14) +
+        "-".repeat(13) +
+        " | " +
+        "-".repeat(13) +
         " | " +
         "-".repeat(8) +
         " |",
     );
     for (const r of rows) {
       console.log(
-        `| ${r.name.padEnd(58)} | ${formatOps(r.throughputOpsSec).padStart(22)} | ${formatNs(r.latencyMeanNs).padStart(14)} | ${formatNs(r.latencyP95Ns).padStart(14)} | ${String(r.samples).padStart(8)} |`,
+        `| ${r.name.padEnd(50)} | ${formatOps(r.throughputOpsSec, r.throughputRme).padStart(22)} | ${formatMeanWithRme(r.latencyMeanNs, r.latencyRme).padStart(22)} | ${formatNs(r.latencyP75Ns).padStart(13)} | ${formatNs(r.latencyP99Ns).padStart(13)} | ${String(r.samples).padStart(8)} |`,
       );
     }
   };
@@ -460,23 +471,23 @@ async function runBenchmarkSuite(): Promise<void> {
 
   console.log("\n### Comparative Wrapper Overhead Analysis");
   console.log(
-    "| Candidate Operation".padEnd(46) +
-      "| Baseline Operation".padEnd(38) +
-      "| Baseline".padStart(14) +
-      "| Candidate".padStart(14) +
+    "| Candidate Operation".padEnd(42) +
+      "| Baseline Operation".padEnd(34) +
+      "| Baseline (±RME)".padStart(20) +
+      "| Candidate (±RME)".padStart(20) +
       "| Overhead Delta".padStart(18) +
       "| Ratio".padStart(10) +
       " |",
   );
   console.log(
     "| " +
-      "-".repeat(44) +
+      "-".repeat(40) +
       " | " +
-      "-".repeat(36) +
+      "-".repeat(32) +
       " | " +
-      "-".repeat(12) +
+      "-".repeat(18) +
       " | " +
-      "-".repeat(12) +
+      "-".repeat(18) +
       " | " +
       "-".repeat(16) +
       " | " +
@@ -491,9 +502,52 @@ async function runBenchmarkSuite(): Promise<void> {
       "",
     );
     console.log(
-      `| ${cleanCand.slice(0, 44).padEnd(44)} | ${cleanBase.slice(0, 36).padEnd(36)} | ${formatNs(c.baselineLatencyNs).padStart(12)} | ${formatNs(c.candidateLatencyNs).padStart(12)} | ${deltaStr.padStart(16)} | ${(c.ratio.toFixed(2) + "x").padStart(8)} |`,
+      `| ${cleanCand.slice(0, 40).padEnd(40)} | ${cleanBase.slice(0, 32).padEnd(32)} | ${formatMeanWithRme(c.baselineLatencyNs, c.baselineRme).padStart(18)} | ${formatMeanWithRme(c.candidateLatencyNs, c.candidateRme).padStart(18)} | ${deltaStr.padStart(16)} | ${(c.ratio.toFixed(2) + "x").padStart(8)} |`,
     );
   }
+
+  // =========================================================================
+  // Dynamically compute summary findings to ensure narrative matches table
+  // =========================================================================
+  const mapRawRow = findRow("Component: Raw Map.get() lookup");
+  const mapMissRow = findRow(
+    "Component: LeaseStore.getActiveLease() (Cache Miss)",
+  );
+  const leaseHitRow = findRow(
+    "Component: LeaseStore.getActiveLease() (Cache Hit + Dual-Clock)",
+  );
+  const evalExpiryRow = findRow(
+    "Component: evaluateLeaseExpiry() (Dual-Clock Math)",
+  );
+  const clocksRow = findRow(
+    "Component: Syscall Clocks (Date.now + performance.now)",
+  );
+
+  const fallbackComparisons = comparisons.filter(
+    (c) => c.name.includes("Fallback / Miss") && c.name.startsWith("Provider:"),
+  );
+  const minFallbackDelta = Math.min(
+    ...fallbackComparisons.map((c) => c.deltaNs),
+  );
+  const maxFallbackDelta = Math.max(
+    ...fallbackComparisons.map((c) => c.deltaNs),
+  );
+  const minFallbackRatio = Math.min(...fallbackComparisons.map((c) => c.ratio));
+  const maxFallbackRatio = Math.max(...fallbackComparisons.map((c) => c.ratio));
+
+  const overrideComparisons = comparisons.filter(
+    (c) => c.name.includes("Override / Hit") && c.name.startsWith("Provider:"),
+  );
+  const minOverrideLatency = Math.min(
+    ...overrideComparisons.map((c) => c.candidateLatencyNs),
+  );
+  const maxOverrideLatency = Math.max(
+    ...overrideComparisons.map((c) => c.candidateLatencyNs),
+  );
+
+  const dualClockComp = comparisons.find((c) =>
+    c.name.includes("Cache Hit + Dual-Clock"),
+  );
 
   // =========================================================================
   // Generate docs/benchmarks/sdk-overhead.md
@@ -519,7 +573,7 @@ async function runBenchmarkSuite(): Promise<void> {
 | **CPU Model** | \`${cpuModel}\` |
 | **Logical CPU Cores** | \`${cpuCores}\` |
 | **Total Memory** | \`${totalMemGb} GB\` |
-| **Harness Engine** | \`tinybench@6.2.2\` |
+| **Harness Engine** | \`tinybench@6.2.2\` (\`time: 500ms, warmupTime: 100ms\`) |
 
 ---
 
@@ -527,10 +581,16 @@ async function runBenchmarkSuite(): Promise<void> {
 
 * **Hot-Path Overhead SLO (\`AGENTS.md\` §5):** "Minimal overhead vs bare delegate."
 * **Empirical Measurement Findings:**
-  * **Fallback (Cache Miss):** When no override is active, \`OverrideProvider\` adds only an in-memory Map lookup and null check (~81 ns isolated). On the full provider resolution path, the added overhead vs bare \`InMemoryProvider\` is minimal (~300–400 ns on boolean and number resolutions, ~1.10x ratio), fully validating ADR 0001.
-  * **Active Override (Cache Hit):** Ingesting and serving an emergency override resolves directly in-process within ~2.0–2.5 µs, bypassing delegate provider evaluation entirely.
-  * **Dual-Clock Expiry Breakdown:** Dual-clock validation on active leases adds ~730 ns, composed of monotonic/wall clock reads (~300 ns for \`Date.now() + performance.now()\`) and \`evaluateLeaseExpiry\` arithmetic validation (~530 ns).
+  * **Fallback (Cache Miss):** When no override is active, \`OverrideProvider\` adds only an in-memory Map lookup and null check. In isolation, \`LeaseStore.getActiveLease()\` cache miss resolves in **${mapMissRow ? formatMeanWithRme(mapMissRow.latencyMeanNs, mapMissRow.latencyRme) : "N/A"}** (vs **${mapRawRow ? formatMeanWithRme(mapRawRow.latencyMeanNs, mapRawRow.latencyRme) : "N/A"}** for raw \`Map.get()\`). Across full provider resolutions, the measured delta vs bare delegate spans **${formatNs(minFallbackDelta)}** to **${formatNs(maxFallbackDelta)}** (${minFallbackRatio.toFixed(2)}x to ${maxFallbackRatio.toFixed(2)}x ratio), strictly validating ADR 0001.
+  * **Active Override (Cache Hit):** Ingesting and serving an active emergency override resolves in **${formatNs(minOverrideLatency)} – ${formatNs(maxOverrideLatency)}**, short-circuiting delegate provider execution and evaluating faster than underlying delegate engines.
+  * **Dual-Clock Expiry Breakdown:** Dual-clock validation on active leases adds **${dualClockComp ? (dualClockComp.deltaNs >= 0 ? "+" : "") + formatNs(dualClockComp.deltaNs) : "N/A"}** inside \`LeaseStore.getActiveLease()\` (total hit latency: **${leaseHitRow ? formatMeanWithRme(leaseHitRow.latencyMeanNs, leaseHitRow.latencyRme) : "N/A"}**). In isolated micro-tests, clock syscalls take **${clocksRow ? formatMeanWithRme(clocksRow.latencyMeanNs, clocksRow.latencyRme) : "N/A"}** and expiration arithmetic takes **${evalExpiryRow ? formatMeanWithRme(evalExpiryRow.latencyMeanNs, evalExpiryRow.latencyRme) : "N/A"}**.
   * **Fail-Safe Hot Path (Invariant 1):** Zero network egress, zero async locks, and 100% in-process resolution guarantee application traffic remains completely shielded.
+
+### Statistical Variance & Measurement Methodology Notes
+1. **Sub-Microsecond JIT & GC Jitter:** In sub-microsecond JavaScript microbenchmarks, V8 JIT compilation phases, garbage collector ticks, and OS thread scheduling introduce run-to-run variance (reflected in the ±RME margins of error). Deltas near zero or slightly negative indicate that wrapper overhead is negligible and falls within normal measurement noise.
+2. **Non-Additive Micro-Operations:** Micro-component measurements (clock syscalls vs arithmetic evaluation) run in separate isolated loops and are not strictly additive with composite \`LeaseStore.getActiveLease()\` due to V8 function inlining, instruction pipelining, and cache line effects.
+3. **OpenFeature Client-Level Scaffolding:** End-to-end client evaluations (~15–20 µs) are dominated by OpenFeature SDK client scaffolding (hook pipelines, event dispatcher loops, and transaction context propagators), dwarfing the nanosecond-level provider lookup overhead.
+4. **Harness Configuration Asymmetry:** The standalone runner uses \`tinybench@6.2.2\` with \`time: 500ms, warmupTime: 100ms\`. The companion Vitest benchmark suite (\`packages/sdk/benchmarks/hot-path.bench.ts\`) runs under Vitest's default iterations and warmup settings.
 
 ---
 
@@ -538,13 +598,13 @@ async function runBenchmarkSuite(): Promise<void> {
 
 Direct invocation of \`provider.resolve<Type>Evaluation(flagKey, defaultValue, context, logger)\`:
 
-| Evaluation Path | Type | Throughput (ops/s) | Mean Latency | p95 Latency | Samples |
-|---|---|---|---|---|---|
+| Evaluation Path | Type | Throughput (ops/s) | Mean Latency (±RME) | p75 Latency | p99 Latency | Samples |
+|---|---|---|---|---|---|---|
 ${allRows
   .filter((r) => r.suite === "Direct Provider Resolution")
   .map(
     (r) =>
-      `| \`${r.name.replace("Provider: ", "")}\` | ${r.name.includes("boolean") ? "Boolean" : r.name.includes("string") ? "String" : r.name.includes("number") ? "Number" : "Object"} | ${formatOps(r.throughputOpsSec)} | ${formatNs(r.latencyMeanNs)} | ${formatNs(r.latencyP95Ns)} | ${r.samples.toLocaleString("en-US")} |`,
+      `| \`${r.name.replace("Provider: ", "")}\` | ${r.name.includes("boolean") ? "Boolean" : r.name.includes("string") ? "String" : r.name.includes("number") ? "Number" : "Object"} | ${formatOps(r.throughputOpsSec, r.throughputRme)} | ${formatMeanWithRme(r.latencyMeanNs, r.latencyRme)} | ${formatNs(r.latencyP75Ns)} | ${formatNs(r.latencyP99Ns)} | ${r.samples.toLocaleString("en-US")} |`,
   )
   .join("\n")}
 
@@ -554,13 +614,13 @@ ${allRows
 
 End-to-end evaluation through standard \`OpenFeatureClient\` (\`client.getBooleanValue(flagKey, default, context)\`):
 
-| Evaluation Path | Throughput (ops/s) | Mean Latency | p95 Latency | Samples |
-|---|---|---|---|---|
+| Evaluation Path | Throughput (ops/s) | Mean Latency (±RME) | p75 Latency | p99 Latency | Samples |
+|---|---|---|---|---|---|
 ${allRows
   .filter((r) => r.suite === "Client End-to-End Resolution")
   .map(
     (r) =>
-      `| \`${r.name.replace("Client: ", "")}\` | ${formatOps(r.throughputOpsSec)} | ${formatNs(r.latencyMeanNs)} | ${formatNs(r.latencyP95Ns)} | ${r.samples.toLocaleString("en-US")} |`,
+      `| \`${r.name.replace("Client: ", "")}\` | ${formatOps(r.throughputOpsSec, r.throughputRme)} | ${formatMeanWithRme(r.latencyMeanNs, r.latencyRme)} | ${formatNs(r.latencyP75Ns)} | ${formatNs(r.latencyP99Ns)} | ${r.samples.toLocaleString("en-US")} |`,
   )
   .join("\n")}
 
@@ -570,13 +630,13 @@ ${allRows
 
 Isolated micro-benchmark measurement of individual sub-operations within the resolution pipeline:
 
-| Component Operation | Throughput (ops/s) | Mean Latency | p95 Latency | Samples |
-|---|---|---|---|---|
+| Component Operation | Throughput (ops/s) | Mean Latency (±RME) | p75 Latency | p99 Latency | Samples |
+|---|---|---|---|---|---|
 ${allRows
   .filter((r) => r.suite === "Component-Level Breakdown")
   .map(
     (r) =>
-      `| \`${r.name.replace("Component: ", "")}\` | ${formatOps(r.throughputOpsSec)} | ${formatNs(r.latencyMeanNs)} | ${formatNs(r.latencyP95Ns)} | ${r.samples.toLocaleString("en-US")} |`,
+      `| \`${r.name.replace("Component: ", "")}\` | ${formatOps(r.throughputOpsSec, r.throughputRme)} | ${formatMeanWithRme(r.latencyMeanNs, r.latencyRme)} | ${formatNs(r.latencyP75Ns)} | ${formatNs(r.latencyP99Ns)} | ${r.samples.toLocaleString("en-US")} |`,
   )
   .join("\n")}
 
@@ -586,12 +646,12 @@ ${allRows
 
 Direct delta calculation between wrapped operations and their corresponding bare delegate baselines:
 
-| Candidate Operation | Baseline Operation | Baseline Mean | Candidate Mean | Delta (Added Overhead) | Ratio |
+| Candidate Operation | Baseline Operation | Baseline Mean (±RME) | Candidate Mean (±RME) | Delta (Added Overhead) | Ratio |
 |---|---|---|---|---|---|
 ${comparisons
   .map(
     (c) =>
-      `| \`${c.name.replace(/^(Provider|Client|Component): /, "")}\` | \`${c.baselineName.replace(/^(Provider|Client|Component): /, "")}\` | ${formatNs(c.baselineLatencyNs)} | ${formatNs(c.candidateLatencyNs)} | **${c.deltaNs >= 0 ? "+" : ""}${formatNs(c.deltaNs)}** | ${c.ratio.toFixed(2)}x |`,
+      `| \`${c.name.replace(/^(Provider|Client|Component): /, "")}\` | \`${c.baselineName.replace(/^(Provider|Client|Component): /, "")}\` | ${formatMeanWithRme(c.baselineLatencyNs, c.baselineRme)} | ${formatMeanWithRme(c.candidateLatencyNs, c.candidateRme)} | **${c.deltaNs >= 0 ? "+" : ""}${formatNs(c.deltaNs)}** | ${c.ratio.toFixed(2)}x |`,
   )
   .join("\n")}
 

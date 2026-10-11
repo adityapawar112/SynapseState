@@ -240,12 +240,13 @@ export function createBenchmarkFixtures(): BenchmarkFixtures {
     debug: () => {},
   };
 
+  const nowMono = performance.now();
   const sampleExpiryParams: LeaseExpiryParams = {
     issuedAt: nowIso,
     ttlSeconds: 7200,
-    firstSeenMonoMs: performance.now(),
+    firstSeenMonoMs: nowMono,
     nowWallMs: Date.now(),
-    nowMonoMs: performance.now(),
+    nowMonoMs: nowMono,
     skewToleranceMs: 30_000,
     maxTtlSeconds: 86400,
   };

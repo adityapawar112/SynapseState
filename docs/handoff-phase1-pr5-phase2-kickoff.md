@@ -46,10 +46,11 @@ Phase 1 delivered the complete cryptographic foundation, golden conformance suit
   - Unit-tested fixtures verifying fallback delegation, override matches, dual-clock math, and client resolutions (`benchmarks/benchmarks.test.ts`).
   - Continuous benchmark commands: `pnpm --filter @synapsestate/sdk run bench` and `pnpm --filter @synapsestate/sdk run bench:vitest`.
   - Published benchmark report in `docs/benchmarks/sdk-overhead.md`:
-    - Fallback (cache miss) added overhead is minimal (~68 ns on boolean, ~1.02x ratio vs bare `InMemoryProvider`).
-    - Active override match resolves in ~2.1 µs (bypassing delegate evaluation).
-    - Isolated `LeaseStore` cache miss is ~105 ns (matching raw `Map.get()`).
-    - Dual-clock validation on active leases adds ~745 ns (~312 ns clock syscalls + ~587 ns expiry arithmetic).
+    - Fallback (cache miss) Map lookup takes 93.8 ns (±0.68%) in isolation (vs 74.5 ns (±0.56%) for raw `Map.get()`).
+    - Direct provider fallback resolutions track closely with bare delegate (0.82x to 1.25x ratio), with fluctuations within normal sub-microsecond JIT/GC variance.
+    - Active override matches resolve in 2.26 µs – 2.79 µs (bypassing underlying delegate evaluation).
+    - Dual-clock expiry validation adds +849.1 ns inside `LeaseStore.getActiveLease()`, with isolated clock syscalls taking 300.5 ns (±10.76%) and expiry arithmetic taking 504.2 ns (±0.50%).
+    - Full statistical profile with RME (±%) and exact p75/p99 percentiles documented.
 - **Tests:** 62 passing tests in `packages/sdk` (10 test files).
 - **Monorepo Baseline:** 178/178 passing tests across monorepo, 0 build errors, 0 typecheck errors, 0 lint warnings.
 
