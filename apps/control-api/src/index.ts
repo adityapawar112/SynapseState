@@ -1,11 +1,29 @@
-import Fastify from "fastify";
+import { buildServer, type ServerOptions } from "./app.js";
 
 export * from "./db/index.js";
+export * from "./keyset.js";
+export * from "./services/state-manager.js";
+export * from "./routes/time.js";
+export * from "./routes/leases.js";
+export * from "./routes/state.js";
+export * from "./routes/health.js";
+export { buildServer, type ServerOptions };
 
-export const server = Fastify({
-  logger: true,
-});
+export const server = buildServer();
 
-server.get("/v1/time", async () => {
-  return { server_time: new Date().toISOString() };
-});
+// Start server if executed directly as entrypoint
+if (
+  process.env.NODE_ENV !== "test" &&
+  process.argv[1] &&
+  (process.argv[1].endsWith("dist/index.js") || process.argv[1].endsWith("src/index.ts"))
+) {
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const host = process.env.HOST || "0.0.0.0";
+  server.listen({ port, host }, (err, address) => {
+    if (err) {
+      server.log.error(err);
+      process.exit(1);
+    }
+    server.log.info(`SynapseState Control API listening at ${address}`);
+  });
+}
