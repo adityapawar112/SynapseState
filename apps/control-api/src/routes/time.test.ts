@@ -15,6 +15,7 @@ describe("Time Synchronization Route (GET /v1/time)", () => {
     const after = Date.now();
 
     expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toContain("no-store");
     const body = JSON.parse(res.payload);
     expect(body).toHaveProperty("server_time");
     expect(typeof body.server_time).toBe("string");

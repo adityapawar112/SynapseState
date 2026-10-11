@@ -73,14 +73,17 @@ describe("Lease Ingestion & Revocation Routes", () => {
   });
 
   beforeEach(async () => {
-    // Clean test state before each run scoped to this test environment
+    // Clean test state before each run scoped to this test environment (P1.9)
     await leasePool.query(
       "DELETE FROM revocations WHERE lease_id IN (SELECT lease_id FROM leases WHERE env = $1)",
       [env]
     );
+    await leasePool.query(
+      "DELETE FROM audit_pending WHERE payload->>'env' = $1 OR payload->>'lease_id' IN (SELECT lease_id FROM leases WHERE env = $1)",
+      [env]
+    );
     await leasePool.query("DELETE FROM leases WHERE env = $1", [env]);
     await leasePool.query("DELETE FROM change_events WHERE env = $1", [env]);
-    await leasePool.query("DELETE FROM audit_pending WHERE actor = 'sre-alice'");
     await leasePool.query("DELETE FROM flags WHERE env = $1", [env]);
   });
 
@@ -240,6 +243,103 @@ describe("Lease Ingestion & Revocation Routes", () => {
     expect(res2.statusCode).toBe(409);
     const body = JSON.parse(res2.payload);
     expect(body.error).toContain("An active lease already exists");
+  });
+
+  it("enforces exactly one ACTIVE lease under concurrent ingestion for same (flag_key, env) (P0.2)", async () => {
+    const flagKey = "test-concurrent-race-flag";
+
+    const payload1 = createTestLease({
+      flag_key: flagKey,
+      value: "variant-1",
+      reason: "Concurrent lease 1",
+    });
+    const payload2 = createTestLease({
+      flag_key: flagKey,
+      value: "variant-2",
+      reason: "Concurrent lease 2",
+    });
+
+    const env1 = signLease(payload1, operatorKey.privateKey);
+    const env2 = signLease(payload2, operatorKey.privateKey);
+
+    // Fire both requests concurrently
+    const [res1, res2] = await Promise.all([
+      app.inject({ method: "POST", url: "/v1/leases", payload: env1 }),
+      app.inject({ method: "POST", url: "/v1/leases", payload: env2 }),
+    ]);
+
+    // Both requests must complete with valid status codes (never 500)
+    expect([201, 409]).toContain(res1.statusCode);
+    expect([201, 409]).toContain(res2.statusCode);
+
+    // Partial unique index guarantees EXACTLY ONE active lease in the DB
+    const activeRows = await leasePool.query(
+      "SELECT * FROM leases WHERE flag_key = $1 AND env = $2 AND state = 'ACTIVE'",
+      [flagKey, env]
+    );
+    expect(activeRows.rows).toHaveLength(1);
+  });
+
+  it("idempotently succeeds when re-submitting an identical signed lease (P1.10)", async () => {
+    const payload = createTestLease({
+      flag_key: "test-idempotent-flag",
+      value: true,
+      reason: "Initial idempotent override",
+    });
+    const envelope = signLease(payload, operatorKey.privateKey);
+
+    const firstRes = await app.inject({
+      method: "POST",
+      url: "/v1/leases",
+      payload: envelope,
+    });
+    expect(firstRes.statusCode).toBe(201);
+
+    // Resend exact same lease envelope
+    const secondRes = await app.inject({
+      method: "POST",
+      url: "/v1/leases",
+      payload: envelope,
+    });
+    expect(secondRes.statusCode).toBe(201);
+
+    const countRows = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM leases WHERE lease_id = $1",
+      [payload.lease_id]
+    );
+    expect(countRows.rows[0].count).toBe(1);
+  });
+
+  it("rejects re-submitting same lease_id with different payload with 409 Conflict (P1.10)", async () => {
+    const leaseId = generateUlid();
+    const payload1 = createTestLease({
+      lease_id: leaseId,
+      flag_key: "test-id-conflict-flag",
+      value: true,
+    });
+    const env1 = signLease(payload1, operatorKey.privateKey);
+
+    const firstRes = await app.inject({
+      method: "POST",
+      url: "/v1/leases",
+      payload: env1,
+    });
+    expect(firstRes.statusCode).toBe(201);
+
+    // Create different payload with same lease_id
+    const payload2 = createTestLease({
+      lease_id: leaseId,
+      flag_key: "test-id-conflict-flag",
+      value: false,
+    });
+    const env2 = signLease(payload2, operatorKey.privateKey);
+
+    const secondRes = await app.inject({
+      method: "POST",
+      url: "/v1/leases",
+      payload: env2,
+    });
+    expect(secondRes.statusCode).toBe(409);
   });
 
   it("rejects unknown kid with 400 Bad Request", async () => {

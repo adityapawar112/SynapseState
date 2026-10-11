@@ -8,9 +8,11 @@ import type { FastifyPluginAsync } from "fastify";
  *   prior to Ed25519 payload signing.
  */
 export const timeRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.get("/v1/time", async () => {
-    return {
-      server_time: new Date().toISOString(),
-    };
+  fastify.get("/v1/time", async (_req, reply) => {
+    return reply
+      .header("Cache-Control", "no-cache, no-store, must-revalidate")
+      .send({
+        server_time: new Date().toISOString(),
+      });
   });
 };

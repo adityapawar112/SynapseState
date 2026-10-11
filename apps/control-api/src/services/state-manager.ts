@@ -58,7 +58,7 @@ export function computeStateEtag(
     registry_version: registryVersion,
     revocations,
   });
-  return crypto.createHash("sha256").update(canonical).digest("hex").slice(0, 16);
+  return crypto.createHash("sha256").update(canonical).digest("hex");
 }
 
 /**
@@ -334,8 +334,19 @@ export class StateManager {
       }
       envWaiters.add(onUpdate);
 
+      // Re-check after registration to eliminate lost-wakeup window (P0.1)
+      this.getState(env)
+        .then((freshState) => {
+          if (!settled && normalizeEtag(freshState.etag) !== cleanClient) {
+            onUpdate(freshState);
+          }
+        })
+        .catch((err) => {
+          console.error("[StateManager] Error during post-registration state re-check:", err);
+        });
+
       timeoutId = setTimeout(onTimeout, clampedWait * 1000);
-      if (timeoutId.unref) {
+      if (process.env.NODE_ENV !== "test" && timeoutId.unref) {
         timeoutId.unref();
       }
     });

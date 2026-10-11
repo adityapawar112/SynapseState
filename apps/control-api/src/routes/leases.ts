@@ -51,7 +51,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     const envelope = parseResult.data;
     const { payload, sig } = envelope;
 
-    // 2. Keyset & authorization validation
+    // 2. Keyset existence
     const keyset = keysetProvider.getKeyset();
     const key = getKey(keyset, payload.kid);
 
@@ -61,6 +61,15 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       });
     }
 
+    // 3. Ed25519 cryptographic signature verification FIRST (prevents policy probe oracle - P1.1)
+    const isValidSig = verifyLease(envelope, key.public_key);
+    if (!isValidSig) {
+      return reply.code(400).send({
+        error: "Invalid Ed25519 signature",
+      });
+    }
+
+    // 4. Key status & authorization policy enforcement
     if (!isKeyActive(key)) {
       return reply.code(403).send({
         error: `Key "${payload.kid}" is not active`,
@@ -82,14 +91,6 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     if (payload.ttl_seconds <= 0 || payload.ttl_seconds > 86400) {
       return reply.code(400).send({
         error: "Lease TTL must be between 1 and 86400 seconds",
-      });
-    }
-
-    // 3. Ed25519 cryptographic signature verification
-    const isValidSig = verifyLease(envelope, key.public_key);
-    if (!isValidSig) {
-      return reply.code(400).send({
-        error: "Invalid Ed25519 signature",
       });
     }
 
@@ -133,6 +134,22 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         }
 
         warnings = knownFlag ? [] : ["UNKNOWN_FLAG"];
+
+        // Check for existing lease by lease_id (idempotency & retry guard - P1.10)
+        const existingLeaseIdRes = await client.query<{ lease_id: string; sig: string; state: string }>(
+          "SELECT lease_id, sig, state FROM leases WHERE lease_id = $1",
+          [payload.lease_id]
+        );
+        if (existingLeaseIdRes.rows.length > 0) {
+          const row = existingLeaseIdRes.rows[0];
+          if (row.sig === sig) {
+            // Idempotent retry: identical signed lease already committed
+            return;
+          }
+          const conflictErr = new Error(`Lease with ID "${payload.lease_id}" already exists with different payload or signature`);
+          (conflictErr as unknown as { statusCode: number }).statusCode = 409;
+          throw conflictErr;
+        }
 
         // Check for existing active lease for (flag_key, env)
         const existingRes = await client.query<{ lease_id: string }>(
@@ -248,11 +265,20 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
           error: (err as Error).message,
         });
       }
+      if ((err as { code?: string }).code === "23505") {
+        return reply.code(409).send({
+          error: "An active lease already exists or was created concurrently for this flag and environment",
+        });
+      }
       throw err;
     }
 
-    // 6. Wake up active long-polling connections
-    await stateManager.notifyChange(payload.env);
+    // 6. Wake up active long-polling connections (non-fatal notification - P1.2)
+    try {
+      await stateManager.notifyChange(payload.env);
+    } catch (notifyErr) {
+      req.log.warn({ err: notifyErr }, "[POST /v1/leases] Error waking up long-polling connections");
+    }
 
     // 7. Response 201 Created
     return reply.code(201).send({
@@ -308,8 +334,8 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     let env = "prod";
     try {
       await withTransaction(leasePool, async (client) => {
-        const leaseRes = await client.query<{ flag_key: string; env: string; expires_at: Date }>(
-          "SELECT flag_key, env, expires_at FROM leases WHERE lease_id = $1 FOR UPDATE",
+        const leaseRes = await client.query<{ flag_key: string; env: string; expires_at: Date; state: string }>(
+          "SELECT flag_key, env, expires_at, state FROM leases WHERE lease_id = $1 FOR UPDATE",
           [id]
         );
 
@@ -320,12 +346,18 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         }
 
         const lease = leaseRes.rows[0];
+        if (lease.state !== "ACTIVE") {
+          const err = new Error(`Cannot revoke lease "${id}": lease is in state "${lease.state}"`);
+          (err as unknown as { statusCode: number }).statusCode = 409;
+          throw err;
+        }
+
         env = lease.env;
 
         // Transition lease to REVOKED
         await client.query("UPDATE leases SET state = 'REVOKED' WHERE lease_id = $1", [id]);
 
-        // Insert into revocations (retention bounded by expires_at)
+        // Insert into revocations (retention bounded by expires_at + SKEW)
         const expiresAt = new Date(new Date(lease.expires_at).getTime() + DEFAULT_SKEW_TOLERANCE_MS).toISOString();
         await client.query(
           `INSERT INTO revocations (lease_id, payload, sig, revoked_by_kid, revoked_at, expires_at)
@@ -370,10 +402,20 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
           error: (err as Error).message,
         });
       }
+      if ((err as { statusCode?: number }).statusCode === 409) {
+        return reply.code(409).send({
+          error: (err as Error).message,
+        });
+      }
       throw err;
     }
 
-    await stateManager.notifyChange(env);
+    // Wake up active long-polling connections (non-fatal notification - P1.2)
+    try {
+      await stateManager.notifyChange(env);
+    } catch (notifyErr) {
+      req.log.warn({ err: notifyErr }, "[POST /v1/leases/:id/revoke] Error waking up long-polling connections");
+    }
 
     return reply.code(200).send({
       lease_id: id,

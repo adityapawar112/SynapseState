@@ -252,4 +252,65 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
     expect(body.revocations).toHaveLength(1);
     expect(body.revocations[0].payload.lease_id).toBe(leaseId);
   });
+
+  it("rejects invalid env parameter with 400 Bad Request (P1.7)", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/sdk/state?env=bad/environment$name!",
+    });
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.payload);
+    expect(body.error).toContain("Invalid environment parameter");
+  });
+
+  it("eliminates lost-wakeup race when state changes concurrently during long-poll suspension (P0.1)", async () => {
+    // 1. Snapshot initial state
+    const firstRes = await app.inject({
+      method: "GET",
+      url: `/v1/sdk/state?env=${env}`,
+    });
+    const initialEtag = firstRes.headers["etag"] as string;
+
+    // 2. Prepare lease to ingest
+    const leaseId = generateUlid();
+    const payload: LeasePayload = {
+      v: 1,
+      lease_id: leaseId,
+      env,
+      flag_key: "test-race-elim-flag",
+      value: true,
+      reason: "Lost-wakeup race test",
+      issued_at: new Date().toISOString(),
+      ttl_seconds: 600,
+      kid: "sre-alice",
+      nonce: crypto.randomBytes(16).toString("base64url"),
+    };
+    const envelope = signLease(payload, operatorKey.privateKey);
+
+    // 3. Concurrently launch long-poll with 10s wait and lease ingestion
+    const start = Date.now();
+    const [longPollRes, ingestRes] = await Promise.all([
+      app.inject({
+        method: "GET",
+        url: `/v1/sdk/state?env=${env}&wait=10s`,
+        headers: { "if-none-match": initialEtag },
+      }),
+      app.inject({
+        method: "POST",
+        url: "/v1/leases",
+        payload: envelope,
+      }),
+    ]);
+
+    const elapsed = Date.now() - start;
+
+    expect(ingestRes.statusCode).toBe(201);
+    expect(longPollRes.statusCode).toBe(200);
+    // Long-poll must NOT wait for the 10s timeout; it must resume rapidly
+    expect(elapsed).toBeLessThan(1000);
+
+    const body = JSON.parse(longPollRes.payload);
+    expect(body.active_leases).toHaveLength(1);
+    expect(body.active_leases[0].payload.lease_id).toBe(leaseId);
+  });
 });

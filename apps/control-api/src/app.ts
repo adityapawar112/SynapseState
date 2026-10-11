@@ -43,7 +43,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     origin: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "If-None-Match"],
-    exposedHeaders: ["ETag", "server-time"],
+    exposedHeaders: ["ETag"],
   });
 
   // Register route plugins

@@ -13,15 +13,13 @@ export function parseWaitSeconds(rawWait?: unknown): number {
   if (rawWait === undefined || rawWait === null || rawWait === "") {
     return 0;
   }
-  let str = String(rawWait).trim().toLowerCase();
-  if (str.endsWith("s")) {
-    str = str.slice(0, -1);
-  }
-  const parsed = parseInt(str, 10);
-  if (Number.isNaN(parsed) || parsed < 0) {
+  const str = String(rawWait).trim().toLowerCase();
+  const match = str.match(/^(\d{1,2})s?$/);
+  if (!match) {
     return 0;
   }
-  return Math.min(parsed, 60);
+  const parsed = parseInt(match[1], 10);
+  return Math.min(Math.max(parsed, 0), 60);
 }
 
 /**
@@ -44,6 +42,14 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
   fastify.get("/v1/sdk/state", async (req, reply) => {
     const query = req.query as { env?: string; wait?: string };
     const env = query.env || "prod";
+
+    // Validate env format to prevent unbounded cardinality / cache key injection (P1.7)
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(env)) {
+      return reply.code(400).send({
+        error: "Invalid environment parameter. Must be alphanumeric with hyphens or underscores (1-64 characters).",
+      });
+    }
+
     const waitSeconds = parseWaitSeconds(query.wait);
 
     const ifNoneMatchHeader = req.headers["if-none-match"];
@@ -68,10 +74,16 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
       // Clean up abort listener
       req.raw.removeListener("close", onClose);
 
+      // Reply-after-abort guard: if socket was destroyed or aborted, exit without writing (P1.8)
+      if (req.raw.destroyed || abortController.signal.aborted) {
+        return;
+      }
+
       if (result.status === 304) {
         return reply
           .code(304)
           .header("ETag", `"${result.state.etag}"`)
+          .header("Cache-Control", "no-cache, no-store, must-revalidate")
           .send();
       }
 
@@ -79,6 +91,7 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
       return reply
         .code(200)
         .header("ETag", `"${result.state.etag}"`)
+        .header("Cache-Control", "no-cache, no-store, must-revalidate")
         .send(payload);
     } catch (err) {
       req.raw.removeListener("close", onClose);
