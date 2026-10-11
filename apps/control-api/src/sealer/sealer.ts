@@ -142,10 +142,12 @@ export class AuditSealer {
     });
 
     if (!lockResult.acquired) {
+      // Lock-free lag query so standby replicas export accurate pending age to Prometheus
+      const pendingAgeSeconds = await this.updatePendingAgeMetric();
       return {
         acquired: false,
         sealedCount: 0,
-        pendingAgeSeconds: 0,
+        pendingAgeSeconds,
       };
     }
 
@@ -270,6 +272,12 @@ export class AuditSealer {
       params
     );
 
+    // Synchronize underlying sequence with assigned seq to prevent future default collisions
+    await client.query(
+      "SELECT setval(pg_get_serial_sequence('audit_events', 'seq'), $1, true);",
+      [currentSeq]
+    );
+
     // 5. Delete processed events from audit_pending within the EXACT same transaction
     await client.query("DELETE FROM audit_pending WHERE id = ANY($1::bigint[]);", [
       pendingIdsToDelete,
@@ -323,7 +331,12 @@ export class AuditSealer {
    * Executes a single tick of the sealing loop with top-level error containment and in-flight guard.
    */
   private async tick(): Promise<void> {
-    if (!this.isRunning || this.isSealing) {
+    if (!this.isRunning) {
+      return;
+    }
+    if (this.isSealing) {
+      // Defensively re-arm timer if a tick was triggered while sealing
+      this.scheduleTick();
       return;
     }
     this.isSealing = true;

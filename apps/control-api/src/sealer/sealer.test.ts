@@ -64,6 +64,10 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
 
     const verification = verifyAuditChain(sealedEvents.rows);
     expect(verification.valid).toBe(true);
+
+    // Verify underlying sequence advanced with explicit seq assignment
+    const seqCheck = await leasePool.query("SELECT last_value FROM audit_events_seq_seq;");
+    expect(Number(seqCheck.rows[0]?.last_value)).toBe(3);
   });
 
   it("respects batch size limit and continues chain across successive batches", async () => {
