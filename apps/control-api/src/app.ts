@@ -5,6 +5,7 @@ import type { Keyset } from "@synapsestate/lease";
 import { leasePool } from "./db/pool.js";
 import { createKeysetProvider, type KeysetProvider } from "./keyset.js";
 import { StateManager } from "./services/state-manager.js";
+import { AuditSealer } from "./sealer/index.js";
 import { timeRoutes } from "./routes/time.js";
 import { leaseRoutes } from "./routes/leases.js";
 import { stateRoutes } from "./routes/state.js";
@@ -17,6 +18,8 @@ export interface ServerOptions {
   keysetPath?: string;
   keysetProvider?: KeysetProvider;
   stateManager?: StateManager;
+  auditSealer?: AuditSealer;
+  enableAuditSealer?: boolean;
 }
 
 /**
@@ -57,6 +60,25 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   void server.register(stateRoutes, {
     stateManager: activeStateManager,
   });
+
+  // Audit Sealer configuration and lifecycle management
+  let activeAuditSealer: AuditSealer | undefined = options.auditSealer;
+  if (!activeAuditSealer && options.enableAuditSealer) {
+    activeAuditSealer = new AuditSealer({
+      pool: activePool,
+    });
+  }
+
+  if (activeAuditSealer) {
+    const sealer = activeAuditSealer;
+    server.addHook("onReady", async () => {
+      sealer.start();
+    });
+
+    server.addHook("onClose", async () => {
+      await sealer.stop();
+    });
+  }
 
   return server;
 }

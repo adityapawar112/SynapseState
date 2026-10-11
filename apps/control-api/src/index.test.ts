@@ -31,4 +31,31 @@ describe("Control API Server Wiring & Probes", () => {
     const body = JSON.parse(response.payload);
     expect(body).toEqual({ status: "ok", db: "connected" });
   });
+
+  it("hooks auditSealer start and stop into Fastify ready and close lifecycle", async () => {
+    let started = false;
+    let stopped = false;
+
+    const mockSealer = {
+      start: () => {
+        started = true;
+      },
+      stop: async () => {
+        stopped = true;
+      },
+    } as unknown as import("./sealer/index.js").AuditSealer;
+
+    const testServer = (await import("./app.js")).buildServer({
+      auditSealer: mockSealer,
+    });
+
+    expect(started).toBe(false);
+    expect(stopped).toBe(false);
+
+    await testServer.ready();
+    expect(started).toBe(true);
+
+    await testServer.close();
+    expect(stopped).toBe(true);
+  });
 });

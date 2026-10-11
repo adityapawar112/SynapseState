@@ -3,13 +3,16 @@ import { buildServer, type ServerOptions } from "./app.js";
 export * from "./db/index.js";
 export * from "./keyset.js";
 export * from "./services/state-manager.js";
+export * from "./sealer/index.js";
 export * from "./routes/time.js";
 export * from "./routes/leases.js";
 export * from "./routes/state.js";
 export * from "./routes/health.js";
 export { buildServer, type ServerOptions };
 
-export const server = buildServer();
+export const server = buildServer({
+  enableAuditSealer: process.env.NODE_ENV !== "test",
+});
 
 // Start server if executed directly as entrypoint
 if (
@@ -26,4 +29,17 @@ if (
     }
     server.log.info(`SynapseState Control API listening at ${address}`);
   });
+
+  const handleShutdown = (signal: string) => {
+    server.log.info(`Received ${signal}, shutting down gracefully...`);
+    void server.close().then(() => {
+      process.exit(0);
+    }).catch((err) => {
+      server.log.error(err, "Error during graceful shutdown");
+      process.exit(1);
+    });
+  };
+
+  process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+  process.on("SIGINT", () => handleShutdown("SIGINT"));
 }
