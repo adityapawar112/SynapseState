@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { leasePool } from "./pool.js";
 import {
   withTransaction,
@@ -15,11 +15,15 @@ describe("Transaction & Advisory Lock Helpers", () => {
 
   beforeAll(async () => {
     await leasePool.query(`
-      CREATE TEMP TABLE IF NOT EXISTS test_transaction_items (
+      CREATE TABLE IF NOT EXISTS test_transaction_items (
         id SERIAL PRIMARY KEY,
         val TEXT NOT NULL
       );
     `);
+  });
+
+  afterAll(async () => {
+    await leasePool.query("DROP TABLE IF EXISTS test_transaction_items;");
   });
 
   it("commits database operations when transaction callback succeeds", async () => {

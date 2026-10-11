@@ -73,7 +73,9 @@ export async function runMigrations(
   const client = await pool.connect();
 
   try {
-    // Session-level advisory lock prevents concurrent migration runners colliding
+    // Session-level advisory lock prevents concurrent migration runners colliding.
+    // NOTE: Migrations must run via direct database connection or session-mode pooling,
+    // not PgBouncer transaction-mode pooling, because the lock spans multiple migration transactions.
     await client.query("SELECT pg_advisory_lock(hashtext($1))", [SCHEMA_MIGRATIONS_LOCK_KEY]);
 
     // Ensure the tracking table exists

@@ -9,19 +9,23 @@ export type PoolType = "lease" | "telemetry";
 
 export function getPoolOptions(type: PoolType): PoolConfig {
   if (type === "lease") {
+    const rawMax = process.env.LEASE_POOL_MAX ? parseInt(process.env.LEASE_POOL_MAX, 10) : 20;
+    const max = Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 20;
     return {
       connectionString:
         process.env.LEASE_DATABASE_URL || process.env.DATABASE_URL || DEFAULT_DB_URL,
-      max: process.env.LEASE_POOL_MAX ? parseInt(process.env.LEASE_POOL_MAX, 10) : 20,
+      max,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     };
   }
 
+  const rawMax = process.env.TELEMETRY_POOL_MAX ? parseInt(process.env.TELEMETRY_POOL_MAX, 10) : 5;
+  const max = Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 5;
   return {
     connectionString:
       process.env.TELEMETRY_DATABASE_URL || process.env.DATABASE_URL || DEFAULT_DB_URL,
-    max: process.env.TELEMETRY_POOL_MAX ? parseInt(process.env.TELEMETRY_POOL_MAX, 10) : 5,
+    max,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 2000,
   };
@@ -55,5 +59,10 @@ export const telemetryPool = createPool("telemetry");
  * Gracefully closes all active database connection pools.
  */
 export async function closePools(): Promise<void> {
-  await Promise.allSettled([leasePool.end(), telemetryPool.end()]);
+  const results = await Promise.allSettled([leasePool.end(), telemetryPool.end()]);
+  for (const res of results) {
+    if (res.status === "rejected") {
+      console.error("Failed closing connection pool during shutdown", res.reason);
+    }
+  }
 }
