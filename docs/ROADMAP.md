@@ -90,7 +90,7 @@ gantt
   * **PR 2 (`feat/conformance-golden-vectors`):** `test(conformance): language-neutral test vectors and JSON runner` — `packages/conformance/fixtures/*.json`, `packages/conformance/src/runner.ts` `[COMPLETED]`
   * **PR 3 (`feat/sdk-override-provider`):** `feat(sdk): implement OverrideProvider, keyset watcher, and emergency directory scanner` — `packages/sdk/src/{provider.ts, lease-store.ts, keyset-watcher.ts, emergency-scanner.ts}` `[COMPLETED]`
   * **PR 4 (`feat/sdk-long-poll-telemetry`):** `feat(sdk): ETag long-polling client loop and zero-context TelemetryHook` — `packages/sdk/src/{state-client.ts, telemetry-hook.ts, ulid.ts, index.ts}` `[COMPLETED]`
-  * **PR 5 (`perf/sdk-microbenchmarks`):** `perf(sdk): microbenchmarks measuring OverrideProvider overhead vs bare delegate` — `packages/sdk/benchmarks/*` `[NEXT]`
+  * **PR 5 (`perf/sdk-microbenchmarks`):** `perf(sdk): microbenchmarks measuring OverrideProvider overhead vs bare delegate` — `packages/sdk/benchmarks/*` `[COMPLETED]`
 * **Security & Best Practice Review Checkpoints:**
   * **Cryptographic Invariants:** Verify RFC 8785 canonicalization compliance (key sorting, whitespace, float serialization). Confirm Ed25519 uses `null` digest algorithm. Validate exact domain separation prefixes (`"synapsestate/lease/v1\n"`, `"synapsestate/revocation/v1\n"`, `"synapsestate/keyrevocation/v1\n"`).
   * **Fail-Safe Hot Path (Invariant 1):** Audit every `resolve*Evaluation` branch; wrap all lookup and crypto operations in `try/catch` with automatic delegation to the underlying provider on error.

@@ -10,6 +10,7 @@
     "test": "pnpm -r run test",
     "test:coverage": "vitest run --coverage",
     "typecheck": "pnpm -r run typecheck",
+    "bench": "pnpm --filter @synapsestate/sdk run bench",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,json,md,yaml}\""
   },
