@@ -17,5 +17,58 @@ services:
       timeout: 5s
       retries: 5
 
+  control-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.control-api
+    image: synapsestate-control-api:local
+    container_name: synapse-control-api
+    restart: unless-stopped
+    read_only: true
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/synapsestate
+      LEASE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/synapsestate
+      TELEMETRY_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/synapsestate
+      AUTO_MIGRATE: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://localhost:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  demo-shop:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo-shop
+    image: synapsestate-demo-shop:local
+    container_name: synapse-demo-shop
+    restart: unless-stopped
+    read_only: true
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOST: 0.0.0.0
+      CONTROL_API_URL: http://control-api:3000
+    ports:
+      - "3001:3001"
+    depends_on:
+      control-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 volumes:
   pgdata:

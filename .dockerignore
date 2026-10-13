@@ -1,0 +1,28 @@
+# Git, CI and IDE metadata
+.git
+.gitignore
+.github
+.agents
+.vscode
+.idea
+
+# Build artifacts and caches
+dist
+**/dist
+node_modules
+**/node_modules
+.nyc_output
+coverage
+*.tsbuildinfo
+*.log
+
+# Documentation and project infrastructure
+docs
+deploy
+load
+*.md
+LICENSE
+
+# Environment configurations and secrets
+.env
+.env.*
