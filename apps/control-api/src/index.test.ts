@@ -32,6 +32,34 @@ describe("Control API Server Wiring & Probes", () => {
     expect(body).toEqual({ status: "ok", db: "connected" });
   });
 
+  it("serves GET /v1/changes route via server instance", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: "/v1/changes?env=test-env",
+    });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.payload);
+    expect(body.query.env).toBe("test-env");
+    expect(Array.isArray(body.events)).toBe(true);
+  });
+
+  it("serves POST /v1/telemetry/batches route via server instance", async () => {
+    const response = await server.inject({
+      method: "POST",
+      url: "/v1/telemetry/batches",
+      payload: {
+        instance_id: "pod-1",
+        batch_id: "01TESTBATCH000000000000000",
+        window_start: new Date().toISOString(),
+        window_end: new Date().toISOString(),
+        metrics: [],
+      },
+    });
+    expect(response.statusCode).toBe(202);
+    const body = JSON.parse(response.payload);
+    expect(body.accepted).toBe(true);
+  });
+
   it("hooks auditSealer start and stop into Fastify ready and close lifecycle", async () => {
     let started = false;
     let stopped = false;
