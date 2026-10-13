@@ -1,0 +1,57 @@
+name: Infrastructure & Helm Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform-validate:
+    name: Terraform Format & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+
+      - name: Terraform Format Check
+        run: |
+          cd deploy/terraform
+          terraform fmt -check
+
+      - name: Terraform Init & Validate
+        run: |
+          cd deploy/terraform
+          terraform init -backend=false
+          terraform validate
+
+  helm-validate:
+    name: Helm Lint & Template
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.0"
+
+      - name: Lint Helm Charts
+        run: |
+          helm lint deploy/helm/control-api
+          helm lint deploy/helm/demo-shop
+
+      - name: Template Helm Charts
+        run: |
+          helm template synapse-control-api deploy/helm/control-api
+          helm template synapse-demo-shop deploy/helm/demo-shop

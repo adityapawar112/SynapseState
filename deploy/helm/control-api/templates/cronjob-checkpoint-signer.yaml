@@ -1,0 +1,95 @@
+{{- if .Values.cronjob.enabled -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "control-api.fullname" . }}-checkpoint-signer
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: checkpoint-signer
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "control-api.fullname" . }}-checkpoint-signer
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: checkpoint-signer
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.cronjob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronjob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "control-api.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: checkpoint-signer
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "control-api.fullname" . }}-checkpoint-signer
+          securityContext:
+            runAsUser: {{ .Values.cronjob.securityContext.runAsUser }}
+            runAsGroup: {{ .Values.cronjob.securityContext.runAsGroup }}
+            runAsNonRoot: {{ .Values.cronjob.securityContext.runAsNonRoot }}
+            {{- with .Values.cronjob.securityContext.seccompProfile }}
+            seccompProfile:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+          containers:
+            - name: checkpoint-signer
+              image: "{{ .Values.cronjob.image.repository }}:{{ .Values.cronjob.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.cronjob.image.pullPolicy }}
+              command:
+                - synapse
+                - audit
+                - checkpoint
+                - --s3-bucket
+                - $(S3_BUCKET)
+                - --s3-region
+                - $(S3_REGION)
+                - --s3-prefix
+                - $(S3_PREFIX)
+              securityContext:
+                readOnlyRootFilesystem: {{ .Values.cronjob.securityContext.readOnlyRootFilesystem }}
+                allowPrivilegeEscalation: {{ .Values.cronjob.securityContext.allowPrivilegeEscalation }}
+                capabilities:
+                  {{- toYaml .Values.cronjob.securityContext.capabilities | nindent 18 }}
+                {{- with .Values.cronjob.securityContext.seccompProfile }}
+                seccompProfile:
+                  {{- toYaml . | nindent 18 }}
+                {{- end }}
+              env:
+                - name: S3_BUCKET
+                  value: {{ .Values.cronjob.s3.bucket | quote }}
+                - name: S3_REGION
+                  value: {{ .Values.cronjob.s3.region | quote }}
+                - name: S3_PREFIX
+                  value: {{ .Values.cronjob.s3.prefix | quote }}
+                {{- if .Values.cronjob.credentials.existingSecret }}
+                - name: CHECKPOINT_SIGNING_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.cronjob.credentials.existingSecret }}
+                      key: CHECKPOINT_SIGNING_KEY
+                      optional: false
+                {{- end }}
+                {{- if .Values.database.existingSecret }}
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.existingSecret }}
+                      key: {{ .Values.database.keys.databaseUrl }}
+                      optional: false
+                {{- end }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                {{- toYaml .Values.cronjob.resources | nindent 16 }}
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

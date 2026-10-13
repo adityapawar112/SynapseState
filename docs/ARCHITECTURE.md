@@ -714,8 +714,25 @@ synapse log --service checkout-service --since 30m [--offline] [--json]
   - `workloads`: Application microservices running OpenFeature SDKs.
 
 ### 12.2 Infrastructure as Code (Terraform)
-- Automates virtual machine provisioning, firewall rules, DNS records, and S3 backup buckets.
-- Remote state with locking; CI executes `terraform fmt`, `validate`, and `plan`.
+- **Target Platform:** Single-node lightweight cloud VM (e.g. AWS EC2 `t3.medium`) running pinned **k3s** (`v1.30.5+k3s1`).
+- **Networking & Firewall:** Dedicated VPC with public subnet; firewall security groups enforce fail-closed defaults (`allowed_ssh_cidrs = []`, `allowed_k8s_api_cidrs = []`), opening only ports 80 (cert-manager HTTP-01 challenge) and 443 (HTTPS Ingress) to public traffic.
+- **Instance Hardening:** Enforces IMDSv2 (`http_tokens = "required"`, hop limit 1) to prevent SSRF credential theft; restricts kubeconfig mode to `--write-kubeconfig-mode 600`.
+- **Immutable Audit Checkpoint Store:** Provisions dedicated S3 bucket with S3 Object Lock in `COMPLIANCE` mode, SSE-AES256 encryption, public access block, and isolated IAM role granting write-only `s3:PutObject` on `/checkpoints/*` with explicit `Deny` on deletion actions (ARCH §8.3).
+- **Cost Management:** Root Makefile includes automated `make teardown` target for cloud destruction.
+
+### 12.3 Kubernetes Packaging & Helm Charts (`deploy/helm/`)
+- **Namespaces:** Cloud-init and Helm establish clean separation across `synapse-system`, `observability`, and `workloads`.
+- **Pod Security Standards (Restricted Profile):**
+  - All application pods execute as distroless non-root (`runAsUser: 65532`, `runAsGroup: 65532`, `runAsNonRoot: true`, `fsGroup: 65532`).
+  - Read-only root filesystem (`readOnlyRootFilesystem: true`) with transient storage mounted to `/tmp` via `emptyDir: {}`.
+  - Prohibits privilege escalation (`allowPrivilegeEscalation: false`), drops all Linux capabilities (`capabilities: { drop: ["ALL"] }`), and enforces `seccompProfile: { type: RuntimeDefault }`.
+- **Health Probes:**
+  - Control API: `GET /healthz` (liveness, port 3000, no database dependency) and `GET /readyz` (readiness, port 3000, executes `SELECT 1` ping).
+  - Demo Shop: `GET /health` (liveness/readiness, port 3001).
+- **Trust Root & Air-Gapped Fallback Separation:**
+  - Pinned Keyset (`synapse-keyset`) and emergency leases volume (`synapse-emergency-leases`) are mounted as read-only volumes but **never** created, modified, or owned by Helm templates, guaranteeing that Helm upgrades cannot clobber GitOps-managed trust roots (Invariant 2).
+- **Isolated Checkpoint Signer CronJob:**
+  - Packaged as a standalone `batch/v1` CronJob (`synapse-checkpoint-signer`) with a dedicated non-automounting ServiceAccount, isolated secret credentials, and read-only filesystem. Disabled by default until PR 19 CLI release.
 
 ---
 

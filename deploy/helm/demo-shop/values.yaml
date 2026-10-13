@@ -1,0 +1,82 @@
+# Default values for SynapseState Demo Shop Helm Chart.
+# Declares Kubernetes resources in namespace workloads (ARCH §12.1).
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/synapsestate/synapsestate-demo-shop
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# Pod Security Standards (ROADMAP §2.4, ARCH §13.3)
+podSecurityContext:
+  runAsUser: 65532
+  runAsGroup: 65532
+  runAsNonRoot: true
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+service:
+  type: ClusterIP
+  port: 3001
+  targetPort: 3001
+
+env:
+  NODE_ENV: "production"
+  PORT: 3001
+  HOST: "0.0.0.0"
+  CONTROL_API_URL: "http://synapse-control-api.synapse-system.svc.cluster.local:3000"
+
+# Liveness and Readiness Probes (ROADMAP §2.4)
+probes:
+  liveness:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

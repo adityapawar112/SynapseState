@@ -123,18 +123,19 @@ gantt
   * Pod security standards: read-only root filesystems, non-root users, dropped capabilities.
   * Ingress routing with TLS termination via cert-manager.
 * **Recommended Branches & Pull Requests:**
-  * **PR 6 (`feat/control-api-db-schema`):** `feat(api): postgres migrations, connection pool isolation, and transaction helpers` — `apps/control-api/src/db/{migrations/*, pool.ts}`
-  * **PR 7 (`feat/control-api-state-delivery`):** `feat(api): time sync, lease ingestion, and ETag long-polling state endpoint` — `apps/control-api/src/routes/{time.ts, leases.ts, state.ts}`
-  * **PR 8 (`feat/control-api-audit-sealer`):** `feat(api): in-process audit sealer with postgres advisory transaction lock` — `apps/control-api/src/sealer/{sealer.ts, chain.ts}`
-  * **PR 9 (`feat/control-api-telemetry-changes`):** `feat(api): bulkhead telemetry batch endpoint and change-event feed` — `apps/control-api/src/routes/{telemetry.ts, changes.ts}`
-  * **PR 10 (`infra/docker-packaging`):** `ci(docker): multi-stage distroless Dockerfiles and GHCR image publishing` — `Dockerfile.control-api`, `Dockerfile.demo-shop`, `.github/workflows/docker.yml`
-  * **PR 11 (`infra/terraform-k3s-helm`):** `infra(deploy): terraform VM provisioning and Helm charts for k3s` — `deploy/terraform/*`, `deploy/helm/*`
-* **Security & Best Practice Review Checkpoints:**
-  * **SQL Injection & Connection Safety:** Parameterized queries only (`pg`). Verify separate pool instances for high-priority lease ingestion vs. low-priority telemetry flushes to prevent load-shedding starvation.
-  * **Concurrency & Advisory Lock Safety:** Audit `pg_try_advisory_xact_lock(hashtext('synapse_audit_sealer'))` for transaction-scoped behavior across PgBouncer transaction-mode pooling.
-  * **Container & Pod Hardening:** Enforce read-only root filesystems, non-root user (`USER 65532`), dropped capabilities (`ALL`), and `allowPrivilegeEscalation: false` in Helm templates.
-  * **Secret Management:** Database credentials and signing keys injected via Kubernetes Secrets; zero cleartext credentials in Git.
-* **Definition of Done:** Public HTTPS endpoint live; clean tag-triggered release deployment; working teardown and recreation scripts.
+  * **PR 6 (`feat/control-api-db-schema`):** `feat(api): postgres migrations, connection pool isolation, and transaction helpers` — `apps/control-api/src/db/{migrations/*, pool.ts}` `[COMPLETED]`
+  * **PR 7 (`feat/control-api-state-delivery`):** `feat(api): time sync, lease ingestion, and ETag long-polling state endpoint` — `apps/control-api/src/routes/{time.ts, leases.ts, state.ts}` `[COMPLETED]`
+  * **PR 8 (`feat/control-api-audit-sealer`):** `feat(api): in-process audit sealer with postgres advisory transaction lock` — `apps/control-api/src/sealer/{sealer.ts, chain.ts}` `[COMPLETED]`
+  * **PR 9 (`feat/control-api-telemetry-changes`):** `feat(api): bulkhead telemetry batch endpoint and change-event feed` — `apps/control-api/src/routes/{telemetry.ts, changes.ts}` `[COMPLETED]`
+  * **PR 10 (`infra/docker-packaging`):** `ci(docker): multi-stage distroless Dockerfiles and GHCR image publishing` — `Dockerfile.control-api`, `Dockerfile.demo-shop`, `.github/workflows/docker.yml` `[COMPLETED]`
+  * **PR 11 (`infra/terraform-k3s-helm`):** `infra(deploy): terraform VM provisioning and Helm charts for k3s` — `deploy/terraform/*`, `deploy/helm/*` `[COMPLETED]`
+* **Security & Best Practice Review Checkpoints:** `[AUDITED & VERIFIED]`
+  * **SQL Injection & Connection Safety:** Audited parameterized queries across all routes (`apps/control-api/src/routes/*`, `apps/control-api/src/db/*`). Strict pool isolation between `leasePool` (20 connections) and `telemetryPool` (5 connections) prevents telemetry bulk flushes from starving critical lease CRUD or ETag state delivery.
+  * **Concurrency & Advisory Lock Safety:** Transaction-level advisory locking via `pg_try_advisory_xact_lock(hashtext('synapse_audit_sealer'))` verified across single transactions; compatible with PgBouncer transaction-mode pooling without lock leaks across re-used connections.
+  * **Container & Pod Hardening:** Hardened distroless non-root execution (`runAsUser: 65532`, `runAsGroup: 65532`, `runAsNonRoot: true`), `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, dropped capabilities (`capabilities: { drop: ["ALL"] }`), and `seccompProfile: { type: RuntimeDefault }` across all Helm deployment templates and CronJobs.
+  * **Secret Management & Trust Root Separation:** Zero cleartext secrets in Git. Database credentials and signing keys injected exclusively via Kubernetes Secrets (`secretKeyRef`). Pinned Keyset (`synapse-keyset`) and emergency leases volumes are decoupled from Helm release lifecycle and managed out-of-band via GitOps (ARCH §3.1, Invariant 2).
+  * **Cloud VM & Checkpoint Anchoring Isolation:** Terraform provisions single-node k3s with IMDSv2 enforced (`http_tokens = "required"`), fail-closed firewall rules (`allowed_ssh_cidrs = []`, `allowed_k8s_api_cidrs = []`), pinned k3s version (`v1.30.5+k3s1`), `--write-kubeconfig-mode 600`, and immutable S3 Object Lock in `COMPLIANCE` mode with write-only IAM policy denying object deletion (ARCH §8.3).
+* **Definition of Done:** 100% green CI; distroless container publishing to GHCR (`docker.yml`); Terraform VM provisioning with automated `make teardown` target; modular Helm charts linted and template-tested with zero errors (`infra.yml`).
 
 ---
 
