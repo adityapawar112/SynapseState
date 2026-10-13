@@ -3,6 +3,10 @@ import crypto from "node:crypto";
 import { parseKeysetJson, type Keyset } from "@synapsestate/lease";
 import type { Logger } from "@openfeature/server-sdk";
 import type { KeysetWatcherOptions } from "./types.js";
+import {
+  type SynapseSdkMetrics,
+  safeInvokeMetricCallback,
+} from "./metrics.js";
 
 export const DEFAULT_KEYSET_PATH = "/etc/synapse/keyset/keyset.json";
 export const DEFAULT_KEYSET_POLL_INTERVAL_MS = 10_000; // 10s per ARCHITECTURE.md:311
@@ -31,6 +35,7 @@ export class KeysetWatcher {
   private readonly pollIntervalMs: number;
   private readonly maxStaleMs: number;
   private readonly onKeysetUpdate?: (keyset: Keyset) => void;
+  private readonly sdkMetrics?: SynapseSdkMetrics;
   private readonly logger?: Logger;
 
   private keyset: Keyset = Object.create(null);
@@ -45,6 +50,7 @@ export class KeysetWatcher {
       options?.pollIntervalMs ?? DEFAULT_KEYSET_POLL_INTERVAL_MS;
     this.maxStaleMs = options?.maxStaleMs ?? DEFAULT_KEYSET_MAX_STALE_MS;
     this.onKeysetUpdate = options?.onKeysetUpdate;
+    this.sdkMetrics = options?.metrics;
     this.logger = options?.logger;
   }
 
@@ -146,6 +152,12 @@ export class KeysetWatcher {
         `[SynapseState] Failed to read keyset file at ${this.keysetPath}: ${readErr instanceof Error ? readErr.message : String(readErr)}`,
       );
       this.handleFailureState();
+    } finally {
+      const status = this.getStatus();
+      safeInvokeMetricCallback(
+        this.sdkMetrics?.onKeysetAge,
+        status.keysetAgeSeconds,
+      );
     }
   }
 

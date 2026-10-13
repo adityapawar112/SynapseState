@@ -14,11 +14,13 @@ import {
 import { withTransaction } from "../db/transaction.js";
 import type { KeysetProvider } from "../keyset.js";
 import type { StateManager } from "../services/state-manager.js";
+import type { SynapseMetrics } from "../metrics/index.js";
 
 export interface LeaseRoutesOptions {
   leasePool: Pool;
   keysetProvider: KeysetProvider;
   stateManager: StateManager;
+  metrics?: SynapseMetrics;
 }
 
 /**
@@ -35,7 +37,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
   fastify,
   options
 ) => {
-  const { leasePool, keysetProvider, stateManager } = options;
+  const { leasePool, keysetProvider, stateManager, metrics } = options;
 
   // POST /v1/leases
   fastify.post("/v1/leases", async (req, reply) => {
@@ -258,6 +260,19 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
             }),
           ]
         );
+
+        // Record metrics
+        if (metrics) {
+          if (existingRes.rows.length > 0) {
+            metrics.leaseTransitionsTotal.inc(
+              { from: "ACTIVE", to: "SUPERSEDED" },
+              existingRes.rows.length
+            );
+          } else {
+            metrics.leasesActive.inc({ env: payload.env });
+          }
+          metrics.leaseTransitionsTotal.inc({ from: "NONE", to: "ACTIVE" });
+        }
       });
     } catch (err) {
       if ((err as { statusCode?: number }).statusCode === 409) {
@@ -395,6 +410,12 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
             }),
           ]
         );
+
+        // Record metrics
+        if (metrics) {
+          metrics.leaseTransitionsTotal.inc({ from: "ACTIVE", to: "REVOKED" });
+          metrics.leasesActive.dec({ env });
+        }
       });
     } catch (err) {
       if ((err as { statusCode?: number }).statusCode === 404) {

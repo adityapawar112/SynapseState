@@ -44,6 +44,15 @@ export {
 // Crockford Base32 ULID Generator
 export { generateUlid } from "./ulid.js";
 
+// Pluggable SDK Metrics Callbacks (Phase 3 & Invariant 1)
+export {
+  InMemoryMetricsCollector,
+  createInMemoryMetricsCollector,
+  safeInvokeMetricCallback,
+  type SynapseSdkMetrics,
+  type SdkMetricsSnapshot,
+} from "./metrics.js";
+
 // SDK Types & Configurations
 export type {
   ActiveLease,
@@ -60,3 +69,4 @@ export type {
 
 // Re-export cryptographic lease foundation
 export * from "@synapsestate/lease";
+

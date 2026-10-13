@@ -19,6 +19,11 @@ import { KeysetWatcher } from "./keyset-watcher.js";
 import { EmergencyScanner } from "./emergency-scanner.js";
 import { StateClient } from "./state-client.js";
 import { TelemetryHook } from "./telemetry-hook.js";
+import {
+  type SynapseSdkMetrics,
+  type SdkMetricsSnapshot,
+  InMemoryMetricsCollector,
+} from "./metrics.js";
 
 /**
  * OpenFeature OverrideProvider wrapper implementing Invariant 1 (Fail-Safe Hot Path)
@@ -41,6 +46,7 @@ export class OverrideProvider implements Provider {
   private readonly emergencyScanner?: EmergencyScanner;
   private readonly stateClient?: StateClient;
   private readonly telemetryHook?: TelemetryHook;
+  private readonly sdkMetrics?: SynapseSdkMetrics;
   private readonly logger?: Logger;
 
   private internalErrorsCount = 0;
@@ -62,6 +68,7 @@ export class OverrideProvider implements Provider {
 
     this.delegate = opts.delegate;
     this.logger = opts.logger;
+    this.sdkMetrics = opts.metrics;
 
     // Use passed leaseStore or construct a new in-memory LeaseStore
     if (opts.leaseStore && opts.leaseStore instanceof LeaseStore) {
@@ -70,6 +77,7 @@ export class OverrideProvider implements Provider {
       this.leaseStore = new LeaseStore({
         skewToleranceMs: opts.skewToleranceMs,
         maxTtlSeconds: opts.maxTtlSeconds,
+        metrics: opts.metrics,
       });
     }
 
@@ -82,6 +90,7 @@ export class OverrideProvider implements Provider {
         onKeysetUpdate: (newKeyset: Keyset) => {
           this.leaseStore.handleKeysetUpdate(newKeyset);
         },
+        metrics: opts.metrics,
         logger: this.logger,
       });
     }
@@ -107,6 +116,7 @@ export class OverrideProvider implements Provider {
         waitSeconds: opts.longPollWaitSeconds,
         serviceToken: opts.serviceToken,
         fetch: opts.fetch,
+        metrics: opts.metrics,
         logger: this.logger,
       });
     }
@@ -121,12 +131,28 @@ export class OverrideProvider implements Provider {
         flushIntervalMs: opts.telemetryFlushIntervalMs,
         serviceToken: opts.serviceToken,
         fetch: opts.fetch,
+        metrics: opts.metrics,
         logger: this.logger,
         // SLO Linkage: Returns measured lease propagation lag from the most recent successful poll.
         // Omitted (undefined) when no successful HTTP 200 state sync has completed yet.
         getPropagationLagMs: () => this.stateClient?.getLastPropagationLagMs(),
       });
     }
+  }
+
+  /**
+   * Returns snapshot of SDK metrics if an InMemoryMetricsCollector is attached.
+   */
+  getSdkMetricsSnapshot(): SdkMetricsSnapshot | undefined {
+    if (
+      this.sdkMetrics &&
+      "getSnapshot" in this.sdkMetrics &&
+      typeof (this.sdkMetrics as InMemoryMetricsCollector).getSnapshot ===
+        "function"
+    ) {
+      return (this.sdkMetrics as InMemoryMetricsCollector).getSnapshot();
+    }
+    return undefined;
   }
 
   get hooks(): Hook[] | undefined {

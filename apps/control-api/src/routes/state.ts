@@ -1,8 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { StateManager } from "../services/state-manager.js";
+import type { SynapseMetrics } from "../metrics/index.js";
 
 export interface StateRoutesOptions {
   stateManager: StateManager;
+  metrics?: SynapseMetrics;
 }
 
 /**
@@ -37,14 +39,26 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
   fastify,
   options
 ) => {
-  const { stateManager } = options;
+  const { stateManager, metrics } = options;
 
   fastify.get("/v1/sdk/state", async (req, reply) => {
+    const startTime = process.hrtime.bigint();
+    const recordMetric = (statusCode: number) => {
+      if (metrics) {
+        const durationSec = Number(process.hrtime.bigint() - startTime) / 1e9;
+        metrics.statePollDurationSeconds.observe(
+          { status_code: String(statusCode) },
+          durationSec
+        );
+      }
+    };
+
     const query = req.query as { env?: string; wait?: string };
     const env = query.env || "prod";
 
     // Validate env format to prevent unbounded cardinality / cache key injection (P1.7)
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(env)) {
+      recordMetric(400);
       return reply.code(400).send({
         error: "Invalid environment parameter. Must be alphanumeric with hyphens or underscores (1-64 characters).",
       });
@@ -80,6 +94,7 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
       }
 
       if (result.status === 304) {
+        recordMetric(304);
         return reply
           .code(304)
           .header("ETag", `"${result.state.etag}"`)
@@ -88,12 +103,14 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
       }
 
       const payload = stateManager.formatPayload(result.state);
+      recordMetric(200);
       return reply
         .code(200)
         .header("ETag", `"${result.state.etag}"`)
         .header("Cache-Control", "no-cache, no-store, must-revalidate")
         .send(payload);
     } catch (err) {
+      recordMetric(500);
       req.raw.removeListener("close", onClose);
       req.log.error(err, "Error in state delivery route");
       throw err;

@@ -41,15 +41,18 @@ interface AuditPendingRow {
 /**
  * Retrieves or registers the synapse_audit_pending_age_seconds Prometheus gauge.
  */
-function getOrCreatePendingAgeGauge(registry: Registry): Gauge<string> {
-  const metricName = "synapse_audit_pending_age_seconds";
-  const existing = registry.getSingleMetric(metricName);
+function getOrCreateGauge(
+  registry: Registry,
+  name: string,
+  help: string
+): Gauge<string> {
+  const existing = registry.getSingleMetric(name);
   if (existing) {
     return existing as Gauge<string>;
   }
   return new Gauge({
-    name: metricName,
-    help: "Age in seconds of the oldest unsealed audit event in audit_pending",
+    name,
+    help,
     registers: [registry],
   });
 }
@@ -71,6 +74,8 @@ export class AuditSealer {
   private readonly intervalMs: number;
   private readonly logger: AuditSealerLogger;
   private readonly pendingAgeGauge: Gauge<string>;
+  private readonly pendingQueueGauge: Gauge<string>;
+  private readonly chainLengthGauge: Gauge<string>;
 
   private isRunning = false;
   private isSealing = false;
@@ -82,7 +87,21 @@ export class AuditSealer {
     this.batchSize = options.batchSize ?? 100;
     this.intervalMs = options.intervalMs ?? 1000;
     const registry = options.registry ?? defaultRegister;
-    this.pendingAgeGauge = getOrCreatePendingAgeGauge(registry);
+    this.pendingAgeGauge = getOrCreateGauge(
+      registry,
+      "synapse_audit_pending_age_seconds",
+      "Age in seconds of the oldest unsealed audit event in audit_pending"
+    );
+    this.pendingQueueGauge = getOrCreateGauge(
+      registry,
+      "synapse_audit_pending_queue_size",
+      "Current depth of unsealed staged events in audit_pending table"
+    );
+    this.chainLengthGauge = getOrCreateGauge(
+      registry,
+      "synapse_audit_chain_length",
+      "Total monotonic length of sealed audit events in audit_events ledger"
+    );
     this.logger = options.logger ?? {
       info: console.log,
       warn: console.warn,
@@ -159,16 +178,20 @@ export class AuditSealer {
    */
   public async updatePendingAgeMetric(client?: PoolClient): Promise<number> {
     const queryRunner = client ?? this.pool;
-    const res = await queryRunner.query<{ created_at: Date | string }>(
-      "SELECT created_at FROM audit_pending ORDER BY created_at ASC LIMIT 1;"
+    const res = await queryRunner.query<{ count: string | number; created_at: Date | string | null }>(
+      "SELECT COUNT(*)::bigint AS count, MIN(created_at) AS created_at FROM audit_pending;"
     );
 
-    if (res.rows.length === 0) {
+    if (res.rows.length === 0 || !res.rows[0]?.created_at) {
       this.pendingAgeGauge.set(0);
+      this.pendingQueueGauge.set(0);
       return 0;
     }
 
-    const oldestCreatedAt = new Date(res.rows[0]!.created_at).getTime();
+    const count = Number(res.rows[0].count);
+    this.pendingQueueGauge.set(count);
+
+    const oldestCreatedAt = new Date(res.rows[0].created_at).getTime();
     const ageSeconds = Math.max(0, (Date.now() - oldestCreatedAt) / 1000);
     this.pendingAgeGauge.set(ageSeconds);
     return ageSeconds;
@@ -283,17 +306,23 @@ export class AuditSealer {
       pendingIdsToDelete,
     ]);
 
-    // 6. Update lag metric for remaining pending events
-    const remainingPendingRes = await client.query<{ created_at: Date | string }>(
-      "SELECT created_at FROM audit_pending ORDER BY created_at ASC LIMIT 1;"
+    // Update chain length metric
+    this.chainLengthGauge.set(currentSeq);
+
+    // 6. Update lag and queue metrics for remaining pending events
+    const remainingPendingRes = await client.query<{ count: string | number; created_at: Date | string | null }>(
+      "SELECT COUNT(*)::bigint AS count, MIN(created_at) AS created_at FROM audit_pending;"
     );
 
     let pendingAgeSeconds = 0;
-    if (remainingPendingRes.rows.length > 0) {
-      const oldestCreatedAt = new Date(remainingPendingRes.rows[0]!.created_at).getTime();
+    if (remainingPendingRes.rows.length > 0 && remainingPendingRes.rows[0]?.created_at) {
+      const count = Number(remainingPendingRes.rows[0].count);
+      this.pendingQueueGauge.set(count);
+      const oldestCreatedAt = new Date(remainingPendingRes.rows[0].created_at).getTime();
       pendingAgeSeconds = Math.max(0, (Date.now() - oldestCreatedAt) / 1000);
       this.pendingAgeGauge.set(pendingAgeSeconds);
     } else {
+      this.pendingQueueGauge.set(0);
       this.pendingAgeGauge.set(0);
     }
 

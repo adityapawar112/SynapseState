@@ -7,6 +7,10 @@ import {
 } from "@synapsestate/lease";
 import type { LeaseStore } from "./lease-store.js";
 import type { StateClientOptions } from "./types.js";
+import {
+  type SynapseSdkMetrics,
+  safeInvokeMetricCallback,
+} from "./metrics.js";
 
 /**
  * Zod validation schema for StateSyncPayload received from GET /v1/sdk/state.
@@ -49,6 +53,7 @@ export class StateClient {
   private readonly backoffInitialMs: number;
   private readonly backoffMaxMs: number;
   private readonly fetchFn: typeof fetch;
+  private readonly sdkMetrics?: SynapseSdkMetrics;
   private readonly logger?: Logger;
 
   private running = false;
@@ -70,6 +75,7 @@ export class StateClient {
       options.backoffInitialMs ?? DEFAULT_BACKOFF_INITIAL_MS;
     this.backoffMaxMs = options.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
     this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.sdkMetrics = options.metrics;
     this.logger = options.logger;
 
     this.currentBackoffMs = this.backoffInitialMs;
@@ -133,6 +139,7 @@ export class StateClient {
       if (response.status === 304) {
         this.lastSyncTime = new Date();
         this.currentBackoffMs = this.backoffInitialMs;
+        safeInvokeMetricCallback(this.sdkMetrics?.onStateAge, 0);
         return { status: 304, etag: this.currentEtag };
       }
 
@@ -146,6 +153,7 @@ export class StateClient {
 
         this.lastSyncTime = new Date();
         this.currentBackoffMs = this.backoffInitialMs;
+        safeInvokeMetricCallback(this.sdkMetrics?.onStateAge, 0);
 
         let rawBody: unknown;
         try {
@@ -154,6 +162,9 @@ export class StateClient {
           this.logger?.warn?.(
             `[SynapseState] Failed to parse JSON from State API: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`,
           );
+          safeInvokeMetricCallback(this.sdkMetrics?.onPollError, {
+            reason: "PARSE_ERROR",
+          });
           return { status: "error", error: jsonErr };
         }
 
@@ -162,6 +173,9 @@ export class StateClient {
           this.logger?.warn?.(
             `[SynapseState] Invalid state sync payload schema: ${parseResult.error.message}`,
           );
+          safeInvokeMetricCallback(this.sdkMetrics?.onPollError, {
+            reason: "SCHEMA_ERROR",
+          });
           return { status: "error", error: parseResult.error };
         }
 
@@ -197,6 +211,9 @@ export class StateClient {
         this.logger?.warn?.(
           `[SynapseState] State API returned HTTP ${response.status} (Authentication/Authorization failure). Verify serviceToken configuration. Existing active leases continue to be honored fail-static until TTL expiration.`,
         );
+        safeInvokeMetricCallback(this.sdkMetrics?.onPollError, {
+          reason: "AUTH_ERROR",
+        });
         return { status: "error" };
       }
 
@@ -204,6 +221,9 @@ export class StateClient {
       this.logger?.warn?.(
         `[SynapseState] State API returned HTTP ${response.status} ${response.statusText ?? ""}`,
       );
+      safeInvokeMetricCallback(this.sdkMetrics?.onPollError, {
+        reason: `HTTP_${response.status}`,
+      });
       return { status: "error" };
     } catch (err) {
       const isAborted =
@@ -221,6 +241,9 @@ export class StateClient {
       this.logger?.warn?.(
         `[SynapseState] State client poll failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+      safeInvokeMetricCallback(this.sdkMetrics?.onPollError, {
+        reason: "NETWORK_ERROR",
+      });
       return { status: "error", error: err };
     }
   }
