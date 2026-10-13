@@ -7,6 +7,7 @@ import type {
   KeyRevocationEnvelope,
 } from "@synapsestate/lease";
 import type { LeaseStore } from "./lease-store.js";
+import type { SynapseSdkMetrics } from "./metrics.js";
 
 /**
  * Representation of an active, verified, in-memory emergency override lease.
@@ -63,6 +64,11 @@ export interface KeysetWatcherOptions {
    * Optional callback invoked whenever keyset content updates or changes.
    */
   onKeysetUpdate?: (keyset: Keyset) => void;
+
+  /**
+   * Optional pluggable SDK metrics interface.
+   */
+  metrics?: SynapseSdkMetrics;
 
   /**
    * Optional logger.
@@ -177,6 +183,11 @@ export interface StateClientOptions {
   fetch?: typeof fetch;
 
   /**
+   * Optional pluggable SDK metrics interface.
+   */
+  metrics?: SynapseSdkMetrics;
+
+  /**
    * Optional logger.
    */
   logger?: Logger;
@@ -252,6 +263,11 @@ export interface TelemetryHookOptions {
    * Optional custom fetch implementation (for testing and dependency injection).
    */
   fetch?: typeof fetch;
+
+  /**
+   * Optional pluggable SDK metrics interface.
+   */
+  metrics?: SynapseSdkMetrics;
 
   /**
    * Optional logger.
@@ -376,6 +392,11 @@ export interface OverrideProviderOptions {
    * Optional custom fetch implementation passed to StateClient and TelemetryHook.
    */
   fetch?: typeof fetch;
+
+  /**
+   * Optional pluggable SDK metrics interface.
+   */
+  metrics?: SynapseSdkMetrics;
 
   /**
    * Optional logger conforming to OpenFeature Logger interface.

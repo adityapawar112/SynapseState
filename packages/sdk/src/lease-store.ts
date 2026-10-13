@@ -13,11 +13,16 @@ import {
   type KeyRevocationPayload,
 } from "@synapsestate/lease";
 import type { ActiveLease, LeaseStoreMetrics } from "./types.js";
+import {
+  type SynapseSdkMetrics,
+  safeInvokeMetricCallback,
+} from "./metrics.js";
 
 export interface LeaseStoreOptions {
   keyset?: Keyset;
   skewToleranceMs?: number;
   maxTtlSeconds?: number;
+  metrics?: SynapseSdkMetrics;
 }
 
 /**
@@ -38,6 +43,7 @@ export class LeaseStore {
   private keyset: Keyset;
   private readonly skewToleranceMs: number;
   private readonly maxTtlSeconds: number;
+  private readonly sdkMetrics?: SynapseSdkMetrics;
 
   private readonly metrics: LeaseStoreMetrics = {
     activeLeasesCount: 0,
@@ -53,6 +59,14 @@ export class LeaseStore {
     this.skewToleranceMs =
       options?.skewToleranceMs ?? DEFAULT_SKEW_TOLERANCE_MS;
     this.maxTtlSeconds = options?.maxTtlSeconds ?? DEFAULT_MAX_TTL_SECONDS;
+    this.sdkMetrics = options?.metrics;
+  }
+
+  private notifyActiveOverrides(): void {
+    safeInvokeMetricCallback(
+      this.sdkMetrics?.onActiveOverrides,
+      this.leases.size,
+    );
   }
 
   /**
@@ -182,6 +196,7 @@ export class LeaseStore {
       this.leases.set(envelope.payload.flag_key, activeLease);
       this.metrics.leasesAddedCount++;
       this.metrics.activeLeasesCount = this.leases.size;
+      this.notifyActiveOverrides();
       return true;
     } catch {
       this.metrics.internalErrorsCount++;
@@ -215,6 +230,7 @@ export class LeaseStore {
         this.leases.delete(flagKey);
         this.metrics.leasesEvictedExpiredCount++;
         this.metrics.activeLeasesCount = this.leases.size;
+        this.notifyActiveOverrides();
         return undefined;
       }
 
@@ -251,6 +267,7 @@ export class LeaseStore {
       }
 
       this.metrics.activeLeasesCount = this.leases.size;
+      this.notifyActiveOverrides();
       return true;
     } catch {
       this.metrics.internalErrorsCount++;
@@ -295,6 +312,7 @@ export class LeaseStore {
       }
 
       this.metrics.activeLeasesCount = this.leases.size;
+      this.notifyActiveOverrides();
       return true;
     } catch {
       this.metrics.internalErrorsCount++;
@@ -331,6 +349,7 @@ export class LeaseStore {
     if (evicted > 0) {
       this.metrics.leasesEvictedExpiredCount += evicted;
       this.metrics.activeLeasesCount = this.leases.size;
+      this.notifyActiveOverrides();
     }
 
     return evicted;
@@ -356,5 +375,25 @@ export class LeaseStore {
     }
 
     this.metrics.activeLeasesCount = this.leases.size;
+    this.notifyActiveOverrides();
+  }
+
+  /**
+   * Revokes an active lease by lease_id and updates active override metrics.
+   */
+  revokeLease(leaseId: string): boolean {
+    let evicted = false;
+    for (const [flagKey, lease] of this.leases.entries()) {
+      if (lease.leaseId === leaseId) {
+        this.leases.delete(flagKey);
+        this.metrics.leasesEvictedRevokedCount++;
+        evicted = true;
+      }
+    }
+    if (evicted) {
+      this.metrics.activeLeasesCount = this.leases.size;
+      this.notifyActiveOverrides();
+    }
+    return evicted;
   }
 }

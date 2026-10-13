@@ -12,6 +12,10 @@ import type {
   TelemetryMetricItem,
 } from "./types.js";
 import { generateUlid } from "./ulid.js";
+import {
+  type SynapseSdkMetrics,
+  safeInvokeMetricCallback,
+} from "./metrics.js";
 
 export const DEFAULT_TELEMETRY_FLUSH_INTERVAL_MS = 300_000; // 5 minutes
 export const DEFAULT_TELEMETRY_MAX_DISTINCT_METRICS = 5000;
@@ -41,6 +45,7 @@ export class TelemetryHook implements Hook {
     batch: TelemetryBatchPayload,
   ) => Promise<void> | void;
   private readonly fetchFn: typeof fetch;
+  private readonly sdkMetrics?: SynapseSdkMetrics;
   private readonly logger?: Logger;
 
   private metricsMap = new Map<string, MetricTuple>();
@@ -60,6 +65,7 @@ export class TelemetryHook implements Hook {
     this.getPropagationLagMs = options?.getPropagationLagMs;
     this.onFlush = options?.onFlush;
     this.fetchFn = options?.fetch ?? globalThis.fetch;
+    this.sdkMetrics = options?.metrics;
     this.logger = options?.logger;
 
     this.windowStart = new Date().toISOString();
@@ -138,6 +144,7 @@ export class TelemetryHook implements Hook {
       } else {
         // Bulkhead capacity ceiling reached: drop new distinct tuple to preserve process memory
         this.droppedCount++;
+        safeInvokeMetricCallback(this.sdkMetrics?.onTelemetryDropped, 1);
       }
     }
   }

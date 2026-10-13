@@ -2,9 +2,11 @@ import type { FastifyPluginAsync } from "fastify";
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import crypto from "node:crypto";
+import type { SynapseMetrics } from "../metrics/index.js";
 
 export interface TelemetryRoutesOptions {
   telemetryPool: Pool;
+  metrics?: SynapseMetrics;
 }
 
 const FORBIDDEN_CONTEXT_KEYS = new Set([
@@ -78,7 +80,7 @@ export type TelemetryBatchPayload = z.infer<typeof TelemetryBatchPayloadSchema>;
 export const telemetryRoutes: FastifyPluginAsync<
   TelemetryRoutesOptions
 > = async (fastify, options) => {
-  const { telemetryPool } = options;
+  const { telemetryPool, metrics } = options;
 
   fastify.post("/v1/telemetry/batches", async (req, reply) => {
     const rawBody = req.body as Record<string, unknown> | null;
@@ -294,6 +296,10 @@ export const telemetryRoutes: FastifyPluginAsync<
       }
 
       await client.query("COMMIT");
+
+      if (payload.propagation_lag_ms !== undefined && metrics) {
+        metrics.leasePropagationSeconds.observe(payload.propagation_lag_ms / 1000);
+      }
 
       return reply.code(202).send({
         accepted: true,

@@ -15,6 +15,8 @@ import { stateRoutes } from "./routes/state.js";
 import { healthRoutes } from "./routes/health.js";
 import { telemetryRoutes } from "./routes/telemetry.js";
 import { changeRoutes } from "./routes/changes.js";
+import { metricsRoutes } from "./routes/metrics.js";
+import { getMetricsRegistry, type SynapseMetrics } from "./metrics/index.js";
 
 export interface ServerOptions {
   fastifyOptions?: FastifyServerOptions;
@@ -26,6 +28,7 @@ export interface ServerOptions {
   stateManager?: StateManager;
   auditSealer?: AuditSealer;
   enableAuditSealer?: boolean;
+  metrics?: SynapseMetrics;
 }
 
 /**
@@ -48,6 +51,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
   const activeStateManager =
     options.stateManager ?? new StateManager(activePool);
+  const activeMetrics = options.metrics ?? getMetricsRegistry();
 
   // Enable CORS
   void server.register(cors, {
@@ -60,16 +64,23 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // Register route plugins
   void server.register(healthRoutes, { leasePool: activePool });
   void server.register(timeRoutes);
+  void server.register(metricsRoutes, {
+    metrics: activeMetrics,
+    leasePool: activePool,
+  });
   void server.register(leaseRoutes, {
     leasePool: activePool,
     keysetProvider: activeKeysetProvider,
     stateManager: activeStateManager,
+    metrics: activeMetrics,
   });
   void server.register(stateRoutes, {
     stateManager: activeStateManager,
+    metrics: activeMetrics,
   });
   void server.register(telemetryRoutes, {
     telemetryPool: activeTelemetryPool,
+    metrics: activeMetrics,
   });
   void server.register(changeRoutes, {
     leasePool: activePool,
@@ -80,6 +91,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   if (!activeAuditSealer && options.enableAuditSealer) {
     activeAuditSealer = new AuditSealer({
       pool: activePool,
+      metrics: activeMetrics,
     });
   }
 

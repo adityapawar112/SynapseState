@@ -191,4 +191,18 @@ describe("KeysetWatcher", () => {
     watcher.stop();
     expect(watcher.isRunning()).toBe(false);
   });
+
+  it("safely contains exceptions in onKeysetUpdate without corrupting watcher ready state", async () => {
+    watcher = new KeysetWatcher({
+      keysetPath,
+      pollIntervalMs: 50,
+      onKeysetUpdate: () => {
+        throw new Error("Simulated subscriber crash in onKeysetUpdate");
+      },
+    });
+
+    await watcher.pollOnce();
+    expect(watcher.getStatus().state).toBe("ready");
+    expect(watcher.getKeyset()["sre-alice"]).toBeDefined();
+  });
 });

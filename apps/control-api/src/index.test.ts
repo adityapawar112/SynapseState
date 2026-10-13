@@ -32,6 +32,16 @@ describe("Control API Server Wiring & Probes", () => {
     expect(body).toEqual({ status: "ok", db: "connected" });
   });
 
+  it("serves Prometheus metrics endpoint GET /metrics", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: "/metrics",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/plain");
+    expect(response.payload).toContain("synapse_leases_active");
+  });
+
   it("serves GET /v1/changes route via server instance", async () => {
     const response = await server.inject({
       method: "GET",
