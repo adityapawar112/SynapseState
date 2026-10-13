@@ -1,0 +1,14 @@
+apiVersion: v2
+name: control-api
+description: SynapseState Control Plane & Governance API for OpenFeature
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - synapsestate
+  - openfeature
+  - feature-flags
+  - incident-safety
+  - governance
+maintainers:
+  - name: SynapseState Engineering Team

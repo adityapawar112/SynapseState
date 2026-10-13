@@ -1,0 +1,13 @@
+apiVersion: v2
+name: demo-shop
+description: SynapseState Reference Microservice App (Demo Shop) Helm Chart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - synapsestate
+  - demo-shop
+  - microservice
+  - openfeature
+maintainers:
+  - name: SynapseState Engineering Team

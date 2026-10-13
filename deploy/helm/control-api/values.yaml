@@ -1,0 +1,150 @@
+# Default values for SynapseState Control API Helm Chart.
+# Declares Kubernetes resources in namespace synapse-system (ARCH §12.1).
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/synapsestate/synapsestate-control-api
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# Pod Security Standards (ROADMAP §2.4, ARCH §13.3)
+podSecurityContext:
+  runAsUser: 65532
+  runAsGroup: 65532
+  runAsNonRoot: true
+  fsGroup: 65532
+
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  hosts:
+    - host: api.synapsestate.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: control-api-tls
+      hosts:
+        - api.synapsestate.example.com
+
+env:
+  NODE_ENV: "production"
+  PORT: 3000
+  HOST: "0.0.0.0"
+  AUTO_MIGRATE: "true"
+  KEYSET_PATH: "/etc/synapse/keyset/keyset.json"
+  LEASE_POOL_MAX: 20
+  TELEMETRY_POOL_MAX: 5
+
+# PostgreSQL Database Connection Secret Reference (ARCH §2, ROADMAP §2.4)
+database:
+  existingSecret: "synapse-db-credentials"
+  keys:
+    databaseUrl: "DATABASE_URL"
+    leaseDatabaseUrl: "LEASE_DATABASE_URL"
+    telemetryDatabaseUrl: "TELEMETRY_DATABASE_URL"
+
+# Keyset Trust Root Mounted from Git-pinned ConfigMap (ARCH §3.1, Invariant 2)
+keyset:
+  existingConfigMap: "synapse-keyset"
+  mountPath: "/etc/synapse/keyset"
+
+# Air-gapped Emergency Leases Fallback Volume (ARCH §10, §13)
+emergencyLeases:
+  enabled: true
+  existingConfigMap: "synapse-emergency-leases"
+  mountPath: "/etc/synapse/emergency-leases"
+
+probes:
+  liveness:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Isolated Tamper-Evident Checkpoint Signer CronJob (ARCH §8.3 & Invariant 7)
+cronjob:
+  enabled: true
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  image:
+    repository: ghcr.io/synapsestate/synapsestate-cli
+    pullPolicy: IfNotPresent
+    tag: "0.1.0"
+  securityContext:
+    runAsUser: 65532
+    runAsGroup: 65532
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  credentials:
+    existingSecret: "synapse-checkpoint-signer-creds"
+  s3:
+    bucket: "synapsestate-audit-checkpoints"
+    region: "us-east-1"
+    prefix: "checkpoints"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

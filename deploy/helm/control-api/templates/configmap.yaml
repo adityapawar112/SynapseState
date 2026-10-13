@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "control-api.fullname" . }}-config
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.env.NODE_ENV | quote }}
+  PORT: {{ .Values.env.PORT | quote }}
+  HOST: {{ .Values.env.HOST | quote }}
+  AUTO_MIGRATE: {{ .Values.env.AUTO_MIGRATE | quote }}
+  KEYSET_PATH: {{ .Values.env.KEYSET_PATH | quote }}
+  LEASE_POOL_MAX: {{ .Values.env.LEASE_POOL_MAX | quote }}
+  TELEMETRY_POOL_MAX: {{ .Values.env.TELEMETRY_POOL_MAX | quote }}
+---
+{{- if .Values.keyset.existingConfigMap }}
+# Keyset ConfigMap definition provided by GitOps / SRE (ARCH §3.1, Invariant 2)
+# Fallback placeholder keyset if not already present
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.keyset.existingConfigMap }}
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+data:
+  keyset.json: |
+    {
+      "keys": []
+    }
+{{- end }}
+---
+{{- if and .Values.emergencyLeases.enabled .Values.emergencyLeases.existingConfigMap }}
+# Air-gapped Emergency Leases ConfigMap (ARCH §10, §13)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.emergencyLeases.existingConfigMap }}
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+data:
+  README.md: |
+    # Emergency Leases Volume
+    Apply signed lease YAMLs or JSONs directly via `kubectl apply` during control plane outages.
+{{- end }}
