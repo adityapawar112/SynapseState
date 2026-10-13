@@ -40,12 +40,12 @@ output "checkpoint_signer_role_arn" {
 
 output "api_endpoint" {
   description = "Public URL for SynapseState Control API"
-  value       = var.dns_zone_id != "" ? "https://api.${var.domain_name}" : "http://${aws_eip.k3s_eip.public_ip}:3000"
+  value       = var.dns_zone_id != "" ? "https://api.${var.domain_name}" : "http://${aws_eip.k3s_eip.public_ip}"
 }
 
 output "demo_shop_endpoint" {
   description = "Public URL for SynapseState Demo Shop"
-  value       = var.dns_zone_id != "" ? "https://shop.${var.domain_name}" : "http://${aws_eip.k3s_eip.public_ip}:3001"
+  value       = var.dns_zone_id != "" ? "https://shop.${var.domain_name}" : "http://${aws_eip.k3s_eip.public_ip}"
 }
 
 output "kubeconfig_command" {

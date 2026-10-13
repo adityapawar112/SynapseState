@@ -1,4 +1,13 @@
 {{- if .Values.cronjob.enabled -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "control-api.fullname" . }}-checkpoint-signer
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: checkpoint-signer
+automountServiceAccountToken: false
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -20,25 +29,38 @@ spec:
             app.kubernetes.io/component: checkpoint-signer
         spec:
           restartPolicy: OnFailure
+          serviceAccountName: {{ include "control-api.fullname" . }}-checkpoint-signer
           securityContext:
             runAsUser: {{ .Values.cronjob.securityContext.runAsUser }}
             runAsGroup: {{ .Values.cronjob.securityContext.runAsGroup }}
             runAsNonRoot: {{ .Values.cronjob.securityContext.runAsNonRoot }}
+            {{- with .Values.cronjob.securityContext.seccompProfile }}
+            seccompProfile:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
           containers:
             - name: checkpoint-signer
               image: "{{ .Values.cronjob.image.repository }}:{{ .Values.cronjob.image.tag | default .Chart.AppVersion }}"
               imagePullPolicy: {{ .Values.cronjob.image.pullPolicy }}
               command:
-                - node
-                - -e
-                - |
-                  console.log("[SynapseState] Executing isolated audit checkpoint signer tick...");
-                  console.log("[SynapseState] Checkpoint target: s3://{{ .Values.cronjob.s3.bucket }}/{{ .Values.cronjob.s3.prefix }}");
+                - synapse
+                - audit
+                - checkpoint
+                - --s3-bucket
+                - $(S3_BUCKET)
+                - --s3-region
+                - $(S3_REGION)
+                - --s3-prefix
+                - $(S3_PREFIX)
               securityContext:
                 readOnlyRootFilesystem: {{ .Values.cronjob.securityContext.readOnlyRootFilesystem }}
                 allowPrivilegeEscalation: {{ .Values.cronjob.securityContext.allowPrivilegeEscalation }}
                 capabilities:
                   {{- toYaml .Values.cronjob.securityContext.capabilities | nindent 18 }}
+                {{- with .Values.cronjob.securityContext.seccompProfile }}
+                seccompProfile:
+                  {{- toYaml . | nindent 18 }}
+                {{- end }}
               env:
                 - name: S3_BUCKET
                   value: {{ .Values.cronjob.s3.bucket | quote }}
@@ -52,7 +74,7 @@ spec:
                     secretKeyRef:
                       name: {{ .Values.cronjob.credentials.existingSecret }}
                       key: CHECKPOINT_SIGNING_KEY
-                      optional: true
+                      optional: false
                 {{- end }}
                 {{- if .Values.database.existingSecret }}
                 - name: DATABASE_URL
@@ -60,7 +82,7 @@ spec:
                     secretKeyRef:
                       name: {{ .Values.database.existingSecret }}
                       key: {{ .Values.database.keys.databaseUrl }}
-                      optional: true
+                      optional: false
                 {{- end }}
               volumeMounts:
                 - name: tmp

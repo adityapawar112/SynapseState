@@ -64,7 +64,7 @@ resource "aws_route_table_association" "synapse_public_rta" {
 }
 
 # -----------------------------------------------------------------------------
-# Security Group & Firewall Rules (ROADMAP §2.3)
+# Security Group & Firewall Rules (ROADMAP §2.3, Hardened against C1)
 # -----------------------------------------------------------------------------
 
 resource "aws_security_group" "synapse_k3s_sg" {
@@ -72,13 +72,16 @@ resource "aws_security_group" "synapse_k3s_sg" {
   description = "Security group for SynapseState single-node k3s host"
   vpc_id      = aws_vpc.synapse_vpc.id
 
-  # Ingress: SSH management access
-  ingress {
-    description = "SSH administrative access"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_ssh_cidrs
+  # Ingress: SSH management access (instantiated only when explicit CIDRs are provided)
+  dynamic "ingress" {
+    for_each = length(var.allowed_ssh_cidrs) > 0 ? [1] : []
+    content {
+      description = "SSH administrative access"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_ssh_cidrs
+    }
   }
 
   # Ingress: HTTP for cert-manager HTTP-01 ACME challenge & HTTP->HTTPS redirects
@@ -99,13 +102,16 @@ resource "aws_security_group" "synapse_k3s_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Ingress: k3s Kubernetes API server
-  ingress {
-    description = "k3s Kubernetes API server"
-    from_port   = 6443
-    to_port     = 6443
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_k8s_api_cidrs
+  # Ingress: k3s Kubernetes API server (instantiated only when explicit CIDRs are provided)
+  dynamic "ingress" {
+    for_each = length(var.allowed_k8s_api_cidrs) > 0 ? [1] : []
+    content {
+      description = "k3s Kubernetes API server"
+      from_port   = 6443
+      to_port     = 6443
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_k8s_api_cidrs
+    }
   }
 
   # Egress: all outbound traffic
@@ -123,7 +129,7 @@ resource "aws_security_group" "synapse_k3s_sg" {
 }
 
 # -----------------------------------------------------------------------------
-# Compute & k3s Host VM Provisioning (ARCH §12.1)
+# Compute & k3s Host VM Provisioning (ARCH §12.1, Hardened with I1, I5)
 # -----------------------------------------------------------------------------
 
 data "aws_ami" "ubuntu" {
@@ -175,6 +181,13 @@ resource "aws_instance" "k3s_node" {
     }
   }
 
+  # IMDSv2 enforcement against SSRF attacks (ARCH §13.3, Review I5)
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
   user_data = <<-EOF
               #!/bin/bash
               set -euxo pipefail
@@ -183,9 +196,10 @@ resource "aws_instance" "k3s_node" {
               apt-get update -y
               apt-get install -y curl ca-certificates open-iscsi nfs-common
 
-              # Install lightweight k3s Kubernetes distribution
+              # Install reproducible pinned k3s version with hardened permissions (Review I1)
+              export INSTALL_K3S_VERSION="v1.30.5+k3s1"
               curl -sfL https://get.k3s.io | sh -s - \
-                --write-kubeconfig-mode 644 \
+                --write-kubeconfig-mode 600 \
                 --tls-san "${aws_eip.k3s_eip.public_ip}"
 
               # Wait for k3s cluster readiness

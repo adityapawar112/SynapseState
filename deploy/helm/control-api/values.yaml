@@ -27,6 +27,8 @@ podSecurityContext:
   runAsGroup: 65532
   runAsNonRoot: true
   fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
   readOnlyRootFilesystem: true
@@ -34,6 +36,8 @@ securityContext:
   capabilities:
     drop:
       - ALL
+  seccompProfile:
+    type: RuntimeDefault
 
 service:
   type: ClusterIP
@@ -75,11 +79,13 @@ database:
     telemetryDatabaseUrl: "TELEMETRY_DATABASE_URL"
 
 # Keyset Trust Root Mounted from Git-pinned ConfigMap (ARCH §3.1, Invariant 2)
+# Applied out-of-band via GitOps / kubectl apply -f git/keyset.yaml (never owned or clobbered by Helm).
 keyset:
   existingConfigMap: "synapse-keyset"
   mountPath: "/etc/synapse/keyset"
 
 # Air-gapped Emergency Leases Fallback Volume (ARCH §10, §13)
+# Applied out-of-band via kubectl apply -f emergency-leases.yaml.
 emergencyLeases:
   enabled: true
   existingConfigMap: "synapse-emergency-leases"
@@ -112,8 +118,10 @@ resources:
     memory: 128Mi
 
 # Isolated Tamper-Evident Checkpoint Signer CronJob (ARCH §8.3 & Invariant 7)
+# NOTE: Checkpoint signer CLI logic (`synapse audit checkpoint`) is implemented in PR 19 (ROADMAP §4).
+# Manifest is fully templated and validated, but disabled by default to avoid no-op runs before PR 19.
 cronjob:
-  enabled: true
+  enabled: false
   schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
@@ -131,6 +139,8 @@ cronjob:
     capabilities:
       drop:
         - ALL
+    seccompProfile:
+      type: RuntimeDefault
   resources:
     limits:
       cpu: 200m

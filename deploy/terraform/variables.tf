@@ -53,15 +53,23 @@ variable "ssh_public_key" {
 }
 
 variable "allowed_ssh_cidrs" {
-  description = "Allowed CIDR ranges for SSH administrative access (port 22)"
+  description = "Allowed CIDR ranges for SSH administrative access (port 22). Defaults to empty (fail-closed)."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
+  validation {
+    condition     = alltrue([for cidr in var.allowed_ssh_cidrs : can(cidrnetmask(cidr))])
+    error_message = "All elements in allowed_ssh_cidrs must be valid CIDR blocks."
+  }
 }
 
 variable "allowed_k8s_api_cidrs" {
-  description = "Allowed CIDR ranges for k3s Kubernetes API server access (port 6443)"
+  description = "Allowed CIDR ranges for k3s Kubernetes API server access (port 6443). Defaults to empty (fail-closed)."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
+  validation {
+    condition     = alltrue([for cidr in var.allowed_k8s_api_cidrs : can(cidrnetmask(cidr))])
+    error_message = "All elements in allowed_k8s_api_cidrs must be valid CIDR blocks."
+  }
 }
 
 variable "domain_name" {
