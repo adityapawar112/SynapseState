@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+# Multi-stage distroless build for @synapsestate/demo-shop
+
+# Stage 1: Build & Deploy Preparation
+FROM node:22-bookworm-slim AS builder
+
+WORKDIR /app
+
+# Enable pnpm 10.18.3 via corepack
+RUN corepack enable && corepack prepare pnpm@10.18.3 --activate
+
+# Copy root manifests and workspace configuration
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+
+# Copy package manifests across the monorepo to leverage Docker layer caching
+COPY packages/lease/package.json packages/lease/
+COPY packages/sdk/package.json packages/sdk/
+COPY packages/cli/package.json packages/cli/
+COPY packages/conformance/package.json packages/conformance/
+COPY apps/control-api/package.json apps/control-api/
+COPY apps/demo-shop/package.json apps/demo-shop/
+COPY apps/purger/package.json apps/purger/
+
+# Install workspace dependencies with frozen lockfile
+RUN pnpm install --frozen-lockfile
+
+# Copy full source trees for all packages and apps
+COPY packages/ packages/
+COPY apps/ apps/
+
+# Build all workspace packages
+RUN pnpm -r run build
+
+# Deploy isolated production bundle for demo-shop
+RUN pnpm --filter=@synapsestate/demo-shop --legacy --prod deploy /prod/demo-shop
+
+# Stage 2: Distroless Non-Root Runtime
+FROM gcr.io/distroless/nodejs22-debian12:nonroot
+
+WORKDIR /app
+
+# Non-root user (UID 65532:65532)
+USER nonroot
+
+# Copy production artifacts with nonroot ownership
+COPY --chown=65532:65532 --from=builder /prod/demo-shop ./
+
+ENV NODE_ENV=production
+ENV PORT=3001
+ENV HOST=0.0.0.0
+
+EXPOSE 3001
+
+# Base image entrypoint is /nodejs/bin/node
+CMD ["dist/index.js"]

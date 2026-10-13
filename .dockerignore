@@ -1,0 +1,26 @@
+# Git and IDE
+.git
+.gitignore
+.agents
+.vscode
+.idea
+
+# Build artifacts and caches
+dist
+**/dist
+node_modules
+**/node_modules
+.nyc_output
+coverage
+*.tsbuildinfo
+*.log
+
+# Documentation and project notes
+docs
+*.md
+LICENSE
+
+# Environment configurations and secrets
+.env
+.env.*
+!.env.example
