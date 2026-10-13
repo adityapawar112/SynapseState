@@ -10,11 +10,11 @@ export interface SynapseMetrics {
   registry: Registry;
   leasesActive: Gauge<"env">;
   leaseTransitionsTotal: Counter<"from" | "to">;
-  leasePropagationSeconds: Histogram<string>;
+  leasePropagationSeconds: Histogram;
   statePollDurationSeconds: Histogram<"status_code">;
-  auditPendingQueueSize: Gauge<string>;
-  auditPendingAgeSeconds: Gauge<string>;
-  auditChainLength: Gauge<string>;
+  auditPendingQueueSize: Gauge;
+  auditPendingAgeSeconds: Gauge;
+  auditChainLength: Gauge;
 }
 
 /**

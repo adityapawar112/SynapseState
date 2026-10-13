@@ -140,7 +140,13 @@ export class KeysetWatcher {
         this.lastHash = hash;
         this.lastSuccessfulReadMs = Date.now();
         this.state = "ready";
-        this.onKeysetUpdate?.(this.keyset);
+        try {
+          this.onKeysetUpdate?.(this.keyset);
+        } catch (cbErr) {
+          this.logger?.warn?.(
+            `[SynapseState] Error in onKeysetUpdate callback: ${cbErr instanceof Error ? cbErr.message : String(cbErr)}`,
+          );
+        }
       } catch (parseErr) {
         this.logger?.warn?.(
           `[SynapseState] Failed to parse keyset at ${this.keysetPath}: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
@@ -181,7 +187,13 @@ export class KeysetWatcher {
       this.lastHash = "";
 
       if (hadKeys) {
-        this.onKeysetUpdate?.(this.keyset);
+        try {
+          this.onKeysetUpdate?.(this.keyset);
+        } catch (cbErr) {
+          this.logger?.warn?.(
+            `[SynapseState] Error in onKeysetUpdate callback during fail-static transition: ${cbErr instanceof Error ? cbErr.message : String(cbErr)}`,
+          );
+        }
       }
     }
   }

@@ -17,7 +17,7 @@ export interface SynapseSdkMetrics {
 
   /**
    * Invoked with the elapsed seconds since the last successful keyset read from disk
-   * (synapse_sdk_keyset_age_seconds).
+   * (synapse_sdk_keyset_age_seconds), or -1 if no valid keyset has ever been loaded (cold start).
    */
   onKeysetAge?: (seconds: number) => void;
 
@@ -68,7 +68,8 @@ export class InMemoryMetricsCollector implements SynapseSdkMetrics {
   };
 
   onKeysetAge = (seconds: number): void => {
-    this.keysetAge = seconds;
+    // -1 explicitly represents cold start sentinel; otherwise non-negative elapsed seconds
+    this.keysetAge = seconds < 0 ? -1 : Math.max(0, seconds);
   };
 
   onActiveOverrides = (count: number): void => {

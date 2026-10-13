@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import { register as defaultRegister, Registry, Gauge } from "prom-client";
 import { withAuditSealerTransaction } from "../db/transaction.js";
+import type { SynapseMetrics } from "../metrics/index.js";
 import {
   GENESIS_PREV_HASH,
   computeEventHash,
@@ -19,6 +20,7 @@ export interface AuditSealerOptions {
   batchSize?: number;
   intervalMs?: number;
   registry?: Registry;
+  metrics?: SynapseMetrics;
   logger?: AuditSealerLogger;
 }
 
@@ -86,22 +88,28 @@ export class AuditSealer {
     this.pool = options.pool;
     this.batchSize = options.batchSize ?? 100;
     this.intervalMs = options.intervalMs ?? 1000;
-    const registry = options.registry ?? defaultRegister;
-    this.pendingAgeGauge = getOrCreateGauge(
-      registry,
-      "synapse_audit_pending_age_seconds",
-      "Age in seconds of the oldest unsealed audit event in audit_pending"
-    );
-    this.pendingQueueGauge = getOrCreateGauge(
-      registry,
-      "synapse_audit_pending_queue_size",
-      "Current depth of unsealed staged events in audit_pending table"
-    );
-    this.chainLengthGauge = getOrCreateGauge(
-      registry,
-      "synapse_audit_chain_length",
-      "Total monotonic length of sealed audit events in audit_events ledger"
-    );
+    if (options.metrics) {
+      this.pendingAgeGauge = options.metrics.auditPendingAgeSeconds;
+      this.pendingQueueGauge = options.metrics.auditPendingQueueSize;
+      this.chainLengthGauge = options.metrics.auditChainLength;
+    } else {
+      const registry = options.registry ?? defaultRegister;
+      this.pendingAgeGauge = getOrCreateGauge(
+        registry,
+        "synapse_audit_pending_age_seconds",
+        "Age in seconds of the oldest unsealed audit event in audit_pending"
+      );
+      this.pendingQueueGauge = getOrCreateGauge(
+        registry,
+        "synapse_audit_pending_queue_size",
+        "Current depth of unsealed staged events in audit_pending table"
+      );
+      this.chainLengthGauge = getOrCreateGauge(
+        registry,
+        "synapse_audit_chain_length",
+        "Total monotonic length of sealed audit events in audit_events ledger"
+      );
+    }
     this.logger = options.logger ?? {
       info: console.log,
       warn: console.warn,

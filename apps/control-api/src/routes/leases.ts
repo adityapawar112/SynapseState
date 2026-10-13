@@ -269,6 +269,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
               existingRes.rows.length
             );
           } else {
+            // Synchronous increment provides immediate local visibility; periodic GET /metrics scrape provides authoritative eventual consistency
             metrics.leasesActive.inc({ env: payload.env });
           }
           metrics.leaseTransitionsTotal.inc({ from: "NONE", to: "ACTIVE" });

@@ -91,6 +91,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   if (!activeAuditSealer && options.enableAuditSealer) {
     activeAuditSealer = new AuditSealer({
       pool: activePool,
+      metrics: activeMetrics,
     });
   }
 

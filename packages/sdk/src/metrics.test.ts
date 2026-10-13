@@ -258,5 +258,53 @@ describe("SDK Pluggable Metrics Callbacks (PR 12)", () => {
         telemetryDroppedTotal: 0,
       });
     });
+
+    it("Invariant 1: flag resolution succeeds safely even if metrics callbacks throw", async () => {
+      const throwingCollector: SynapseSdkMetrics = {
+        onActiveOverrides: () => {
+          throw new Error("Simulated collector crash");
+        },
+        onStateAge: () => {
+          throw new Error("Simulated collector crash");
+        },
+        onKeysetAge: () => {
+          throw new Error("Simulated collector crash");
+        },
+        onPollError: () => {
+          throw new Error("Simulated collector crash");
+        },
+        onTelemetryDropped: () => {
+          throw new Error("Simulated collector crash");
+        },
+      };
+
+      const mockDelegate = {
+        metadata: { name: "mock" },
+        resolveBooleanEvaluation: vi.fn().mockReturnValue({
+          value: true,
+          variant: "on",
+          reason: "DEFAULT",
+        }),
+        resolveStringEvaluation: vi.fn(),
+        resolveNumberEvaluation: vi.fn(),
+        resolveObjectEvaluation: vi.fn(),
+      };
+
+      const provider = new OverrideProvider({
+        delegate: mockDelegate,
+        metrics: throwingCollector,
+      });
+
+      const dummyLogger = {
+        error: vi.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+      };
+
+      const res = await provider.resolveBooleanEvaluation("test-flag", false, {}, dummyLogger);
+      expect(res.value).toBe(true);
+      expect(mockDelegate.resolveBooleanEvaluation).toHaveBeenCalledTimes(1);
+    });
   });
 });

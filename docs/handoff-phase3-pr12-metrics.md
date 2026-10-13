@@ -58,17 +58,28 @@ pnpm -r run build
 pnpm -r run typecheck
 # Exit Code: 0 (Clean)
 
-# 4. Monorepo Test Suites (36 files, 277 passed)
+# 4. Monorepo Test Suites (36 files, 280 passed)
 pnpm -r run test
 # - packages/lease: 6 test files, 91 passed
-# - packages/sdk: 11 test files, 71 passed
+# - packages/sdk: 11 test files, 73 passed
 # - packages/cli: 1 test file, 1 passed
 # - packages/conformance: 3 test files, 22 passed
-# - apps/control-api: 13 test files, 90 passed
+# - apps/control-api: 13 test files, 91 passed
 # - apps/purger: 1 test file, 1 passed
 # - apps/demo-shop: 1 test file, 1 passed
-# Total: 36 test files, 277 tests passed!
+# Total: 36 test files, 280 tests passed!
 ```
+
+---
+
+## 3. Code Review Follow-Up Hardening (PR 12 Review Feedback)
+
+In response to formal code review feedback, the following robustness enhancements were added:
+1. **Defensive Keyset Lifecycle Containment:** Wrapped `KeysetWatcher.onKeysetUpdate` in `try/catch + logger.warn` to ensure subscriber exceptions never cause the watcher to erroneously transition to `stale` or `unreadable`.
+2. **Scrape Query Optimization & Throttle:** Added `REFRESH_THROTTLE_MS = 5000` guard in `GET /metrics` and parallelized database gauge queries with `Promise.all` to mitigate connection pool contention during scrape bursts.
+3. **Unified Audit Sealer Gauge Ownership:** Injected `SynapseMetrics` into `AuditSealer`, removing duplicate gauge creation and preventing dual-registry divergence.
+4. **Sentinel Contract Clarity:** Formally documented and enforced `-1` cold-start sentinel behavior in `InMemoryMetricsCollector.onKeysetAge`.
+5. **Fail-Open & Invariant 1 Regression Tests:** Added tests verifying `GET /metrics` fails open (HTTP 200 + warning) on Postgres connection drop, and `OverrideProvider` evaluation proceeds safely without interruption when a consumer's metrics collector throws.
 
 ---
 

@@ -22,25 +22,38 @@ export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
   const metrics = options.metrics ?? getMetricsRegistry();
   const pool = options.leasePool;
 
+  const REFRESH_THROTTLE_MS = 5000;
+  let lastRefreshTime = 0;
+
   fastify.get("/metrics", async (_req, reply) => {
-    if (pool) {
+    const now = Date.now();
+    if (pool && now - lastRefreshTime >= REFRESH_THROTTLE_MS) {
       try {
+        // Parallelized gauge refresh across leases, audit_pending, and audit_events
+        const [activeRes, pendingRes, chainRes] = await Promise.all([
+          pool.query<{ env: string; count: string | number }>(
+            `SELECT env, COUNT(*)::bigint AS count 
+             FROM leases 
+             WHERE state = 'ACTIVE' AND expires_at > NOW() 
+             GROUP BY env;`
+          ),
+          pool.query<{ count: string | number; oldest_created_at: Date | string | null }>(
+            `SELECT COUNT(*)::bigint AS count, MIN(created_at) AS oldest_created_at 
+             FROM audit_pending;`
+          ),
+          pool.query<{ max_seq: string | number }>(
+            "SELECT COALESCE(MAX(seq), 0)::bigint AS max_seq FROM audit_events;"
+          ),
+        ]);
+
+        lastRefreshTime = now;
+
         // 1. Refresh active leases count per environment
-        const activeRes = await pool.query<{ env: string; count: string | number }>(
-          `SELECT env, COUNT(*)::bigint AS count 
-           FROM leases 
-           WHERE state = 'ACTIVE' AND expires_at > NOW() 
-           GROUP BY env;`
-        );
         for (const row of activeRes.rows) {
           metrics.leasesActive.set({ env: row.env }, Number(row.count));
         }
 
         // 2. Refresh audit pending queue size and age
-        const pendingRes = await pool.query<{ count: string | number; oldest_created_at: Date | string | null }>(
-          `SELECT COUNT(*)::bigint AS count, MIN(created_at) AS oldest_created_at 
-           FROM audit_pending;`
-        );
         if (pendingRes.rows.length > 0) {
           const row = pendingRes.rows[0]!;
           metrics.auditPendingQueueSize.set(Number(row.count));
@@ -54,9 +67,6 @@ export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
         }
 
         // 3. Refresh audit chain length
-        const chainRes = await pool.query<{ max_seq: string | number }>(
-          "SELECT COALESCE(MAX(seq), 0)::bigint AS max_seq FROM audit_events;"
-        );
         if (chainRes.rows.length > 0) {
           metrics.auditChainLength.set(Number(chainRes.rows[0]!.max_seq));
         }

@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import Fastify from "fastify";
+import type { Pool } from "pg";
 import {
   createMetricsRegistry,
   type SynapseMetrics,
@@ -127,6 +128,24 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.headers["content-type"]).toBeDefined();
+    });
+
+    it("fails open on database error: logs warning and returns HTTP 200 with current metrics", async () => {
+      const app = Fastify();
+      const mockFailingPool = {
+        query: vi.fn().mockRejectedValue(new Error("Connection terminated unexpectedly")),
+      } as unknown as Pool;
+
+      await app.register(metricsRoutes, { metrics, leasePool: mockFailingPool });
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/metrics",
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/plain");
+      expect(res.payload).toContain("# HELP synapse_leases_active");
     });
   });
 
