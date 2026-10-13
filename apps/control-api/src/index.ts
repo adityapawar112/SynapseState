@@ -8,6 +8,8 @@ export * from "./routes/time.js";
 export * from "./routes/leases.js";
 export * from "./routes/state.js";
 export * from "./routes/health.js";
+export * from "./routes/telemetry.js";
+export * from "./routes/changes.js";
 export { buildServer, type ServerOptions };
 
 export const server = buildServer({
@@ -18,7 +20,8 @@ export const server = buildServer({
 if (
   process.env.NODE_ENV !== "test" &&
   process.argv[1] &&
-  (process.argv[1].endsWith("dist/index.js") || process.argv[1].endsWith("src/index.ts"))
+  (process.argv[1].endsWith("dist/index.js") ||
+    process.argv[1].endsWith("src/index.ts"))
 ) {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   const host = process.env.HOST || "0.0.0.0";
@@ -32,12 +35,15 @@ if (
 
   const handleShutdown = (signal: string) => {
     server.log.info(`Received ${signal}, shutting down gracefully...`);
-    void server.close().then(() => {
-      process.exit(0);
-    }).catch((err) => {
-      server.log.error(err, "Error during graceful shutdown");
-      process.exit(1);
-    });
+    void server
+      .close()
+      .then(() => {
+        process.exit(0);
+      })
+      .catch((err) => {
+        server.log.error(err, "Error during graceful shutdown");
+        process.exit(1);
+      });
   };
 
   process.on("SIGTERM", () => handleShutdown("SIGTERM"));
