@@ -117,21 +117,29 @@ export const changeRoutes: FastifyPluginAsync<ChangeRoutesOptions> = async (
         payload: unknown;
       }>(eventSql, eventParams);
 
-      const events = eventResult.rows.map((row) => ({
-        id: Number(row.id),
-        event_type: row.event_type,
-        env: row.env,
-        flag_key: row.flag_key,
-        actor: row.actor,
-        occurred_at:
-          row.occurred_at instanceof Date
-            ? row.occurred_at.toISOString()
-            : new Date(row.occurred_at).toISOString(),
-        payload:
-          typeof row.payload === "string"
-            ? JSON.parse(row.payload)
-            : row.payload,
-      }));
+      const events = eventResult.rows.map((row) => {
+        let parsedPayload = row.payload;
+        if (typeof row.payload === "string") {
+          try {
+            parsedPayload = JSON.parse(row.payload);
+          } catch {
+            parsedPayload = row.payload;
+          }
+        }
+
+        return {
+          id: Number(row.id),
+          event_type: row.event_type,
+          env: row.env,
+          flag_key: row.flag_key,
+          actor: row.actor,
+          occurred_at:
+            row.occurred_at instanceof Date
+              ? row.occurred_at.toISOString()
+              : new Date(row.occurred_at).toISOString(),
+          payload: parsedPayload,
+        };
+      });
 
       // Query flag_usage_daily for correlated evaluations
       const evalParams: unknown[] = [env, sinceDate.toISOString().slice(0, 10)];

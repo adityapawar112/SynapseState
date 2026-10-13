@@ -254,6 +254,91 @@ describe("Bulkhead Telemetry Ingestion Route (POST /v1/telemetry/batches)", () =
       payload: contextViolation,
     });
     expect(res3.statusCode).toBe(400);
+
+    // 4. Arbitrary unknown/PII top-level attribute (strict schema enforcement)
+    const unknownPiiViolation = {
+      instance_id: "pod-test",
+      batch_id: generateUlid(),
+      window_start: new Date().toISOString(),
+      window_end: new Date().toISOString(),
+      service: testService,
+      env: testEnv,
+      user_email: "operator@example.com", // UNKNOWN / PII KEY
+      metrics: [],
+    };
+
+    const res4 = await app.inject({
+      method: "POST",
+      url: "/v1/telemetry/batches",
+      payload: unknownPiiViolation,
+    });
+    expect(res4.statusCode).toBe(400);
+    const body4 = JSON.parse(res4.payload);
+    expect(body4.error).toMatch(/Zero-Context violation|unrecognized keys/i);
+
+    // 5. Out-of-order window timing (window_start > window_end)
+    const windowViolation = {
+      instance_id: "pod-test",
+      batch_id: generateUlid(),
+      window_start: new Date(Date.now() + 60000).toISOString(),
+      window_end: new Date().toISOString(),
+      service: testService,
+      env: testEnv,
+      metrics: [],
+    };
+
+    const res5 = await app.inject({
+      method: "POST",
+      url: "/v1/telemetry/batches",
+      payload: windowViolation,
+    });
+    expect(res5.statusCode).toBe(400);
+  });
+
+  it("preserves registered sdk_version when subsequent batch omits sdk_version", async () => {
+    // 1. First batch registers version 0.1.0
+    await app.inject({
+      method: "POST",
+      url: "/v1/telemetry/batches",
+      payload: {
+        instance_id: "pod-v1",
+        batch_id: generateUlid(),
+        window_start: new Date().toISOString(),
+        window_end: new Date().toISOString(),
+        service: "version-preservation-service",
+        env: testEnv,
+        sdk_version: "0.1.0",
+        metrics: [],
+      },
+    });
+
+    let serviceRow = await leasePool.query(
+      "SELECT sdk_version FROM services WHERE name = $1 AND env = $2",
+      ["version-preservation-service", testEnv],
+    );
+    expect(serviceRow.rows[0].sdk_version).toBe("0.1.0");
+
+    // 2. Second batch omits sdk_version (resolves to 'unknown' fallback)
+    await app.inject({
+      method: "POST",
+      url: "/v1/telemetry/batches",
+      payload: {
+        instance_id: "pod-v1",
+        batch_id: generateUlid(),
+        window_start: new Date().toISOString(),
+        window_end: new Date().toISOString(),
+        service: "version-preservation-service",
+        env: testEnv,
+        metrics: [],
+      },
+    });
+
+    serviceRow = await leasePool.query(
+      "SELECT sdk_version FROM services WHERE name = $1 AND env = $2",
+      ["version-preservation-service", testEnv],
+    );
+    // Preserved rather than overwritten with 'unknown'
+    expect(serviceRow.rows[0].sdk_version).toBe("0.1.0");
   });
 
   it("sorts metrics deterministically and avoids row-lock deadlocks under concurrent batch ingestion", async () => {

@@ -33,23 +33,34 @@ export const MetricItemSchema = z
 
 export type MetricItem = z.infer<typeof MetricItemSchema>;
 
-export const TelemetryBatchPayloadSchema = z.object({
-  instance_id: z.string().min(1),
-  batch_id: z.string().min(1),
-  window_start: z.string().refine((s) => !isNaN(Date.parse(s)), {
-    message: "window_start must be a valid ISO 8601 date string",
-  }),
-  window_end: z.string().refine((s) => !isNaN(Date.parse(s)), {
-    message: "window_end must be a valid ISO 8601 date string",
-  }),
-  metrics: z.array(MetricItemSchema),
-  propagation_lag_ms: z.number().optional(),
-  dropped_count: z.number().int().nonnegative().optional(),
-  service: z.string().optional(),
-  service_name: z.string().optional(),
-  env: z.string().optional(),
-  sdk_version: z.string().optional(),
-});
+export const TelemetryBatchPayloadSchema = z
+  .object({
+    instance_id: z.string().min(1),
+    batch_id: z.string().min(1),
+    window_start: z.string().refine((s) => !isNaN(Date.parse(s)), {
+      message: "window_start must be a valid ISO 8601 date string",
+    }),
+    window_end: z.string().refine((s) => !isNaN(Date.parse(s)), {
+      message: "window_end must be a valid ISO 8601 date string",
+    }),
+    metrics: z.array(MetricItemSchema),
+    propagation_lag_ms: z.number().optional(),
+    dropped_count: z.number().int().nonnegative().optional(),
+    service: z.string().optional(),
+    service_name: z.string().optional(),
+    env: z.string().optional(),
+    sdk_version: z.string().optional(),
+  })
+  .strict()
+  .refine(
+    (data) =>
+      new Date(data.window_start).getTime() <=
+      new Date(data.window_end).getTime(),
+    {
+      message: "window_start must be less than or equal to window_end",
+      path: ["window_start"],
+    },
+  );
 
 export type TelemetryBatchPayload = z.infer<typeof TelemetryBatchPayloadSchema>;
 
@@ -60,7 +71,7 @@ export type TelemetryBatchPayload = z.infer<typeof TelemetryBatchPayloadSchema>;
  * - Dedicated telemetryPool bulkhead isolates telemetry flushes from lease traffic.
  * - Sheds load with HTTP 429 / 503 upon pool connection timeout or exhaustion.
  * - Rejects any payload containing user IDs, context, or targeting attributes.
- * - Deterministically sorts metrics by (flag_key ASC, variant ASC, reason ASC) before upsert,
+ * - Deterministically sorts metrics by code-unit order (flag_key ASC, variant ASC, reason ASC) before upsert,
  *   preventing PostgreSQL row-lock deadlocks during concurrent multi-row batch writes.
  * - Atomically updates service heartbeats and aggregates daily evaluation counts.
  */
@@ -98,7 +109,7 @@ export const telemetryRoutes: FastifyPluginAsync<
       }
     }
 
-    // 2. Validate payload schema (including strict check on metric tuples)
+    // 2. Validate payload schema (strictly typed root and metric tuples)
     const parseResult = TelemetryBatchPayloadSchema.safeParse(rawBody);
     if (!parseResult.success) {
       const hasUnrecognized = parseResult.error.issues.some(
@@ -152,15 +163,36 @@ export const telemetryRoutes: FastifyPluginAsync<
           service = service || tokenRes.rows[0].service_name;
           env = env || tokenRes.rows[0].env;
         }
-      } catch {
-        // Non-blocking fallback to defaults
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (
+          errMsg.includes("timeout") ||
+          (err as { code?: string }).code === "ETIMEDOUT"
+        ) {
+          return reply.code(429).send({
+            error: "Too Many Requests",
+            message: "Telemetry token lookup timed out; load shed.",
+          });
+        }
+        // Non-blocking fallback for other non-timeout errors
       }
     }
 
     const resolvedService = service || "default-service";
     const resolvedEnv = env || "default";
 
-    // 5. Invariant 3 (Deadlock Prevention): Coalesce and sort metric keys deterministically
+    if (!service || !env) {
+      req.log.warn(
+        {
+          instance_id: payload.instance_id,
+          service: resolvedService,
+          env: resolvedEnv,
+        },
+        "Telemetry batch ingested without explicit service/env metadata; attributing to default bucket",
+      );
+    }
+
+    // 5. Invariant 3 (Deadlock Prevention): Coalesce and sort metric keys deterministically using code-unit comparison
     const metricMap = new Map<string, MetricItem>();
     for (const item of payload.metrics) {
       const compositeKey = `${item.flag_key}\0${item.variant}\0${item.reason}`;
@@ -173,11 +205,10 @@ export const telemetryRoutes: FastifyPluginAsync<
     }
 
     const sortedMetrics = Array.from(metricMap.values()).sort((a, b) => {
-      const cmpFlag = a.flag_key.localeCompare(b.flag_key);
-      if (cmpFlag !== 0) return cmpFlag;
-      const cmpVariant = a.variant.localeCompare(b.variant);
-      if (cmpVariant !== 0) return cmpVariant;
-      return a.reason.localeCompare(b.reason);
+      if (a.flag_key !== b.flag_key) return a.flag_key < b.flag_key ? -1 : 1;
+      if (a.variant !== b.variant) return a.variant < b.variant ? -1 : 1;
+      if (a.reason !== b.reason) return a.reason < b.reason ? -1 : 1;
+      return 0;
     });
 
     // 6. Connect to isolated telemetryPool bulkhead with load shedding
@@ -208,7 +239,7 @@ export const telemetryRoutes: FastifyPluginAsync<
     try {
       await client.query("BEGIN");
 
-      // 7. Heartbeat update in services table
+      // 7. Heartbeat update in services table (preserving existing sdk_version if current is 'unknown')
       await client.query(
         `INSERT INTO services (name, env, status, first_seen, last_seen, silent_since, sdk_version)
          VALUES ($1, $2, 'ACTIVE', NOW(), NOW(), NULL, $3)
@@ -217,7 +248,7 @@ export const telemetryRoutes: FastifyPluginAsync<
            last_seen = NOW(),
            status = 'ACTIVE',
            silent_since = NULL,
-           sdk_version = EXCLUDED.sdk_version`,
+           sdk_version = COALESCE(NULLIF(EXCLUDED.sdk_version, 'unknown'), services.sdk_version)`,
         [resolvedService, resolvedEnv, sdkVersion],
       );
 
