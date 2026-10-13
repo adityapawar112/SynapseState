@@ -24,6 +24,7 @@ services:
     image: synapsestate-control-api:local
     container_name: synapse-control-api
     restart: unless-stopped
+    read_only: true
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -42,7 +43,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 20s
 
   demo-shop:
     build:
@@ -51,6 +52,7 @@ services:
     image: synapsestate-demo-shop:local
     container_name: synapse-demo-shop
     restart: unless-stopped
+    read_only: true
     environment:
       NODE_ENV: production
       PORT: 3001

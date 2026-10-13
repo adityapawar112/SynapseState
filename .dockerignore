@@ -1,6 +1,7 @@
-# Git and IDE
+# Git, CI and IDE metadata
 .git
 .gitignore
+.github
 .agents
 .vscode
 .idea
@@ -15,12 +16,13 @@ coverage
 *.tsbuildinfo
 *.log
 
-# Documentation and project notes
+# Documentation and project infrastructure
 docs
+deploy
+load
 *.md
 LICENSE
 
 # Environment configurations and secrets
 .env
 .env.*
-!.env.example

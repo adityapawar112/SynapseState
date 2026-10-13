@@ -1,5 +1,5 @@
 import { buildServer, type ServerOptions } from "./app.js";
-import { leasePool, runMigrations } from "./db/index.js";
+import { leasePool, runMigrations, closePools } from "./db/index.js";
 
 export * from "./db/index.js";
 export * from "./keyset.js";
@@ -18,12 +18,8 @@ export const server = buildServer({
 });
 
 // Start server if executed directly as entrypoint
-const isMainModule = Boolean(
-  process.argv[1] &&
-    (process.argv[1].endsWith("dist/index.js") ||
-      process.argv[1].endsWith("src/index.ts") ||
-      process.argv[1].endsWith("index.js"))
-);
+const argvPath = process.argv[1] ?? "";
+const isMainModule = argvPath.endsWith("dist/index.js") || argvPath.endsWith("src/index.ts");
 
 if (isMainModule) {
   const startServer = async () => {
@@ -58,11 +54,17 @@ if (isMainModule) {
     server.log.info(`Received ${signal}, shutting down gracefully...`);
     void server
       .close()
-      .then(() => {
+      .then(async () => {
+        await closePools();
         process.exit(0);
       })
-      .catch((err) => {
+      .catch(async (err) => {
         server.log.error(err, "Error during graceful shutdown");
+        try {
+          await closePools();
+        } catch {
+          // ignore error during forced exit
+        }
         process.exit(1);
       });
   };
