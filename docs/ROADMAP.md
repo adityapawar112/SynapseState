@@ -192,14 +192,14 @@ gantt
   * Drill 3: Network partition during revocation -> verify bounded exposure to `expires_at`.
   * Drill 4: Write one formal postmortem report in `docs/postmortems/`.
 * **Recommended Branches & Pull Requests:**
-  * **PR 15 (`feat/cli-signer-and-keys`):** `feat(cli): EncryptedKeyfileSigner and key management commands` — `packages/cli/src/signer/*`, `packages/cli/src/commands/key.ts`
+  * **PR 15 (`feat/cli-signer-and-keys`):** `[COMPLETED]` `feat(cli): EncryptedKeyfileSigner and key management commands` — `packages/cli/src/signer/*`, `packages/cli/src/commands/key.ts`
   * **PR 16 (`feat/cli-lease-lifecycle`):** `feat(cli): lease create, rollout status polling, and emergency-apply` — `packages/cli/src/commands/lease.ts`
   * **PR 17 (`feat/cli-incident-log-ranker`):** `feat(cli): synapse log incident investigation with pure rankSuspects` — `packages/cli/src/commands/log.ts`, `packages/cli/src/ranker.ts`
   * **PR 18 (`feat/git-promotion-reconciliation`):** `feat(api): GitHub App PR promotion and merge webhook reconciliation` — `apps/control-api/src/github/*`, `packages/cli/src/commands/promote.ts`
   * **PR 19 (`feat/audit-checkpoint-verifier`):** `feat(cli): isolated checkpoint signer CronJob and synapse audit verify` — `deploy/helm/cronjobs/*`, `packages/cli/src/commands/audit.ts`
   * **PR 20 (`test/chaos-drills-and-postmortem`):** `docs(postmortem): scripted 90-second demo and chaos injection drill results` — `docs/postmortems/*`, `test/drills/*`
 * **Security & Best Practice Review Checkpoints:**
-  * **Key Storage Threat Model:** Verify AES-256-GCM encryption with `crypto.scrypt` (`N=32768, r=8, p=1`), AAD binding to `kid`, and POSIX file permission enforcement (`0600`) on `~/.synapse/keys/*.key`.
+  * **Key Storage Threat Model:** `[AUDITED & VERIFIED]` Verified AES-256-GCM encryption with `crypto.scrypt` (`N=32768, r=8, p=1`), AAD binding to `kid` and format version, and POSIX file permission enforcement (`0600`) on `~/.synapse/keys/*.key`.
   * **Git Dual-Control Approval (Invariant 4):** Verify `synapse promote` opens Draft PRs only; automated direct-to-main merges are strictly prohibited. Peer review serves as secondary approval.
   * **Audit Chain Integrity (Invariant 7):** Verify `synapse audit verify` recomputes SHA-256 hashes from genesis independently rather than trusting database-stored hashes.
 * **Definition of Done:** Scripted 90-second demo executable end-to-end; one written postmortem from a deliberate failure drill.
