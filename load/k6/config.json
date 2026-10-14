@@ -1,0 +1,121 @@
+{
+  "profiles": {
+    "smoke": {
+      "long_polling": {
+        "executor": "constant-vus",
+        "vus": 5,
+        "duration": "30s"
+      },
+      "telemetry": {
+        "executor": "constant-vus",
+        "vus": 2,
+        "duration": "30s"
+      },
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "constant-vus",
+            "vus": 5,
+            "duration": "30s"
+          },
+          "telemetry_flushers": {
+            "executor": "constant-vus",
+            "vus": 2,
+            "duration": "30s"
+          }
+        }
+      }
+    },
+    "average_load": {
+      "long_polling": {
+        "executor": "constant-vus",
+        "vus": 100,
+        "duration": "2m"
+      },
+      "telemetry": {
+        "executor": "ramping-vus",
+        "startVUs": 5,
+        "stages": [
+          { "duration": "30s", "target": 20 },
+          { "duration": "1m", "target": 20 },
+          { "duration": "30s", "target": 0 }
+        ]
+      },
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "constant-vus",
+            "vus": 100,
+            "duration": "2m"
+          },
+          "telemetry_flushers": {
+            "executor": "constant-vus",
+            "vus": 20,
+            "duration": "2m"
+          }
+        }
+      }
+    },
+    "stress": {
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "ramping-vus",
+            "startVUs": 20,
+            "stages": [
+              { "duration": "1m", "target": 100 },
+              { "duration": "2m", "target": 250 },
+              { "duration": "1m", "target": 350 },
+              { "duration": "1m", "target": 50 }
+            ]
+          },
+          "telemetry_flushers": {
+            "executor": "ramping-vus",
+            "startVUs": 10,
+            "stages": [
+              { "duration": "1m", "target": 50 },
+              { "duration": "2m", "target": 100 },
+              { "duration": "1m", "target": 150 },
+              { "duration": "1m", "target": 10 }
+            ]
+          }
+        }
+      }
+    },
+    "spike": {
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "ramping-vus",
+            "startVUs": 10,
+            "stages": [
+              { "duration": "10s", "target": 10 },
+              { "duration": "10s", "target": 300 },
+              { "duration": "40s", "target": 300 },
+              { "duration": "10s", "target": 10 },
+              { "duration": "20s", "target": 10 }
+            ]
+          },
+          "telemetry_flushers": {
+            "executor": "ramping-vus",
+            "startVUs": 5,
+            "stages": [
+              { "duration": "10s", "target": 5 },
+              { "duration": "10s", "target": 80 },
+              { "duration": "40s", "target": 80 },
+              { "duration": "10s", "target": 5 },
+              { "duration": "20s", "target": 5 }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "thresholds": {
+    "slo_lease_propagation_lag": "synapse_lease_propagation_lag_ms <= 10000",
+    "slo_long_poll_p95": "synapse_long_poll_duration_ms p(95) <= 35000",
+    "slo_long_poll_error_rate": "synapse_long_poll_error_rate < 0.01",
+    "slo_telemetry_error_rate": "synapse_telemetry_error_rate < 0.05",
+    "slo_http_req_failed": "http_req_failed < 0.05"
+  }
+}

@@ -11,6 +11,10 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "pnpm -r run typecheck",
     "bench": "pnpm --filter @synapsestate/sdk run bench",
+    "test:load": "k6 run -e PROFILE=smoke -e DURATION=10s load/k6/mixed-stress.js",
+    "test:load:long-polling": "k6 run load/k6/long-polling.js",
+    "test:load:telemetry": "k6 run load/k6/telemetry.js",
+    "test:load:stress": "k6 run -e PROFILE=stress load/k6/mixed-stress.js",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,json,md,yaml}\""
   },

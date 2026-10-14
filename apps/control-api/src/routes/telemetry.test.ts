@@ -99,6 +99,39 @@ describe("Bulkhead Telemetry Ingestion Route (POST /v1/telemetry/batches)", () =
     expect(serviceRows.rows[0].sdk_version).toBe(sdkVersion);
   });
 
+  it("accepts telemetry batch via /v1/telemetry/flags route alias", async () => {
+    const batchId = generateUlid();
+    const payload = {
+      instance_id: "pod-flags-alias",
+      batch_id: batchId,
+      window_start: new Date(Date.now() - 60000).toISOString(),
+      window_end: new Date().toISOString(),
+      service: testService,
+      env: testEnv,
+      sdk_version: sdkVersion,
+      metrics: [
+        {
+          flag_key: "alias-test-flag",
+          variant: "true",
+          reason: "OVERRIDE",
+          count: 50,
+        },
+      ],
+    };
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/telemetry/flags",
+      headers: { "Content-Type": "application/json" },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(202);
+    const resBody = JSON.parse(res.payload);
+    expect(resBody.accepted).toBe(true);
+    expect(resBody.batch_id).toBe(batchId);
+  });
+
   it("correctly aggregates eval_count across successive batches on the same day", async () => {
     const today = new Date().toISOString();
 
