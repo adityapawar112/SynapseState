@@ -313,4 +313,42 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
     expect(body.active_leases).toHaveLength(1);
     expect(body.active_leases[0].payload.lease_id).toBe(leaseId);
   });
+
+  it("enforces identical response, headers, and validation for /v1/state alias", async () => {
+    // 1. Direct fetch to /v1/state
+    const stateRes = await app.inject({
+      method: "GET",
+      url: `/v1/state?env=${env}`,
+    });
+    expect(stateRes.statusCode).toBe(200);
+
+    const sdkRes = await app.inject({
+      method: "GET",
+      url: `/v1/sdk/state?env=${env}`,
+    });
+    expect(sdkRes.statusCode).toBe(200);
+
+    expect(stateRes.headers["etag"]).toBe(sdkRes.headers["etag"]);
+
+    const stateBody = JSON.parse(stateRes.payload);
+    const sdkBody = JSON.parse(sdkRes.payload);
+    expect(stateBody.etag).toBe(sdkBody.etag);
+    expect(stateBody.active_leases).toEqual(sdkBody.active_leases);
+
+    // 2. Matching ETag on /v1/state returns 304
+    const notModifiedRes = await app.inject({
+      method: "GET",
+      url: `/v1/state?env=${env}&wait=0s`,
+      headers: { "if-none-match": stateRes.headers["etag"] as string },
+    });
+    expect(notModifiedRes.statusCode).toBe(304);
+
+    // 3. Invalid environment on /v1/state returns 400
+    const invalidEnvRes = await app.inject({
+      method: "GET",
+      url: "/v1/state?env=invalid!!env",
+    });
+    expect(invalidEnvRes.statusCode).toBe(400);
+  });
 });
+

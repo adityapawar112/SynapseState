@@ -8,6 +8,8 @@ import {
   verifyRevocation,
   signKeyRevocation,
   verifyKeyRevocation,
+  signLeaseWithSigner,
+  signRevocationWithSigner,
   formatPublicKeyToHex,
   formatPublicKeyToBase64Url,
 } from "./crypto.js";
@@ -203,6 +205,24 @@ describe("Ed25519 Cryptographic Sign & Verify", () => {
       expect(verifyKeyRevocation(tampered, publicKey)).toBe(false);
     });
   });
+
+  describe("signLeaseWithSigner & signRevocationWithSigner", () => {
+    it("delegates to AsyncSigner and verifies successfully against standard verifiers", async () => {
+      const mockSigner = {
+        async sign(message: Uint8Array): Promise<string> {
+          const sig = crypto.sign(null, Buffer.from(message), privateKey);
+          return sig.toString("base64url");
+        },
+      };
+
+      const leaseEnv = await signLeaseWithSigner(sampleLease, mockSigner);
+      expect(verifyLease(leaseEnv, publicKey)).toBe(true);
+
+      const revEnv = await signRevocationWithSigner(sampleRevocation, mockSigner);
+      expect(verifyRevocation(revEnv, publicKey)).toBe(true);
+    });
+  });
+
 
   describe("Property-based testing (fast-check)", () => {
     it("round-trip sign and verify holds for arbitrary valid lease payloads", () => {

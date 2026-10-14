@@ -41,7 +41,10 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
 ) => {
   const { stateManager, metrics } = options;
 
-  fastify.get("/v1/sdk/state", async (req, reply) => {
+  const handleStateRequest = async (
+    req: import("fastify").FastifyRequest,
+    reply: import("fastify").FastifyReply
+  ) => {
     const startTime = process.hrtime.bigint();
     const recordMetric = (statusCode: number) => {
       if (metrics) {
@@ -115,5 +118,8 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
       req.log.error(err, "Error in state delivery route");
       throw err;
     }
-  });
+  };
+
+  fastify.get("/v1/sdk/state", handleStateRequest);
+  fastify.get("/v1/state", handleStateRequest);
 };

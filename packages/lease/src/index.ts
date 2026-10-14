@@ -56,6 +56,9 @@ export {
   verifyRevocation,
   signKeyRevocation,
   verifyKeyRevocation,
+  type AsyncSigner,
+  signLeaseWithSigner,
+  signRevocationWithSigner,
 } from "./crypto.js";
 
 // Dual-Clock Expiry Validator (Invariant 3)
@@ -87,3 +90,10 @@ export {
   verifyRevocationWithKeyset,
   verifyKeyRevocationWithKeyset,
 } from "./keyset.js";
+
+// ULID Generation
+export {
+  generateUlid,
+  MAX_ULID_TIME_MS,
+  resetUlidMonotonicStateForTest,
+} from "./ulid.js";
