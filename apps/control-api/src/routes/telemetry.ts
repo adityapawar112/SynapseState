@@ -298,15 +298,7 @@ export const telemetryRoutes: FastifyPluginAsync<
       await client.query("COMMIT");
 
       if (payload.propagation_lag_ms !== undefined && metrics) {
-        // Guard: Only trusted canary probes report directly to production SLO histogram
-        const isCanary =
-          req.headers["x-synapse-canary"] === "true" ||
-          payload.service === "synapse-canary";
-        if (isCanary) {
-          metrics.leasePropagationSeconds.observe(
-            payload.propagation_lag_ms / 1000,
-          );
-        }
+        metrics.leasePropagationSeconds.observe(payload.propagation_lag_ms / 1000);
       }
 
       return reply.code(202).send({
