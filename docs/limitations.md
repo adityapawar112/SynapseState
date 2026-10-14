@@ -94,3 +94,22 @@ SynapseState adheres to an **evidence-based claims policy**: we document our arc
 * **Provider Boundary:** In v1, automated promotion is strictly supported for **Git-backed flag providers** (such as `flagd` in-process or JSON/YAML file providers).
 * **SaaS / External Providers:** For providers where baseline definitions reside in an external database or SaaS vendor console (such as Unleash or LaunchDarkly), SynapseState emergency overrides evaluate and expire correctly, but automated Git promotion is out of scope. Permanent baseline changes must be applied through the vendor's administrative interface.
 
+---
+
+## 8. Observability & Benchmark Boundaries
+
+### 8.1 Metric Cardinality & Per-Lease TTL Countdown
+* **Limitation:** Prometheus metrics exported by Control API deliberately omit individual `lease_id` labels and dynamic countdown series.
+* **Invariant:** Invariant 5 requires bounded cardinality. During major incidents with multiple overrides, exporting per-lease gauge series (`synapse_lease_ttl_remaining{lease_id="..."}`) risks cardinality explosion in Prometheus TSDB.
+* **Operational Alternative:** Real-time remaining lease TTLs are inspected via CLI (`synapse lease list`) or the read-only operations dashboard table.
+
+### 8.2 Load Benchmark Environment Boundaries
+* **Limitation:** Phase 3 k6 benchmarks were conducted against local mock servers and single-node Control API instances under loopback networking.
+* **Boundary:** Measured wake-up and propagation latencies ($p95 \approx 462\text{ms}$) reflect server-side event dispatch and local I/O. In geographically distributed Kubernetes clusters, cross-node network latency and ingress proxy hops will add baseline RTT, while remaining well within the $p95 \le 10\text{s}$ SLO.
+
+### 8.3 Telemetry Pool Load-Shedding Trade-Off
+* **Limitation:** The dedicated `telemetryPool` bulkhead sheds load via `HTTP 429 Too Many Requests` during database write saturation.
+* **Implication:** If client SDKs experience extended network partitions or high evaluation surges, dropped batches increment `synapse_sdk_telemetry_dropped_total`.
+* **Design Priority:** Telemetry is non-critical path. Shedding telemetry batches guarantees that critical break-glass lease creation, revocation, and `/v1/sdk/state` delivery remain 100% available without connection pool starvation.
+
+

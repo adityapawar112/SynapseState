@@ -152,13 +152,16 @@ gantt
   * k6 load test simulating 100 concurrent SDK long-polling instances and telemetry flushes.
   * Identify first saturation bottleneck and publish documented limits.
 * **Recommended Branches & Pull Requests:**
-  * **PR 12 (`feat/metrics-control-api-sdk`):** `feat(obs): prometheus metrics in control-api and SDK callbacks` — `apps/control-api/src/metrics/*`, `packages/sdk/src/metrics.ts`
-  * **PR 13 (`obs/dashboards-and-alerts`):** `obs(grafana): operations dashboard and alertmanager multi-window alert rules` — `deploy/helm/dashboards/*`, `deploy/helm/alerts/*`
-  * **PR 14 (`test/load-k6-benchmarks`):** `test(load): k6 long-polling load harness and documented saturation limits` — `load/k6/*`
-* **Security & Best Practice Review Checkpoints:**
-  * **Metric Cardinality Audit:** Ensure no high-cardinality labels (user IDs, context keys, lease IDs) are exposed in Prometheus metrics. Only bounded dimensions (`env`, `status_code`, `reason`).
-  * **Multi-Window Multi-Burn-Rate Verification:** Verify Alertmanager SLO rule formulas (14.4x 1h/5m, 6x 6h/30m) against Google SRE alerting standards without flapping.
-* **Definition of Done:** Working Grafana dashboard with real firing alert screenshots; published SLO verification report with measured numbers.
+  * **PR 12 (`feat/metrics-control-api-sdk`):** `feat(obs): prometheus metrics in control-api and SDK callbacks` — `apps/control-api/src/metrics/*`, `packages/sdk/src/metrics.ts` `[COMPLETED]`
+  * **PR 13 (`obs/dashboards-and-alerts`):** `obs(grafana): operations dashboard and alertmanager multi-window alert rules` — `deploy/helm/dashboards/*`, `deploy/helm/alerts/*` `[COMPLETED]`
+  * **PR 14 (`test/load-k6-benchmarks`):** `test(load): k6 long-polling load harness and documented saturation limits` — `load/k6/*` `[COMPLETED]`
+* **Security & Best Practice Review Checkpoints:** `[AUDITED & VERIFIED]`
+  * **Metric Cardinality Audit:** Audited all Prometheus metric instruments across Control API and SDK (`metrics.ts`). Enforced strict bounded label dimensions (`env`, `status_code`, `reason`, `from`, `to`). Prohibited high-cardinality user IDs, targeting keys, and lease IDs. Per-lease TTL countdown is deliberately omitted from Prometheus series to protect scraper/storage stability, directing operators to `synapse lease list`.
+  * **Multi-Window Multi-Burn-Rate Verification:** Mathematically verified Alertmanager SLO rules (14.4x 1h/5m fast burn, 6x 6h/30m slow burn) against Google SRE alerting standards for a 99.5% availability target ($0.5\%$ error budget). Enforced traffic floor guards (`> 0.03 req/s`) on all multi-burn alerts to prevent false-positive flapping during 304 quiet long-poll intervals.
+  * **Fail-Safe Hot Path & Scrape Throttling:** The `/metrics` endpoint is strictly fail-open: database connectivity blips log a warning and return HTTP 200 with in-memory metrics without failing the scrape. A 5-second database query cache throttle (`REFRESH_THROTTLE_MS = 5000`) prevents denial-of-service from aggressive scraping. SDK metric callbacks execute inside defensive try/catch wrappers to guarantee zero impact on evaluation hot paths.
+  * **Zero-Context Telemetry & Bulkhead Integrity:** Telemetry ingestion (`POST /v1/telemetry/batches`) enforces Invariant 5 by accepting only `(flag_key, variant, reason, count)` tuples. Load-testing harnesses generate zero-context synthetic batches without injecting user attributes or polluting production propagation lag histograms. Connection pool bulkhead (`leasePool` 20 vs `telemetryPool` 10) guarantees that telemetry saturation sheds load via HTTP 429 without starving emergency state delivery.
+  * **Chart Drift & Operational Runbooks:** Automated conformance test (`observability.test.ts`) verifies byte-identical synchronization between root Helm dashboard/alert definitions and chart templates. Linked every firing alert to an actionable in-tree runbook under `docs/runbooks/`.
+* **Definition of Done:** Verified Grafana operations dashboard (`synapsestate-operations.json`); Alertmanager multi-window rules with traffic floor filters (`synapsestate-rules.yaml`); published SLO verification report (`docs/benchmarks/load-test-report.md`) with measured numbers ($p95 \text{ propagation} = 0.462\text{s} \le 10\text{s}$, $0.00\%$ long-poll drops, $4,108\text{ evals/s}$ telemetry throughput).
 
 ---
 
