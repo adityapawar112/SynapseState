@@ -158,3 +158,26 @@ cronjob:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# Observability, Dashboards & Alertmanager Rules (ARCH §11, ROADMAP §5)
+monitoring:
+  # Grafana Operations Dashboard ConfigMap
+  dashboards:
+    enabled: true
+    namespace: ""
+    labels:
+      grafana_dashboard: "1"
+    annotations: {}
+
+  # Prometheus Operator PrometheusRule Custom Resource (monitoring.coreos.com/v1)
+  prometheusRule:
+    enabled: false
+    namespace: ""
+    additionalLabels:
+      role: alert-rules
+
+  # Vanilla Prometheus Alert Rules ConfigMap
+  alertsConfigMap:
+    enabled: false
+    namespace: ""
+    labels: {}

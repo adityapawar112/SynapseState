@@ -1,0 +1,19 @@
+{{- if .Values.monitoring.dashboards.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "control-api.fullname" . }}-dashboard
+  namespace: {{ default .Release.Namespace .Values.monitoring.dashboards.namespace }}
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.dashboards.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.monitoring.dashboards.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  synapsestate-operations.json: |-
+{{ .Files.Get "dashboards/synapsestate-operations.json" | indent 4 }}
+{{- end }}

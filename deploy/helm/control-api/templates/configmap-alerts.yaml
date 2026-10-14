@@ -1,0 +1,15 @@
+{{- if .Values.monitoring.alertsConfigMap.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "control-api.fullname" . }}-alerts
+  namespace: {{ default .Release.Namespace .Values.monitoring.alertsConfigMap.namespace }}
+  labels:
+    {{- include "control-api.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.alertsConfigMap.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  synapsestate-rules.yaml: |-
+{{ .Files.Get "alerts/synapsestate-rules.yaml" | indent 4 }}
+{{- end }}

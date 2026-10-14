@@ -1,0 +1,140 @@
+groups:
+  - name: synapsestate-slo-alerts
+    rules:
+      # =====================================================================
+      # 1. State API Availability SLO: 99.5% over 30 days
+      # Error Budget = 100% - 99.5% = 0.5% (0.005)
+      # Google SRE Workbook Chapter 5: Multi-Window Multi-Burn-Rate Alerts
+      # =====================================================================
+
+      # Fast Burn: 14.4x rate (burns 2% of 30d error budget in 1 hour)
+      # Long window: 1h, Short window: 5m (1/12th)
+      # Threshold: 14.4 * 0.005 = 0.072 (7.2% error rate)
+      # Severity: critical (Immediate PagerDuty response)
+      - alert: SynapseStateApiAvailabilityFastBurn
+        expr: >-
+          (
+            sum(rate(synapse_state_poll_duration_seconds_count{status_code=~"5.."}[1h]))
+            /
+            sum(rate(synapse_state_poll_duration_seconds_count[1h]))
+            > (14.4 * 0.005)
+          )
+          and
+          (
+            sum(rate(synapse_state_poll_duration_seconds_count{status_code=~"5.."}[5m]))
+            /
+            sum(rate(synapse_state_poll_duration_seconds_count[5m]))
+            > (14.4 * 0.005)
+          )
+        for: 2m
+        labels:
+          severity: critical
+          slo: state_api_availability
+          burn_rate: fast
+        annotations:
+          summary: "SynapseState State API availability fast burn rate (14.4x) detected"
+          description: >-
+            State API is burning 2% of 30-day error budget in 1 hour (5m error rate: {{ $value | humanizePercentage }}, 1h error rate: > 7.2%). Immediate pager response required.
+          runbook_url: "https://github.com/synapsestate/synapsestate/blob/main/docs/runbooks/state-api-outage.md"
+
+      # Slow Burn: 6x rate (burns 5% of 30d error budget in 6 hours)
+      # Long window: 6h, Short window: 30m (1/12th)
+      # Threshold: 6 * 0.005 = 0.030 (3.0% error rate)
+      # Severity: warning (Business hours ticket response)
+      - alert: SynapseStateApiAvailabilitySlowBurn
+        expr: >-
+          (
+            sum(rate(synapse_state_poll_duration_seconds_count{status_code=~"5.."}[6h]))
+            /
+            sum(rate(synapse_state_poll_duration_seconds_count[6h]))
+            > (6 * 0.005)
+          )
+          and
+          (
+            sum(rate(synapse_state_poll_duration_seconds_count{status_code=~"5.."}[30m]))
+            /
+            sum(rate(synapse_state_poll_duration_seconds_count[30m]))
+            > (6 * 0.005)
+          )
+        for: 5m
+        labels:
+          severity: warning
+          slo: state_api_availability
+          burn_rate: slow
+        annotations:
+          summary: "SynapseState State API availability slow burn rate (6x) detected"
+          description: >-
+            State API is burning 5% of 30-day error budget in 6 hours (30m error rate: {{ $value | humanizePercentage }}, 6h error rate: > 3.0%). Requires business hours ticket response.
+          runbook_url: "https://github.com/synapsestate/synapsestate/blob/main/docs/runbooks/state-api-outage.md"
+
+      # =====================================================================
+      # 2. Lease Propagation Latency SLO (p95 <= 10s)
+      # =====================================================================
+      - alert: SynapseLeasePropagationDegraded
+        expr: >-
+          histogram_quantile(0.95, sum(rate(synapse_lease_propagation_seconds_bucket[5m])) by (le)) > 10
+        for: 5m
+        labels:
+          severity: warning
+          slo: lease_propagation
+        annotations:
+          summary: "SynapseState lease propagation p95 latency exceeds 10s SLO"
+          description: >-
+            p95 lease propagation lag is {{ $value | humanizeDuration }} (threshold: 10s) for over 5 minutes. Workloads may experience delayed emergency override delivery.
+          runbook_url: "https://github.com/synapsestate/synapsestate/blob/main/docs/runbooks/propagation-latency.md"
+
+      # =====================================================================
+      # 3. Tamper-Evident Audit Ledger Sealer Stall Detection
+      # =====================================================================
+      - alert: SynapseAuditSealerLagging
+        expr: synapse_audit_pending_age_seconds > 30
+        for: 2m
+        labels:
+          severity: critical
+          component: audit_sealer
+        annotations:
+          summary: "SynapseState audit ledger sealer is stalled or lagging"
+          description: >-
+            Oldest unsealed event in audit_pending is {{ $value | humanizeDuration }} old (threshold: 30s). The asynchronous sealer loop may have crashed or encountered repeated database lock timeouts.
+          runbook_url: "https://github.com/synapsestate/synapsestate/blob/main/docs/runbooks/audit-sealer-lag.md"
+
+      # =====================================================================
+      # 4. Client SDK Fleet Freshness (State & Pinned Keyset)
+      # =====================================================================
+      - alert: SynapseStateStale
+        expr: synapse_sdk_state_age_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+          component: sdk
+        annotations:
+          summary: "SynapseState SDK client fleet state synchronization is stale"
+          description: >-
+            State age on client SDK instance is {{ $value | humanizeDuration }} (threshold: 60s). Client workload may be partitioned or experiencing long-polling failures.
+          runbook_url: "https://github.com/synapsestate/synapsestate/blob/main/docs/runbooks/sdk-staleness.md"
+
+      - alert: SynapseKeysetStale
+        expr: synapse_sdk_keyset_age_seconds > 900
+        for: 2m
+        labels:
+          severity: critical
+          component: sdk
+        annotations:
+          summary: "SynapseState SDK pinned keyset read is stale (>= 15 minutes)"
+          description: >-
+            Keyset age on client SDK instance is {{ $value | humanizeDuration }} (threshold: 900s / 15m). Keyset in-memory fallback cache expires at 15m; cryptographic signature verification will fail closed.
+          runbook_url: "https://github.com/synapsestate/synapsestate/blob/main/docs/runbooks/sdk-staleness.md"
+
+      # =====================================================================
+      # 5. Operational Hygiene: Active Emergency Leases
+      # =====================================================================
+      - alert: SynapseActiveEmergencyLeases
+        expr: sum(synapse_leases_active) > 0
+        for: 30m
+        labels:
+          severity: info
+          component: leases
+        annotations:
+          summary: "Active break-glass emergency leases detected for > 30 minutes"
+          description: >-
+            There are currently {{ $value }} active break-glass leases running. Promote leases via 'synapse promote' to reconcile permanent changes into Git.
