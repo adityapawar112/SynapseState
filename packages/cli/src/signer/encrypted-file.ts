@@ -58,7 +58,7 @@ export interface KeyMetadata {
  * Standard scrypt KDF parameters (N=32768, r=8, p=1, keyLen=32).
  * Conforms to SynapseState Key Storage Threat Model (ARCHITECTURE.md §1 & ADR 0004).
  */
-const SCRYPT_PARAMS = Object.freeze({
+export const SCRYPT_PARAMS = Object.freeze({
   N: 32768,
   r: 8,
   p: 1,
@@ -110,18 +110,18 @@ function deriveKey(password: string, salt: Buffer): Promise<Buffer> {
 /**
  * Validates a key identifier according to KID_REGEX and forbidden property names.
  */
-function validateKid(kid: string): void {
+export function validateKid(kid: string): void {
   if (typeof kid !== "string" || kid.trim().length === 0) {
     throw new Error("kid must not be empty");
   }
   if ((FORBIDDEN_KID_NAMES as readonly string[]).includes(kid)) {
     throw new Error(
-      `Keyset contains forbidden reserved identifier: "${kid}"`,
+      `Key identifier contains forbidden reserved identifier: "${kid}"`,
     );
   }
   if (!KID_REGEX.test(kid)) {
     throw new Error(
-      `Keyset key "${kid}" violates kid format requirements (must match ${KID_REGEX})`,
+      `Key identifier "${kid}" violates kid format requirements (must match ${KID_REGEX})`,
     );
   }
 }
@@ -192,7 +192,14 @@ export class EncryptedKeyfileSigner implements Signer {
   static async readMetadata(filePath: string): Promise<KeyMetadata> {
     await EncryptedKeyfileSigner.checkPermissions(filePath);
     const content = await fs.readFile(filePath, "utf8");
-    const data = JSON.parse(content) as KeyfileData;
+    let data: KeyfileData;
+    try {
+      data = JSON.parse(content) as KeyfileData;
+    } catch (err: unknown) {
+      throw new Error(
+        `Failed to parse keyfile JSON at "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     if (data.v !== 1) {
       throw new Error(
@@ -200,6 +207,12 @@ export class EncryptedKeyfileSigner implements Signer {
       );
     }
     validateKid(data.kid);
+
+    if (typeof data.public_key !== "string" || !/^[0-9a-f]{64}$/.test(data.public_key)) {
+      throw new Error(
+        `Invalid Ed25519 public key format in "${filePath}". Expected 64-character lowercase hex string.`,
+      );
+    }
 
     return {
       kid: data.kid,
@@ -228,6 +241,14 @@ export class EncryptedKeyfileSigner implements Signer {
       : getDefaultKeysDir();
 
     await fs.mkdir(outDir, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") {
+      try {
+        await fs.chmod(outDir, 0o700);
+      } catch {
+        // ignore
+      }
+    }
+
     const filePath = path.join(outDir, `${options.kid}.key`);
 
     if (!options.overwrite) {
@@ -291,6 +312,13 @@ export class EncryptedKeyfileSigner implements Signer {
       mode: 0o600,
       encoding: "utf8",
     });
+    if (process.platform !== "win32") {
+      try {
+        await fs.chmod(filePath, 0o600);
+      } catch {
+        // ignore
+      }
+    }
 
     const signer = new EncryptedKeyfileSigner(
       options.kid,
@@ -306,10 +334,15 @@ export class EncryptedKeyfileSigner implements Signer {
   }
 
   /**
-   * Loads an existing encrypted keyfile from disk, validates permissions and AAD,
-   * decrypts the private key with the passphrase, and returns an active signer.
+   * Loads an existing encrypted keyfile from disk, validates permissions, KDF parameters,
+   * component lengths, and AAD, decrypts the private key with the passphrase, verifies
+   * that the derived public key matches the unencrypted header, and returns an active signer.
    */
   static async load(options: LoadOptions): Promise<EncryptedKeyfileSigner> {
+    if (!options.password || options.password.trim().length === 0) {
+      throw new Error("Passphrase cannot be empty or whitespace");
+    }
+
     const filePath = path.resolve(options.filePath);
     await EncryptedKeyfileSigner.checkPermissions(filePath);
 
@@ -317,8 +350,10 @@ export class EncryptedKeyfileSigner implements Signer {
     let data: KeyfileData;
     try {
       data = JSON.parse(rawContent) as KeyfileData;
-    } catch (err) {
-      throw new Error(`Failed to parse keyfile JSON at "${filePath}": ${String(err)}`);
+    } catch (err: unknown) {
+      throw new Error(
+        `Failed to parse keyfile JSON at "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
     if (data.v !== 1) {
@@ -328,8 +363,18 @@ export class EncryptedKeyfileSigner implements Signer {
     }
     validateKid(data.kid);
 
-    if (data.kdf?.algorithm !== "scrypt" || !data.kdf.salt) {
-      throw new Error(`Unsupported or missing KDF configuration in "${filePath}"`);
+    // KDF Parameter Pinning (prevent downgrade attacks)
+    if (
+      data.kdf?.algorithm !== "scrypt" ||
+      data.kdf?.params?.N !== SCRYPT_PARAMS.N ||
+      data.kdf?.params?.r !== SCRYPT_PARAMS.r ||
+      data.kdf?.params?.p !== SCRYPT_PARAMS.p ||
+      data.kdf?.params?.keyLen !== SCRYPT_PARAMS.keyLen ||
+      !data.kdf?.salt
+    ) {
+      throw new Error(
+        `Unsupported or invalid KDF parameters in "${filePath}". Expected scrypt with N=${SCRYPT_PARAMS.N}, r=${SCRYPT_PARAMS.r}, p=${SCRYPT_PARAMS.p}, keyLen=${SCRYPT_PARAMS.keyLen}.`,
+      );
     }
 
     if (data.cipher?.algorithm !== "aes-256-gcm" || !data.cipher.iv || !data.cipher.tag) {
@@ -339,7 +384,20 @@ export class EncryptedKeyfileSigner implements Signer {
     const salt = Buffer.from(data.kdf.salt, "base64url");
     const iv = Buffer.from(data.cipher.iv, "base64url");
     const tag = Buffer.from(data.cipher.tag, "base64url");
-    const ciphertext = Buffer.from(data.ciphertext, "base64url");
+    const ciphertext = Buffer.from(data.ciphertext ?? "", "base64url");
+
+    // Explicit component length verification
+    if (salt.length !== 16 || iv.length !== 12 || tag.length !== 16 || ciphertext.length === 0) {
+      throw new Error(
+        `Invalid cipher or KDF component length in "${filePath}". Expected salt=16, iv=12, tag=16, ciphertext>0.`,
+      );
+    }
+
+    if (typeof data.public_key !== "string" || !/^[0-9a-f]{64}$/.test(data.public_key)) {
+      throw new Error(
+        `Invalid Ed25519 public key format in "${filePath}". Expected 64-character lowercase hex string.`,
+      );
+    }
 
     const derivedKey = await deriveKey(options.password, salt);
 
@@ -366,6 +424,15 @@ export class EncryptedKeyfileSigner implements Signer {
       format: "der",
       type: "pkcs8",
     });
+
+    // Defense-in-depth: verify derived public key matches unencrypted header
+    const publicKey = crypto.createPublicKey(privateKey);
+    const derivedPublicKeyHex = formatPublicKeyToHex(publicKey);
+    if (derivedPublicKeyHex !== data.public_key) {
+      throw new Error(
+        `Public key in keyfile header does not match decrypted private key in "${filePath}"`,
+      );
+    }
 
     return new EncryptedKeyfileSigner(data.kid, privateKey, data.public_key);
   }

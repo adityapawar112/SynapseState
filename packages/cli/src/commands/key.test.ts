@@ -147,6 +147,75 @@ describe("Key Management Commands (packages/cli/src/commands/key.ts)", () => {
         }),
       ).rejects.toThrow(/keyfile not found/i);
     });
+
+    it("rejects path traversal in kid parameter", async () => {
+      await expect(
+        executeKeyExportPublic({
+          kid: "../../etc/passwd",
+          dir: tempDir,
+        }),
+      ).rejects.toThrow(/violates kid format requirements/i);
+    });
+
+    it("rejects unsupported format option", async () => {
+      const kid = "format-test";
+      await executeKeyGenerate({
+        kid,
+        password: "password123!",
+        dir: tempDir,
+      });
+
+      await expect(
+        executeKeyExportPublic({
+          kid,
+          dir: tempDir,
+          format: "toml" as unknown as "json" | "yaml",
+        }),
+      ).rejects.toThrow(/unsupported format "toml"/i);
+    });
+
+    it("rejects invalid roles or out-of-range max-ttl", async () => {
+      const kid = "invalid-opts-test";
+      await executeKeyGenerate({
+        kid,
+        password: "password123!",
+        dir: tempDir,
+      });
+
+      await expect(
+        executeKeyExportPublic({
+          kid,
+          dir: tempDir,
+          roles: ["invalid_role" as unknown as "lease_signer"],
+        }),
+      ).rejects.toThrow(/invalid key role/i);
+
+      await expect(
+        executeKeyExportPublic({
+          kid,
+          dir: tempDir,
+          maxTtl: 999999,
+        }),
+      ).rejects.toThrow(/max-ttl must be a positive integer/i);
+    });
+
+    it("defaults max_ttl_seconds to 3600 when omitted in programmatic call", async () => {
+      const kid = "default-ttl-test";
+      const genResult = await executeKeyGenerate({
+        kid,
+        password: "password123!",
+        dir: tempDir,
+      });
+
+      expect((genResult.snippet[kid] as Record<string, unknown>).max_ttl_seconds).toBe(3600);
+
+      const exported = await executeKeyExportPublic({
+        kid,
+        dir: tempDir,
+      });
+      const parsed = parseKeysetJson(exported);
+      expect(parsed[kid].max_ttl_seconds).toBe(3600);
+    });
   });
 
   describe("Commander CLI Integration", () => {

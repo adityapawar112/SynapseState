@@ -3,10 +3,16 @@ import fs from "node:fs/promises";
 import pc from "picocolors";
 import YAML from "yaml";
 import type { Command } from "commander";
-import type { KeyRole, KeyStatus } from "@synapsestate/lease";
+import {
+  KEY_ROLE_VALUES,
+  KEY_STATUS_VALUES,
+  type KeyRole,
+  type KeyStatus,
+} from "@synapsestate/lease";
 import {
   EncryptedKeyfileSigner,
   getDefaultKeysDir,
+  validateKid,
 } from "../signer/encrypted-file.js";
 
 export interface KeyGenerateParams {
@@ -29,6 +35,36 @@ export interface KeyExportPublicParams {
 }
 
 /**
+ * Validates roles array against KEY_ROLE_VALUES.
+ */
+function validateRoles(roles: readonly KeyRole[]): void {
+  for (const r of roles) {
+    if (!KEY_ROLE_VALUES.includes(r)) {
+      throw new Error(
+        `Invalid key role "${r}". Must be one of: ${KEY_ROLE_VALUES.join(", ")}`,
+      );
+    }
+  }
+}
+
+/**
+ * Validates maxTtl bounds (1 to 86400 seconds).
+ */
+function validateMaxTtl(maxTtl: number): void {
+  if (
+    typeof maxTtl !== "number" ||
+    Number.isNaN(maxTtl) ||
+    !Number.isInteger(maxTtl) ||
+    maxTtl <= 0 ||
+    maxTtl > 86400
+  ) {
+    throw new Error(
+      `max-ttl must be a positive integer between 1 and 86400 seconds (got ${maxTtl})`,
+    );
+  }
+}
+
+/**
  * Generates an encrypted keyfile and outputs keyset configuration for Git PR.
  */
 export async function executeKeyGenerate(params: KeyGenerateParams): Promise<{
@@ -37,12 +73,23 @@ export async function executeKeyGenerate(params: KeyGenerateParams): Promise<{
   publicKeyHex: string;
   snippet: Record<string, unknown>;
 }> {
+  validateKid(params.kid);
+
   const password =
     params.password ?? process.env.SYNAPSE_KEY_PASSWORD ?? "";
 
   const outDir = params.dir
     ? path.resolve(params.dir)
     : getDefaultKeysDir();
+
+  const roles =
+    params.roles && params.roles.length > 0
+      ? params.roles
+      : (["lease_signer"] as KeyRole[]);
+  validateRoles(roles);
+
+  const maxTtl = params.maxTtl ?? 3600;
+  validateMaxTtl(maxTtl);
 
   const { signer, filePath, publicKeyHex } =
     await EncryptedKeyfileSigner.generate({
@@ -52,17 +99,12 @@ export async function executeKeyGenerate(params: KeyGenerateParams): Promise<{
       overwrite: params.overwrite,
     });
 
-  const roles =
-    params.roles && params.roles.length > 0
-      ? params.roles
-      : (["lease_signer"] as KeyRole[]);
-
   const snippet = {
     [signer.kid]: {
       public_key: publicKeyHex,
       roles,
       status: "active",
-      ...(params.maxTtl ? { max_ttl_seconds: params.maxTtl } : {}),
+      max_ttl_seconds: maxTtl,
     },
   };
 
@@ -94,6 +136,7 @@ export async function executeKeyExportPublic(
   if (params.file) {
     targetFile = path.resolve(params.file);
   } else if (params.kid) {
+    validateKid(params.kid);
     const dir = params.dir
       ? path.resolve(params.dir)
       : getDefaultKeysDir();
@@ -101,6 +144,27 @@ export async function executeKeyExportPublic(
   } else {
     throw new Error("Either --kid or --file must be specified for export-public");
   }
+
+  const format = params.format ?? "json";
+  if (format !== "json" && format !== "yaml") {
+    throw new Error(`Unsupported format "${format}". Must be "json" or "yaml".`);
+  }
+
+  const roles =
+    params.roles && params.roles.length > 0
+      ? params.roles
+      : (["lease_signer"] as KeyRole[]);
+  validateRoles(roles);
+
+  const status = params.status ?? "active";
+  if (!KEY_STATUS_VALUES.includes(status)) {
+    throw new Error(
+      `Invalid key status "${status}". Must be one of: ${KEY_STATUS_VALUES.join(", ")}`,
+    );
+  }
+
+  const maxTtl = params.maxTtl ?? 3600;
+  validateMaxTtl(maxTtl);
 
   try {
     await fs.access(targetFile);
@@ -110,23 +174,18 @@ export async function executeKeyExportPublic(
 
   const meta = await EncryptedKeyfileSigner.readMetadata(targetFile);
 
-  const roles =
-    params.roles && params.roles.length > 0
-      ? params.roles
-      : (["lease_signer"] as KeyRole[]);
-
   const entry = {
     public_key: meta.publicKey,
     roles,
-    status: params.status ?? "active",
-    ...(params.maxTtl ? { max_ttl_seconds: params.maxTtl } : {}),
+    status,
+    max_ttl_seconds: maxTtl,
   };
 
   const snippet = {
     [meta.kid]: entry,
   };
 
-  if (params.format === "yaml") {
+  if (format === "yaml") {
     return YAML.stringify(snippet);
   }
 
@@ -145,7 +204,10 @@ export function registerKeyCommands(program: Command): void {
     .command("generate")
     .description("Generate a new Ed25519 keypair encrypted with AES-256-GCM + scrypt")
     .requiredOption("-k, --kid <kid>", "Key identifier (e.g. alice-oncall-sre)")
-    .option("-p, --password <password>", "Passphrase for AES-256-GCM keyfile encryption")
+    .option(
+      "-p, --password <password>",
+      "Passphrase for AES-256-GCM keyfile encryption (WARNING: CLI arguments may be visible in process listings; prefer SYNAPSE_KEY_PASSWORD environment variable)",
+    )
     .option("-d, --dir <dir>", "Output directory for keyfile (defaults to ~/.synapse/keys)")
     .option(
       "-r, --roles <roles...>",

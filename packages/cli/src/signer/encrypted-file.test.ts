@@ -192,6 +192,91 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
         }),
       ).rejects.toThrow(/failed to decrypt|unsupported state/i);
     });
+
+    it("rejects empty or whitespace password in load()", async () => {
+      const kid = "empty-pwd-test";
+      const { filePath } = await EncryptedKeyfileSigner.generate({
+        kid,
+        password: "valid-passphrase-123!",
+        outDir: tempDir,
+      });
+
+      await expect(
+        EncryptedKeyfileSigner.load({
+          filePath,
+          password: "",
+        }),
+      ).rejects.toThrow(/passphrase cannot be empty/i);
+
+      await expect(
+        EncryptedKeyfileSigner.load({
+          filePath,
+          password: "   ",
+        }),
+      ).rejects.toThrow(/passphrase cannot be empty/i);
+    });
+
+    it("rejects downgraded or unsupported KDF parameters (KDF pinning)", async () => {
+      const kid = "downgrade-test";
+      const { filePath } = await EncryptedKeyfileSigner.generate({
+        kid,
+        password: "password123!",
+        outDir: tempDir,
+      });
+
+      const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
+      // Simulate downgrade attack with N=1024
+      raw.kdf.params.N = 1024;
+      await fs.writeFile(filePath, JSON.stringify(raw), "utf8");
+
+      await expect(
+        EncryptedKeyfileSigner.load({
+          filePath,
+          password: "password123!",
+        }),
+      ).rejects.toThrow(/unsupported or invalid kdf parameters/i);
+    });
+
+    it("rejects invalid salt, iv, or tag lengths in load()", async () => {
+      const kid = "invalid-lengths-test";
+      const { filePath } = await EncryptedKeyfileSigner.generate({
+        kid,
+        password: "password123!",
+        outDir: tempDir,
+      });
+
+      const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
+      raw.cipher.iv = Buffer.from("short").toString("base64url"); // 5 bytes instead of 12
+      await fs.writeFile(filePath, JSON.stringify(raw), "utf8");
+
+      await expect(
+        EncryptedKeyfileSigner.load({
+          filePath,
+          password: "password123!",
+        }),
+      ).rejects.toThrow(/invalid cipher or kdf component length/i);
+    });
+
+    it("verifies public_key in file matches decrypted private key (defense-in-depth)", async () => {
+      const kid = "pubkey-tamper-test";
+      const { filePath } = await EncryptedKeyfileSigner.generate({
+        kid,
+        password: "password123!",
+        outDir: tempDir,
+      });
+
+      const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
+      // Swap out public_key in unencrypted header with a fake 64-char hex key
+      raw.public_key = "00".repeat(32);
+      await fs.writeFile(filePath, JSON.stringify(raw), "utf8");
+
+      await expect(
+        EncryptedKeyfileSigner.load({
+          filePath,
+          password: "password123!",
+        }),
+      ).rejects.toThrow(/public key in keyfile header does not match decrypted private key/i);
+    });
   });
 
   describe("Signing & Verification", () => {
@@ -238,6 +323,31 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
       expect(meta.kid).toBe(kid);
       expect(meta.publicKey).toBe(publicKeyHex);
       expect(meta.createdAt).toBeDefined();
+    });
+
+    it("readMetadata rejects corrupted JSON or invalid public key hex", async () => {
+      const corruptFile = path.join(tempDir, "corrupted.key");
+      await fs.writeFile(corruptFile, "{not-json", "utf8");
+
+      await expect(
+        EncryptedKeyfileSigner.readMetadata(corruptFile),
+      ).rejects.toThrow(/failed to parse keyfile json/i);
+
+      const invalidKeyFile = path.join(tempDir, "invalid-key.key");
+      await fs.writeFile(
+        invalidKeyFile,
+        JSON.stringify({
+          v: 1,
+          kid: "test-kid",
+          public_key: "not-a-valid-hex-key",
+          created_at: new Date().toISOString(),
+        }),
+        "utf8",
+      );
+
+      await expect(
+        EncryptedKeyfileSigner.readMetadata(invalidKeyFile),
+      ).rejects.toThrow(/invalid ed25519 public key format/i);
     });
 
     it("enforces POSIX 0600 mode and fails if group or other accessible", async () => {
