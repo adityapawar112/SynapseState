@@ -44,6 +44,7 @@ describe("CLI Program Entrypoint (packages/cli/src/index.ts)", () => {
     const metaUrl = "file:///C:/projects/synapsestate/packages/cli/dist/index.js";
     expect(isMainModule(metaUrl, "C:\\projects\\synapsestate\\packages\\cli\\dist\\index.js")).toBe(true);
     expect(isMainModule(metaUrl, "C:/projects/synapsestate/packages/cli/dist/index.js")).toBe(true);
+    expect(isMainModule(metaUrl, "C:/projects/other-pkg/dist/index.js")).toBe(false);
     expect(isMainModule(metaUrl, "/usr/local/bin/synapse")).toBe(true);
     expect(isMainModule(metaUrl, "other-script.js")).toBe(false);
     expect(isMainModule(metaUrl, undefined)).toBe(false);

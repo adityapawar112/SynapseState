@@ -92,4 +92,8 @@ export {
 } from "./keyset.js";
 
 // ULID Generation
-export { generateUlid, MAX_ULID_TIME_MS } from "./ulid.js";
+export {
+  generateUlid,
+  MAX_ULID_TIME_MS,
+  resetUlidMonotonicStateForTest,
+} from "./ulid.js";

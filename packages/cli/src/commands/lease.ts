@@ -596,6 +596,8 @@ export async function executeLeaseList(
   const nowWall = Date.now();
   const nowMono = performance.now();
   for (const lease of activeLeases) {
+    // In CLI listing, firstSeenMonoMs is initialized to nowMono so that wall-clock
+    // expiry and skew grace bounds dominate, since the CLI has no persistent process incarnation.
     const eval_ = evaluateLeaseExpiry({
       issuedAt: lease.payload.issued_at,
       ttlSeconds: lease.payload.ttl_seconds,
@@ -756,9 +758,12 @@ export async function executeLeaseEmergencyApply(
   const envelope = await signLeaseWithSigner(payload, signer);
 
   const namespace = params.namespace ?? "default";
-  if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(namespace)) {
+  if (
+    namespace.length > 63 ||
+    !/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(namespace)
+  ) {
     throw new Error(
-      `Invalid Kubernetes namespace "${namespace}". Must be a valid DNS-1123 label (lowercase alphanumeric and hyphens).`,
+      `Invalid Kubernetes namespace "${namespace}". Must be a valid DNS-1123 label (lowercase alphanumeric and hyphens, max 63 characters).`,
     );
   }
 

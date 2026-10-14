@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ULID_REGEX, generateUlid, MAX_ULID_TIME_MS } from "./index.js";
+import {
+  ULID_REGEX,
+  generateUlid,
+  MAX_ULID_TIME_MS,
+  resetUlidMonotonicStateForTest,
+} from "./index.js";
 
 describe("generateUlid in @synapsestate/lease", () => {
   it("generates valid 26-character Crockford Base32 ULIDs matching ULID_REGEX", () => {
@@ -46,6 +51,16 @@ describe("generateUlid in @synapsestate/lease", () => {
       expect(ids[i - 1].slice(0, 10)).toBe(ids[i].slice(0, 10));
       expect(ids[i - 1] < ids[i]).toBe(true);
     }
+  });
+
+  it("preserves strict monotonic ordering even if system clock regresses backward", () => {
+    resetUlidMonotonicStateForTest();
+    const t0 = 1791661389800;
+    const id1 = generateUlid(t0);
+    // Clock jumps 100ms backward
+    const id2 = generateUlid(t0 - 100);
+    // id2 must still sort strictly after id1
+    expect(id1 < id2).toBe(true);
   });
 });
 

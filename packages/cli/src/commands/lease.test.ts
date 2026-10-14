@@ -728,6 +728,19 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
           password: keyPassword,
         }),
       ).rejects.toThrow(/Invalid Kubernetes namespace/);
+
+      await expect(
+        executeLeaseEmergencyApply({
+          env: "production",
+          flag: "search-v3",
+          value: "true",
+          reason: "testing long namespace",
+          namespace: "a".repeat(64),
+          kid: testKid,
+          keyFile: keyFilePath,
+          password: keyPassword,
+        }),
+      ).rejects.toThrow(/max 63 characters/);
     });
 
     it("returns both writtenPath and appliedPath when outFile and apply are both set", async () => {

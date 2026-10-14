@@ -33,8 +33,10 @@ export function generateUlid(nowMs: number = Date.now()): string {
   let time = Math.floor(nowMs);
   let bytes: Uint8Array;
 
-  if (time === lastTimeMs) {
-    // Increment the 80-bit big-endian counter
+  if (time <= lastTimeMs) {
+    // If called in same millisecond or clock moved backward (NTP regression),
+    // clamp to lastTimeMs and increment 80-bit counter to preserve strict monotonic ordering
+    time = lastTimeMs;
     let carry = 1;
     for (let i = 9; i >= 0 && carry > 0; i--) {
       const sum = lastRand[i] + carry;

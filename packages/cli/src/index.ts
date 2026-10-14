@@ -31,9 +31,11 @@ export function isMainModule(
   try {
     const currentPath = fileURLToPath(metaUrl);
     const resolvedArgv = path.resolve(argv1);
+    const normalizedArgv = resolvedArgv.replace(/\\/g, "/");
     return (
       currentPath === resolvedArgv ||
-      resolvedArgv.replace(/\\/g, "/").endsWith("/dist/index.js") ||
+      normalizedArgv.endsWith("/packages/cli/dist/index.js") ||
+      normalizedArgv.endsWith("/cli/dist/index.js") ||
       resolvedArgv.endsWith("synapse") ||
       resolvedArgv.endsWith("synapse.exe")
     );
