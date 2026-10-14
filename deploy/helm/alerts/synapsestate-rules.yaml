@@ -10,6 +10,7 @@ groups:
       # Fast Burn: 14.4x rate (burns 2% of 30d error budget in 1 hour)
       # Long window: 1h, Short window: 5m (1/12th)
       # Threshold: 14.4 * 0.005 = 0.072 (7.2% error rate)
+      # Traffic floor guard: > 0.03 req/s prevents flapping on idle clusters during 304 long-poll quiet periods
       # Severity: critical (Immediate PagerDuty response)
       - alert: SynapseStateApiAvailabilityFastBurn
         expr: >-
@@ -26,6 +27,10 @@ groups:
             sum(rate(synapse_state_poll_duration_seconds_count[5m]))
             > (14.4 * 0.005)
           )
+          and
+          (
+            sum(rate(synapse_state_poll_duration_seconds_count[5m])) > 0.03
+          )
         for: 2m
         labels:
           severity: critical
@@ -40,6 +45,7 @@ groups:
       # Slow Burn: 6x rate (burns 5% of 30d error budget in 6 hours)
       # Long window: 6h, Short window: 30m (1/12th)
       # Threshold: 6 * 0.005 = 0.030 (3.0% error rate)
+      # Traffic floor guard: > 0.03 req/s prevents flapping on idle clusters during 304 long-poll quiet periods
       # Severity: warning (Business hours ticket response)
       - alert: SynapseStateApiAvailabilitySlowBurn
         expr: >-
@@ -55,6 +61,10 @@ groups:
             /
             sum(rate(synapse_state_poll_duration_seconds_count[30m]))
             > (6 * 0.005)
+          )
+          and
+          (
+            sum(rate(synapse_state_poll_duration_seconds_count[30m])) > 0.03
           )
         for: 5m
         labels:
@@ -132,7 +142,7 @@ groups:
         expr: sum(synapse_leases_active) > 0
         for: 30m
         labels:
-          severity: info
+          severity: warning
           component: leases
         annotations:
           summary: "Active break-glass emergency leases detected for > 30 minutes"

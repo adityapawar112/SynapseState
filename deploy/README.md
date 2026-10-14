@@ -105,16 +105,16 @@ Production SRE dashboard structured into 4 operational domains:
 1. **Active Incident & Overrides Overview:**
    - Stat: `synapse_leases_active{env}` — active break-glass leases per environment (target: 0 in steady state).
    - Timeseries: `sum by (from, to) (rate(synapse_lease_transitions_total[5m]))` — lifecycle state transitions rate.
-   - Table: Active leases and transition event volume breakdown.
+   - Table: Active leases and transition event volume breakdown. *Note on TTL countdowns:* Per-lease remaining TTL is intentionally omitted from Prometheus metrics to adhere strictly to Invariant 5 (bounded cardinality without `lease_id` series). Operators inspect per-lease expiration and TTL status via `synapse lease list`.
 2. **SLO & Latency Performance:**
    - Timeseries: Histogram quantiles ($p50, p95, p99$) of `synapse_lease_propagation_seconds` with a $10\text{s}$ threshold marker (Target SLO: $p95 \le 10\text{s}$).
-   - Timeseries: State poll request rate and $p95$ duration grouped by HTTP status code (`synapse_state_poll_duration_seconds`).
+   - Timeseries: Dual-axis state poll request rate (req/s) and $p95$ duration (s) grouped by HTTP status code (`synapse_state_poll_duration_seconds`).
 3. **Audit Ledger Health:**
    - Gauge: `synapse_audit_pending_queue_size` — depth of unsealed events in `audit_pending`.
    - Gauge / Timeseries: `synapse_audit_pending_age_seconds` — oldest unsealed event age (stall threshold: $30\text{s}$).
    - Stat: `synapse_audit_chain_length` — monotonic SHA-256 sealed ledger height.
 4. **Client SDK Fleet Health:**
-   - Timeseries: `max(synapse_sdk_state_age_seconds)` (threshold $60\text{s}$) & `max(synapse_sdk_keyset_age_seconds)` (ceiling $900\text{s} / 15\text{m}$).
+   - Timeseries: `max(synapse_sdk_state_age_seconds)` (threshold $60\text{s}$) & `max(synapse_sdk_keyset_age_seconds)` (ceiling $900\text{s} / 15\text{m}$). Note: `max()` measures the worst-case instance across the fleet per ARCH §11.
    - Timeseries: `sum(rate(synapse_sdk_poll_errors_total[5m]))` and `sum(rate(synapse_sdk_telemetry_dropped_total[5m]))`.
    - Stat: `sum(synapse_sdk_active_overrides)` — active in-memory overrides across fleet.
 
@@ -124,10 +124,13 @@ Implements Google SRE Workbook Chapter 5 standards for State API availability SL
 
 - **Fast Burn (`SynapseStateApiAvailabilityFastBurn`):**
   - Burns 2% of 30-day budget in 1 hour ($14.4\times$ burn rate factor $\implies 7.2\%$ error rate).
-  - Evaluates both short (5m) and long (1h) windows. Severity: `critical`.
+  - Evaluates both short (5m) and long (1h) windows.
+  - Includes a low-traffic floor guard (`sum(rate(..._count[5m])) > 0.03 req/s`) preventing false alerts on idle clusters during 304 long-poll quiet periods.
+  - Severity: `critical` (Immediate on-call page).
 - **Slow Burn (`SynapseStateApiAvailabilitySlowBurn`):**
   - Burns 5% of 30-day budget in 6 hours ($6\times$ burn rate factor $\implies 3.0\%$ error rate).
-  - Evaluates both short (30m) and long (6h) windows. Severity: `warning`.
+  - Evaluates both short (30m) and long (6h) windows with low-traffic floor guard (`> 0.03 req/s`).
+  - Severity: `warning` (Business hours ticket).
 - **Lease Propagation Lag (`SynapseLeasePropagationDegraded`):**
   - Fires when $p95$ of `synapse_lease_propagation_seconds > 10\text{s}$ for $> 5\text{m}$. Severity: `warning`.
 - **Audit Sealer Stalled (`SynapseAuditSealerLagging`):**
@@ -136,7 +139,7 @@ Implements Google SRE Workbook Chapter 5 standards for State API availability SL
   - `SynapseStateStale`: Fires when `synapse_sdk_state_age_seconds > 60` for $> 5\text{m}$. Severity: `warning`.
   - `SynapseKeysetStale`: Fires when `synapse_sdk_keyset_age_seconds > 900` ($15\text{m}$). Severity: `critical`.
 - **Active Emergency Leases (`SynapseActiveEmergencyLeases`):**
-  - Informational alert when break-glass leases remain active for $> 30\text{m}$, prompting GitOps PR promotion.
+  - Hygiene alert when break-glass leases remain active for $> 30\text{m}$, prompting GitOps PR promotion. Severity: `warning` (ensures Alertmanager notification routes handle the alert).
 
 ### Helm Integration Options (`values.yaml`)
 

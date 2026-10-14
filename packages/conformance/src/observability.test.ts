@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import yaml from "yaml";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -13,6 +14,14 @@ const ALERTS_PATH = path.join(
   "deploy/helm/alerts/synapsestate-rules.yaml",
 );
 const CONTROL_API_CHART_PATH = path.join(REPO_ROOT, "deploy/helm/control-api");
+
+let isHelmAvailable = false;
+try {
+  execSync("helm version", { stdio: "ignore" });
+  isHelmAvailable = true;
+} catch {
+  isHelmAvailable = false;
+}
 
 // Invariant 5: Cardinality boundary constants
 const ALLOWED_METRIC_LABELS = new Set([
@@ -212,6 +221,7 @@ describe("Phase 3 PR 13: Observability Dashboards & Alertmanager Rules", () => {
       expect(alertNames).toContain("SynapseAuditSealerLagging");
       expect(alertNames).toContain("SynapseStateStale");
       expect(alertNames).toContain("SynapseKeysetStale");
+      expect(alertNames).toContain("SynapseActiveEmergencyLeases");
     });
 
     it("verifies Multi-Window Multi-Burn-Rate mathematical correctness for 99.5% SLO", () => {
@@ -236,6 +246,7 @@ describe("Phase 3 PR 13: Observability Dashboards & Alertmanager Rules", () => {
       expect(fastBurn.expr).toContain("5m");
       expect(fastBurn.expr).toMatch(/(14\.4\s*\*\s*0\.005|0\.072)/);
       expect(fastBurn.expr.toLowerCase()).toContain("and");
+      expect(fastBurn.expr).toContain("> 0.03");
 
       // 2. Slow Burn: 6x burn rate (consumes 5% in 6 hours)
       // 6 * 0.005 = 0.030 (3.0% error rate threshold)
@@ -250,6 +261,7 @@ describe("Phase 3 PR 13: Observability Dashboards & Alertmanager Rules", () => {
       expect(slowBurn.expr).toContain("30m");
       expect(slowBurn.expr).toMatch(/(6\s*\*\s*0\.005|0\.030|0\.03)/);
       expect(slowBurn.expr.toLowerCase()).toContain("and");
+      expect(slowBurn.expr).toContain("> 0.03");
     });
 
     it("verifies lease propagation degradation alert matches p95 <= 10s SLO", () => {
@@ -311,6 +323,23 @@ describe("Phase 3 PR 13: Observability Dashboards & Alertmanager Rules", () => {
       expect(keysetStale.labels.severity).toBe("critical");
     });
 
+    it("verifies active emergency leases hygiene alert (SynapseActiveEmergencyLeases)", () => {
+      const raw = fs.readFileSync(ALERTS_PATH, "utf-8");
+      const parsed = yaml.parse(raw);
+      const group = parsed.groups.find(
+        (g: { name: string }) => g.name === "synapsestate-slo-alerts",
+      );
+      const rule = group.rules.find(
+        (r: { alert?: string }) => r.alert === "SynapseActiveEmergencyLeases",
+      );
+
+      expect(rule).toBeDefined();
+      expect(rule.expr).toContain("sum(synapse_leases_active) > 0");
+      expect(rule.for).toBe("30m");
+      expect(rule.labels.severity).toBe("warning");
+      expect(rule.labels.component).toBe("leases");
+    });
+
     it("Metric Cardinality Audit (Invariant 5): zero high-cardinality labels in alert expressions", () => {
       const raw = fs.readFileSync(ALERTS_PATH, "utf-8");
       const parsed = yaml.parse(raw);
@@ -357,67 +386,114 @@ describe("Phase 3 PR 13: Observability Dashboards & Alertmanager Rules", () => {
       expect(hasAlertsOrRuleTemplate).toBe(true);
     });
 
-    it("renders dashboard ConfigMap by default and omits it when disabled via helm template", async () => {
-      const { execSync } = await import("node:child_process");
+    it.skipIf(!isHelmAvailable)(
+      "renders dashboard ConfigMap by default and omits it when disabled via helm template",
+      async () => {
+        // 1. Default render should include dashboard ConfigMap
+        const defaultOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}"`,
+          { encoding: "utf-8" },
+        );
+        expect(defaultOutput).toContain("kind: ConfigMap");
+        expect(defaultOutput).toContain("test-rel-control-api-dashboard");
+        expect(defaultOutput).toContain("synapsestate-operations.json");
 
-      // 1. Default render should include dashboard ConfigMap
-      const defaultOutput = execSync(
-        `helm template test-rel "${CONTROL_API_CHART_PATH}"`,
-        { encoding: "utf-8" },
-      );
-      expect(defaultOutput).toContain("kind: ConfigMap");
-      expect(defaultOutput).toContain("test-rel-control-api-dashboard");
-      expect(defaultOutput).toContain("synapsestate-operations.json");
+        // 2. Disabled render should omit dashboard ConfigMap
+        const disabledOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}" --set monitoring.dashboards.enabled=false`,
+          { encoding: "utf-8" },
+        );
+        expect(disabledOutput).not.toContain("test-rel-control-api-dashboard");
+      },
+    );
 
-      // 2. Disabled render should omit dashboard ConfigMap
-      const disabledOutput = execSync(
-        `helm template test-rel "${CONTROL_API_CHART_PATH}" --set monitoring.dashboards.enabled=false`,
-        { encoding: "utf-8" },
+    it.skipIf(!isHelmAvailable)(
+      "renders PrometheusRule CRD conditionally when monitoring.prometheusRule.enabled=true",
+      async () => {
+        // 1. Disabled by default
+        const defaultOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}"`,
+          { encoding: "utf-8" },
+        );
+        expect(defaultOutput).not.toContain("kind: PrometheusRule");
+        expect(defaultOutput).not.toContain("test-rel-control-api-alerts");
+
+        // 2. Enabled renders PrometheusRule
+        const enabledOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}" --set monitoring.prometheusRule.enabled=true`,
+          { encoding: "utf-8" },
+        );
+        expect(enabledOutput).toContain("kind: PrometheusRule");
+        expect(enabledOutput).toContain("test-rel-control-api-alerts");
+        expect(enabledOutput).toContain("SynapseStateApiAvailabilityFastBurn");
+        expect(enabledOutput).toContain("SynapseLeasePropagationDegraded");
+      },
+    );
+
+    it.skipIf(!isHelmAvailable)(
+      "renders alerts ConfigMap conditionally when monitoring.alertsConfigMap.enabled=true",
+      async () => {
+        // 1. Disabled by default
+        const defaultOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}"`,
+          { encoding: "utf-8" },
+        );
+        expect(defaultOutput).not.toContain("synapsestate-rules.yaml");
+
+        // 2. Enabled renders ConfigMap with synapsestate-rules.yaml
+        const enabledOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}" --set monitoring.alertsConfigMap.enabled=true`,
+          { encoding: "utf-8" },
+        );
+        expect(enabledOutput).toContain("kind: ConfigMap");
+        expect(enabledOutput).toContain("test-rel-control-api-alerts");
+        expect(enabledOutput).toContain("synapsestate-rules.yaml");
+        expect(enabledOutput).toContain("synapsestate-slo-alerts");
+      },
+    );
+  });
+
+  describe("Source of Truth Integrity (Drift Guard)", () => {
+    it("ensures Helm chart embedded dashboard is byte-identical to canonical dashboard", () => {
+      const canonicalPath = path.join(
+        REPO_ROOT,
+        "deploy/helm/dashboards/synapsestate-operations.json",
       );
-      expect(disabledOutput).not.toContain("test-rel-control-api-dashboard");
+      const chartPath = path.join(
+        CONTROL_API_CHART_PATH,
+        "dashboards/synapsestate-operations.json",
+      );
+      expect(fs.existsSync(canonicalPath)).toBe(true);
+      expect(fs.existsSync(chartPath)).toBe(true);
+
+      const canonicalContent = fs
+        .readFileSync(canonicalPath, "utf-8")
+        .replace(/\r\n/g, "\n");
+      const chartContent = fs
+        .readFileSync(chartPath, "utf-8")
+        .replace(/\r\n/g, "\n");
+      expect(chartContent).toBe(canonicalContent);
     });
 
-    it("renders PrometheusRule CRD conditionally when monitoring.prometheusRule.enabled=true", async () => {
-      const { execSync } = await import("node:child_process");
-
-      // 1. Disabled by default
-      const defaultOutput = execSync(
-        `helm template test-rel "${CONTROL_API_CHART_PATH}"`,
-        { encoding: "utf-8" },
+    it("ensures Helm chart embedded alert rules are byte-identical to canonical alert rules", () => {
+      const canonicalPath = path.join(
+        REPO_ROOT,
+        "deploy/helm/alerts/synapsestate-rules.yaml",
       );
-      expect(defaultOutput).not.toContain("kind: PrometheusRule");
-      expect(defaultOutput).not.toContain("test-rel-control-api-alerts");
-
-      // 2. Enabled renders PrometheusRule
-      const enabledOutput = execSync(
-        `helm template test-rel "${CONTROL_API_CHART_PATH}" --set monitoring.prometheusRule.enabled=true`,
-        { encoding: "utf-8" },
+      const chartPath = path.join(
+        CONTROL_API_CHART_PATH,
+        "alerts/synapsestate-rules.yaml",
       );
-      expect(enabledOutput).toContain("kind: PrometheusRule");
-      expect(enabledOutput).toContain("test-rel-control-api-alerts");
-      expect(enabledOutput).toContain("SynapseStateApiAvailabilityFastBurn");
-      expect(enabledOutput).toContain("SynapseLeasePropagationDegraded");
-    });
+      expect(fs.existsSync(canonicalPath)).toBe(true);
+      expect(fs.existsSync(chartPath)).toBe(true);
 
-    it("renders alerts ConfigMap conditionally when monitoring.alertsConfigMap.enabled=true", async () => {
-      const { execSync } = await import("node:child_process");
-
-      // 1. Disabled by default
-      const defaultOutput = execSync(
-        `helm template test-rel "${CONTROL_API_CHART_PATH}"`,
-        { encoding: "utf-8" },
-      );
-      expect(defaultOutput).not.toContain("synapsestate-rules.yaml");
-
-      // 2. Enabled renders ConfigMap with synapsestate-rules.yaml
-      const enabledOutput = execSync(
-        `helm template test-rel "${CONTROL_API_CHART_PATH}" --set monitoring.alertsConfigMap.enabled=true`,
-        { encoding: "utf-8" },
-      );
-      expect(enabledOutput).toContain("kind: ConfigMap");
-      expect(enabledOutput).toContain("test-rel-control-api-alerts");
-      expect(enabledOutput).toContain("synapsestate-rules.yaml");
-      expect(enabledOutput).toContain("synapsestate-slo-alerts");
+      const canonicalContent = fs
+        .readFileSync(canonicalPath, "utf-8")
+        .replace(/\r\n/g, "\n");
+      const chartContent = fs
+        .readFileSync(chartPath, "utf-8")
+        .replace(/\r\n/g, "\n");
+      expect(chartContent).toBe(canonicalContent);
     });
   });
 });

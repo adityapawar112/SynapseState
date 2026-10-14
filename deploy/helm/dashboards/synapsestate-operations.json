@@ -21,6 +21,7 @@
   "id": null,
   "links": [],
   "liveNow": false,
+  "refresh": "30s",
   "panels": [
     {
       "collapsed": false,
@@ -199,7 +200,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Active emergency lease breakdown per environment with recent transition event counts.",
+      "description": "Active emergency lease breakdown per environment with recent transition event counts. Note: per-lease TTL countdown omitted by design (Invariant 5 cardinality); use 'synapse lease list' for per-lease TTL.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -473,7 +474,28 @@
           },
           "unit": "reqps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/p95/"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "p95 Latency (s)"
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -502,9 +524,20 @@
           },
           "editorMode": "code",
           "expr": "sum by (status_code) (rate(synapse_state_poll_duration_seconds_count[5m]))",
-          "legendFormat": "HTTP {{status_code}}",
+          "legendFormat": "HTTP {{status_code}} Rate",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(synapse_state_poll_duration_seconds_bucket[5m])) by (le, status_code))",
+          "legendFormat": "HTTP {{status_code}} p95",
+          "range": true,
+          "refId": "B"
         }
       ],
       "title": "State Poll Duration & Request Rate by Status Code",
@@ -769,7 +802,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Maximum elapsed time across client SDK instances since last state sync (synapse_sdk_state_age_seconds, threshold 60s) and last keyset read (synapse_sdk_keyset_age_seconds, ceiling 900s / 15m).",
+      "description": "Maximum elapsed time across client SDK instances since last state sync (synapse_sdk_state_age_seconds, threshold 60s) and last keyset read (synapse_sdk_keyset_age_seconds, ceiling 900s / 15m). Note: max() reflects the worst instance across the fleet; see ARCH §11.",
       "fieldConfig": {
         "defaults": {
           "color": {
