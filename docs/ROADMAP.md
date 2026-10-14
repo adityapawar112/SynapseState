@@ -157,7 +157,7 @@ gantt
   * **PR 14 (`test/load-k6-benchmarks`):** `test(load): k6 long-polling load harness and documented saturation limits` — `load/k6/*`
 * **Security & Best Practice Review Checkpoints:**
   * **Metric Cardinality Audit:** Ensure no high-cardinality labels (user IDs, context keys, lease IDs) are exposed in Prometheus metrics. Only bounded dimensions (`env`, `status_code`, `reason`).
-  * **Multi-Window Multi-Burn-Rate Verification:** Verify Alertmanager SLO rule formulas (14.4x 1h/6h, 6x 6h/3d) against Google SRE alerting standards without flapping.
+  * **Multi-Window Multi-Burn-Rate Verification:** Verify Alertmanager SLO rule formulas (14.4x 1h/5m, 6x 6h/30m) against Google SRE alerting standards without flapping.
 * **Definition of Done:** Working Grafana dashboard with real firing alert screenshots; published SLO verification report with measured numbers.
 
 ---
