@@ -1,0 +1,166 @@
+{
+  "profiles": {
+    "smoke": {
+      "long_polling": {
+        "executor": "constant-vus",
+        "vus": 5,
+        "duration": "30s"
+      },
+      "telemetry": {
+        "executor": "constant-vus",
+        "vus": 2,
+        "duration": "30s"
+      },
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "constant-vus",
+            "vus": 5,
+            "duration": "30s",
+            "exec": "pollState",
+            "gracefulStop": "5s"
+          },
+          "telemetry_flushers": {
+            "executor": "constant-vus",
+            "vus": 2,
+            "duration": "30s",
+            "exec": "flushTelemetry",
+            "gracefulStop": "5s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "30s",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
+          }
+        }
+      }
+    },
+    "average_load": {
+      "long_polling": {
+        "executor": "constant-vus",
+        "vus": 100,
+        "duration": "2m"
+      },
+      "telemetry": {
+        "executor": "ramping-vus",
+        "startVUs": 5,
+        "stages": [
+          { "duration": "30s", "target": 20 },
+          { "duration": "1m", "target": 20 },
+          { "duration": "30s", "target": 0 }
+        ]
+      },
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "constant-vus",
+            "vus": 100,
+            "duration": "2m",
+            "exec": "pollState",
+            "gracefulStop": "10s"
+          },
+          "telemetry_flushers": {
+            "executor": "constant-vus",
+            "vus": 20,
+            "duration": "2m",
+            "exec": "flushTelemetry",
+            "gracefulStop": "10s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "2m",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
+          }
+        }
+      }
+    },
+    "stress": {
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "ramping-vus",
+            "startVUs": 20,
+            "stages": [
+              { "duration": "30s", "target": 100 },
+              { "duration": "1m", "target": 200 },
+              { "duration": "30s", "target": 250 },
+              { "duration": "30s", "target": 50 }
+            ],
+            "exec": "pollState",
+            "gracefulStop": "10s"
+          },
+          "telemetry_flushers": {
+            "executor": "ramping-vus",
+            "startVUs": 10,
+            "stages": [
+              { "duration": "30s", "target": 50 },
+              { "duration": "1m", "target": 100 },
+              { "duration": "30s", "target": 150 },
+              { "duration": "30s", "target": 10 }
+            ],
+            "exec": "flushTelemetry",
+            "gracefulStop": "10s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "2m30s",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
+          }
+        }
+      }
+    },
+    "spike": {
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "ramping-vus",
+            "startVUs": 10,
+            "stages": [
+              { "duration": "10s", "target": 10 },
+              { "duration": "10s", "target": 250 },
+              { "duration": "30s", "target": 250 },
+              { "duration": "10s", "target": 10 },
+              { "duration": "10s", "target": 10 }
+            ],
+            "exec": "pollState",
+            "gracefulStop": "10s"
+          },
+          "telemetry_flushers": {
+            "executor": "ramping-vus",
+            "startVUs": 5,
+            "stages": [
+              { "duration": "10s", "target": 5 },
+              { "duration": "10s", "target": 100 },
+              { "duration": "30s", "target": 100 },
+              { "duration": "10s", "target": 5 },
+              { "duration": "10s", "target": 5 }
+            ],
+            "exec": "flushTelemetry",
+            "gracefulStop": "10s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "1m10s",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
+          }
+        }
+      }
+    }
+  },
+  "thresholds": {
+    "synapse_lease_propagation_lag_ms": ["p(95)<=10000"],
+    "synapse_long_poll_duration_ms": ["p(95)<=32000"],
+    "synapse_long_poll_error_rate": ["rate<0.01"],
+    "synapse_telemetry_error_rate": ["rate<0.05"],
+    "synapse_bulkhead_isolation_violations": ["count===0"],
+    "http_req_failed": ["rate<0.05"]
+  }
+}

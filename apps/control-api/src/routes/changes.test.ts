@@ -158,8 +158,9 @@ describe("Change Events Feed Route (GET /v1/changes)", () => {
   });
 
   it("orders events deterministically by occurred_at DESC, id DESC", async () => {
-    const t0 = new Date("2026-10-13T08:00:00Z");
-    const t1 = new Date("2026-10-13T08:30:00Z");
+    const now = new Date();
+    const t0 = new Date(now.getTime() - 60 * 60 * 1000);
+    const t1 = new Date(now.getTime() - 30 * 60 * 1000);
 
     // Two events at t1, one event at t0
     await leasePool.query(

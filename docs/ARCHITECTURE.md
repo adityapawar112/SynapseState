@@ -650,31 +650,75 @@ A flag qualifies as a `stale_candidate` if and only if all five conditions hold:
 ## 11. Observability, SLOs & Incident Attribution
 
 ### 11.1 Prometheus Metrics Catalog
-- **Control API:**
-  - `synapse_leases_active{env}`: Number of currently active break-glass leases.
-  - `synapse_lease_transitions_total{from, to}`: State transition counter.
-  - `synapse_lease_propagation_seconds`: Histogram of propagation latency.
-  - `synapse_state_poll_duration_seconds`: Histogram of `/v1/sdk/state` request latency.
-  - `synapse_audit_pending_queue_size`: Depth of unsealed events in `audit_pending`.
-  - `synapse_audit_pending_age_seconds`: Age of the oldest unsealed event in `audit_pending` (alerts if > 30s).
-  - `synapse_audit_chain_length`: Monotonic counter of sealed audit events.
-- **Application SDK:**
-  - `synapse_sdk_state_age_seconds`: Age of the most recently applied state generation.
+- **Control API (`apps/control-api/src/metrics/*`):**
+  - `synapse_leases_active{env}`: Gauge of currently active break-glass emergency override leases.
+  - `synapse_lease_transitions_total{from, to}`: Counter of lease lifecycle state transitions (`PENDING -> ACTIVE`, `ACTIVE -> REVOKED`, etc.).
+  - `synapse_lease_propagation_seconds`: Histogram of end-to-end lease propagation latency between Control API and client workloads.
+  - `synapse_state_poll_duration_seconds{status_code}`: Histogram of `/v1/sdk/state` request latency across 200 (immediate update) and 304 (long-poll timeout).
+  - `synapse_audit_pending_queue_size`: Gauge of unsealed events in `audit_pending`.
+  - `synapse_audit_pending_age_seconds`: Gauge of the oldest unsealed event age in `audit_pending` (alerts if > 30s).
+  - `synapse_audit_chain_length`: Gauge of the total monotonic sealed audit chain length.
+- **Application SDK (`packages/sdk/src/metrics.ts`):**
+  - `synapse_sdk_state_age_seconds`: Age in seconds of the most recently applied state generation.
   - `synapse_sdk_keyset_age_seconds`: Elapsed time since the last successful keyset read from disk (alerts if > 15m).
   - `synapse_sdk_active_overrides`: Number of overrides currently applied in memory.
   - `synapse_sdk_poll_errors_total`: Counter of failed state poll requests.
   - `synapse_sdk_telemetry_dropped_total`: Counter of dropped telemetry batches.
 
-### 11.2 Service Level Objectives (SLOs)
+#### Metric Architecture & Cardinality Invariants
+1. **Strict Cardinality Audit (Invariant 5):** Prometheus labels are strictly bounded to low-cardinality dimensions (`env`, `status_code`, `reason`, `from`, `to`). High-cardinality values such as user IDs, targeting context attributes, and individual `lease_id` identifiers are **strictly prohibited** from metric labels. Per-lease remaining TTL countdowns are intentionally omitted from Prometheus gauge series and managed via CLI inspection (`synapse lease list`).
+2. **Scrape Throttling & Fail-Open Resilience:**
+   - The `/metrics` endpoint caches expensive database gauge queries (`leases`, `audit_pending`, `audit_events`) for 5 seconds (`REFRESH_THROTTLE_MS = 5000`) to protect PostgreSQL from scraper denial-of-service.
+   - If PostgreSQL is unreachable, the collector logs a warning and returns HTTP 200 with all in-memory instruments intact, ensuring monitoring scrapers never trigger false-positive 500 alert floods during database restarts.
+3. **Throwing Collector Protection:** Pluggable SDK metric callbacks are executed within defensive try/catch blocks (`KeysetWatcher.onKeysetUpdate`), guaranteeing that errors in third-party metrics collectors never bubble into the flag evaluation hot path.
 
-| Metric Boundary | Target Objective | Verification Strategy |
-|---|---|---|
-| **Lease Propagation Lag** | $p95 \le 10\text{ s}$ under long-polling | Measured via server-clock delta under k6 load tests. |
-| **Lease Lifetime Correctness** | **Zero** leases honored past `TTL + SKEW_TOLERANCE` | Validated via `fast-check` property tests and clock-skew chaos drills. |
-| **State API Availability** | 99.5% over 30 days (Single node) | Measured via blackbox probes. (SDKs fail-static; air-gapped fallback available). |
-| **Evaluation Path Safety** | 100% Availability (0 runtime crashes) | Automated exception handling falling through to delegate provider. |
+### 11.2 Service Level Objectives (SLOs) & Alert Rules
 
-### 11.3 Incident Attribution Engine ("What Changed?")
+| Metric Boundary | Target Objective | Verification Strategy | Runbook Reference |
+|---|---|---|---|
+| **State API Availability** | 99.5% over 30 days (Single node) | Google SRE Multi-Window Multi-Burn-Rate Alerts | [docs/runbooks/state-api-outage.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/state-api-outage.md) |
+| **Lease Propagation Lag** | $p95 \le 10\text{ s}$ under long-polling | Measured via server-clock delta under k6 load tests | [docs/runbooks/propagation-latency.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/propagation-latency.md) |
+| **Audit Sealer Latency** | Queue age $\le 30\text{ s}$ | Sealer cycle timer and database gauge threshold | [docs/runbooks/audit-sealer-lag.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/audit-sealer-lag.md) |
+| **SDK Keyset Freshness** | Keyset age $\le 15\text{ m}$ | Local disk keyset watcher staleness gauge | [docs/runbooks/sdk-staleness.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/sdk-staleness.md) |
+| **Lease Lifetime Correctness** | **Zero** leases honored past `TTL + SKEW_TOLERANCE` | Validated via `fast-check` property tests and clock-skew drills | Dual-clock monotonic bounds (Invariant 3) |
+| **Evaluation Path Safety** | 100% Availability (0 runtime crashes) | Automated exception handling falling through to delegate | Fail-safe hot path (Invariant 1) |
+
+#### Alertmanager Multi-Window Multi-Burn-Rate Implementation (`deploy/helm/alerts/`)
+To eliminate alerting fatigue and false alarms from single-window spikes, SynapseState implements Google SRE standard multi-window multi-burn-rate alerting for its 99.5% availability SLO ($0.5\%$ error budget):
+- **Critical Burn Alert (14.4x rate, consumes 2% error budget in 1 hour):**
+  - Requires simultaneous burn over both a 1-hour long window and a 5-minute short window:
+    `rate(synapse_state_poll_duration_seconds_count{status_code=~"5.."}[1h]) / ... > (14.4 * 0.005)` AND `...[5m] > (14.4 * 0.005)`.
+  - Severity: `critical` (immediate on-call paging).
+- **Warning Burn Alert (6.0x rate, consumes 5% error budget in 6 hours):**
+  - Requires simultaneous burn over both a 6-hour long window and a 30-minute short window:
+    `rate(...[6h]) > (6 * 0.005)` AND `...[30m] > (6 * 0.005)`.
+  - Severity: `warning` (ticket / next business day).
+- **Long-Poll Flapping & Traffic Floor Guard:**
+  - Because `/v1/sdk/state` relies on 30-second long-polling, traffic volume during quiet hours is low. To prevent low-volume request anomalies from tripping high burn rate percentages, all burn rate rules enforce a mandatory traffic floor filter:
+    `sum(rate(synapse_state_poll_duration_seconds_count[1h])) > 0.03`.
+
+### 11.3 Load Benchmarks, Saturation Limits & Bulkhead Verification (`load/k6/`)
+SynapseState validates its operational boundaries and concurrency limits via a Grafana k6 load-testing suite (`load/k6/`) and documented benchmark reports ([docs/benchmarks/load-test-report.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/benchmarks/load-test-report.md)):
+
+```
+[Load Test Architecture]
+- Concurrency: 100 concurrent Virtual Users (VUs) long-polling with ETag caching
+- Telemetry Throughput: 4,108 flag evaluations/sec across 20-50 concurrent client workers
+- Pool Bulkhead: leasePool (20 connections) vs telemetryPool (10 connections)
+```
+
+1. **Measured Performance vs SLO Targets:**
+   - **Lease Propagation Lag:** Measured $p95 = 0.462\text{ s}$ ($462\text{ ms}$), well within the $p95 \le 10\text{ s}$ SLO requirement.
+   - **Long-Polling Reliability:** $0.00\%$ request drop rate across all quiet-period 304 timeouts and instant 200 wake-up invalidations.
+   - **Telemetry Ingestion Throughput:** Sustained $4,108\text{ evals/sec}$ ($79\text{ batches/sec}$) with $0.00\%$ unhandled errors.
+2. **Bulkhead Pool Isolation:**
+   - Under extreme telemetry ingestion stress, the dedicated `telemetryPool` gracefully sheds load via `HTTP 429 Too Many Requests`.
+   - The primary `leasePool` remains completely unstarved: `synapse_bulkhead_isolation_violations` remains strictly **0**, ensuring emergency lease operations and state delivery never degrade during telemetry surges.
+3. **Documented First Saturation Bottleneck:**
+   - Control API event-loop latency and memory remain stable under high concurrency.
+   - The first saturation bottleneck occurs at PostgreSQL connection pool exhaustion during concurrent telemetry batch flushes. Recommended capacity limits: max 100 long-polling pods per Control API replica without PgBouncer, with horizontal scaling recommended above 50 concurrent SDK clients.
+
+### 11.4 Incident Attribution Engine ("What Changed?")
 Rather than relying on fragile incoming webhooks, chat glue, or hard dependencies on third-party incident tooling, SynapseState provides a **pull-based investigation workflow** via the CLI:
 
 ```bash
