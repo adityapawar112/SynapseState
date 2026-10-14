@@ -6,12 +6,22 @@ import { Trend, Counter, Rate } from "k6/metrics";
  * Implements architectural boundaries:
  * - Invariant 1: Fail-safe fallback and zero disruption
  * - Invariant 5: Zero-context privacy and bounded metric cardinality
+ *
+ * Environment variables:
+ * - CONTROL_API_URL: Base URL for Control API (default: http://127.0.0.1:3000)
+ * - SYNAPSE_ENV: Target environment namespace (default: production)
+ * - WAIT_SECONDS: Long-poll wait duration (default: 30s)
+ * - TELEMETRY_PATH: Telemetry ingestion path (default: /v1/telemetry/batches)
+ * - PROFILE: Load profile: smoke, average_load, stress, spike (default: average_load)
+ * - VUS: Virtual users override
+ * - DURATION: Scenario duration override
  */
 
 // Environment Variables and Defaults
 export const BASE_URL = __ENV.CONTROL_API_URL || "http://127.0.0.1:3000";
 export const TARGET_ENV = __ENV.SYNAPSE_ENV || "production";
 export const DEFAULT_WAIT_SECONDS = __ENV.WAIT_SECONDS || "30s";
+export const TELEMETRY_PATH = __ENV.TELEMETRY_PATH || "/v1/telemetry/batches";
 
 // Custom k6 Observability Metrics
 export const propagationLagTrend = new Trend(
@@ -37,6 +47,14 @@ export const telemetryBatchDurationTrend = new Trend(
 );
 export const telemetryEvaluationsCounter = new Counter(
   "synapse_telemetry_evaluations_total",
+);
+
+// Bulkhead isolation proof counters
+export const bulkheadIsolationViolations = new Counter(
+  "synapse_bulkhead_isolation_violations",
+);
+export const bulkheadStateDeliveriesUnderShedding = new Counter(
+  "synapse_bulkhead_state_deliveries_under_shedding",
 );
 
 // Standard Bounded Flag Catalog for Invariant 5 Conformance
@@ -76,6 +94,20 @@ export const SAMPLE_SERVICES = [
 ];
 
 /**
+ * Fisher-Yates unbiased shuffle.
+ */
+function shuffle(array) {
+  const arr = array.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = temp;
+  }
+  return arr;
+}
+
+/**
  * Pure JavaScript RFC 4122 v4 UUID generator (no external npm/network dependency).
  */
 export function generateUuid() {
@@ -108,6 +140,7 @@ export function generateUlid() {
 /**
  * Generates a realistic TelemetryBatchPayload strictly complying with Invariant 5:
  * Zero-Context: NO user IDs, targeting attributes, or high-cardinality keys.
+ * Note: Does NOT include synthetic propagation_lag_ms to prevent histogram contamination.
  */
 export function generateTelemetryBatch(serviceName, env, metricCount = 3) {
   const now = new Date();
@@ -119,9 +152,10 @@ export function generateTelemetryBatch(serviceName, env, metricCount = 3) {
   const resolvedEnv = env || TARGET_ENV;
 
   const metrics = [];
-  const selectedFlags = [...BOUNDED_FLAGS]
-    .sort(() => 0.5 - Math.random())
-    .slice(0, Math.min(metricCount, BOUNDED_FLAGS.length));
+  const selectedFlags = shuffle(BOUNDED_FLAGS).slice(
+    0,
+    Math.min(metricCount, BOUNDED_FLAGS.length),
+  );
 
   let totalEvals = 0;
   for (const flag of selectedFlags) {
@@ -140,9 +174,14 @@ export function generateTelemetryBatch(serviceName, env, metricCount = 3) {
     });
   }
 
+  const instanceId =
+    typeof __VU !== "undefined" && typeof __ITER !== "undefined"
+      ? `k6-pod-vu${__VU}-iter${__ITER}`
+      : `k6-pod-${generateUuid().slice(0, 8)}`;
+
   return {
     payload: {
-      instance_id: `k6-pod-${generateUuid().slice(0, 8)}`,
+      instance_id: instanceId,
       batch_id: generateUlid(),
       window_start: windowStart,
       window_end: windowEnd,
@@ -150,9 +189,35 @@ export function generateTelemetryBatch(serviceName, env, metricCount = 3) {
       env: resolvedEnv,
       sdk_version: "0.1.0-k6",
       metrics,
-      propagation_lag_ms: Math.floor(Math.random() * 80) + 20,
     },
     totalEvals,
+  };
+}
+
+/**
+ * Creates an emergency break-glass lease payload for live invalidation injection.
+ */
+export function createEmergencyLease(
+  env = TARGET_ENV,
+  flagKey = "checkout-redesign",
+  value = true,
+  reason = "INC-991: Test emergency override",
+) {
+  const issuedAt = new Date().toISOString();
+  return {
+    payload: {
+      v: 1,
+      lease_id: generateUlid(),
+      env,
+      flag_key: flagKey,
+      value,
+      reason,
+      issued_at: issuedAt,
+      ttl_seconds: 1800,
+      kid: "ops-primary-01",
+      nonce: generateUuid(),
+    },
+    sig: "TgoN0DAo2Qjza8myGFXI5jpvvOHLycr-G_NwCxVKZyrud6TpWyD9gzKRyiwAOZ_Ce85ENmyl-rwcv1T4pmv9Cg",
   };
 }
 

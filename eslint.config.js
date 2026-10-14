@@ -9,6 +9,17 @@ export default tseslint.config(
     },
   },
   {
+    files: ["load/k6/**/*.js"],
+    languageOptions: {
+      globals: {
+        __ENV: "readonly",
+        __VU: "readonly",
+        __ITER: "readonly",
+        open: "readonly",
+      },
+    },
+  },
+  {
     ignores: ["**/dist/**", "**/node_modules/**", "**/.next/**", "**/coverage/**"],
   }
 );

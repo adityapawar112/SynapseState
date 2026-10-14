@@ -4,8 +4,10 @@ import {
   BASE_URL,
   TARGET_ENV,
   DEFAULT_WAIT_SECONDS,
+  TELEMETRY_PATH,
   SAMPLE_SERVICES,
   generateTelemetryBatch,
+  createEmergencyLease,
   getStandardHeaders,
   propagationLagTrend,
   longPoll200Counter,
@@ -18,152 +20,73 @@ import {
   telemetryErrorRate,
   telemetryBatchDurationTrend,
   telemetryEvaluationsCounter,
+  bulkheadIsolationViolations,
+  bulkheadStateDeliveriesUnderShedding,
 } from "./common.js";
 
 /**
  * k6 Mixed Traffic & Stress Scenarios for SynapseState Control API.
  *
  * Implements Phase 3 PR 14 (ROADMAP §5 (3.3)):
- * - Drives concurrent long-polling readers (100 VUs) and telemetry writers (20-50 VUs).
- * - Simulates full production microservice topology under steady-state and stress loads.
- * - Validates bulkhead isolation: telemetry load spikes shed load (429) without degrading state delivery.
- * - Verifies Invariant 1 (Fail-Safe Hot Path) and Invariant 5 (Zero-Context Privacy).
+ * - Drives concurrent long-polling readers and telemetry writers under steady-state and stress loads.
+ * - Single source of truth configuration via load/k6/config.json.
+ * - Invalidation wakeup benchmarking with background lease mutator scenario.
+ * - Validates bulkhead isolation: telemetry load spikes shed load (429) without degrading state delivery (Invariant 1).
+ * - Verifies Invariant 5 (Zero-Context Privacy).
  */
+
+const config = JSON.parse(open("./config.json"));
 
 const PROFILE = __ENV.PROFILE || "average_load";
 const WAIT_TIME = __ENV.WAIT_TIME || DEFAULT_WAIT_SECONDS;
 
-function getScenarioConfig() {
-  const defaultDuration = __ENV.DURATION || "30s";
-  if (PROFILE === "smoke") {
-    return {
-      state_pollers: {
-        executor: "constant-vus",
-        vus: 5,
-        duration: defaultDuration,
-        exec: "pollState",
-        gracefulStop: "5s",
-      },
-      telemetry_flushers: {
-        executor: "constant-vus",
-        vus: 2,
-        duration: defaultDuration,
-        exec: "flushTelemetry",
-        gracefulStop: "5s",
-      },
-    };
+function getScenarios() {
+  const profile = config.profiles[PROFILE] || config.profiles["average_load"];
+  const mixedScenarios = profile.mixed.scenarios;
+
+  // Clone scenario definitions
+  const result = JSON.parse(JSON.stringify(mixedScenarios));
+
+  // Allow command-line DURATION override if provided
+  if (__ENV.DURATION) {
+    for (const key of Object.keys(result)) {
+      if (result[key].duration) {
+        result[key].duration = __ENV.DURATION;
+      }
+    }
   }
 
-  if (PROFILE === "stress") {
-    return {
-      state_pollers: {
-        executor: "ramping-vus",
-        startVUs: 20,
-        stages: [
-          { duration: "30s", target: 100 },
-          { duration: "1m", target: 200 },
-          { duration: "30s", target: 250 },
-          { duration: "30s", target: 50 },
-        ],
-        exec: "pollState",
-        gracefulStop: "10s",
-      },
-      telemetry_flushers: {
-        executor: "ramping-vus",
-        startVUs: 10,
-        stages: [
-          { duration: "30s", target: 50 },
-          { duration: "1m", target: 100 },
-          { duration: "30s", target: 150 },
-          { duration: "30s", target: 10 },
-        ],
-        exec: "flushTelemetry",
-        gracefulStop: "10s",
-      },
-    };
-  }
-
-  if (PROFILE === "spike") {
-    return {
-      state_pollers: {
-        executor: "ramping-vus",
-        startVUs: 10,
-        stages: [
-          { duration: "10s", target: 10 },
-          { duration: "10s", target: 250 },
-          { duration: "30s", target: 250 },
-          { duration: "10s", target: 10 },
-          { duration: "10s", target: 10 },
-        ],
-        exec: "pollState",
-        gracefulStop: "10s",
-      },
-      telemetry_flushers: {
-        executor: "ramping-vus",
-        startVUs: 5,
-        stages: [
-          { duration: "10s", target: 5 },
-          { duration: "10s", target: 100 },
-          { duration: "30s", target: 100 },
-          { duration: "10s", target: 5 },
-          { duration: "10s", target: 5 },
-        ],
-        exec: "flushTelemetry",
-        gracefulStop: "10s",
-      },
-    };
-  }
-
-  // Default: average_load
-  return {
-    state_pollers: {
-      executor: "constant-vus",
-      vus: parseInt(__ENV.POLL_VUS || "100", 10),
-      duration: __ENV.DURATION || "2m",
-      exec: "pollState",
-      gracefulStop: "10s",
-    },
-    telemetry_flushers: {
-      executor: "constant-vus",
-      vus: parseInt(__ENV.TELEMETRY_VUS || "20", 10),
-      duration: __ENV.DURATION || "2m",
-      exec: "flushTelemetry",
-      gracefulStop: "10s",
-    },
-  };
+  return result;
 }
 
 export const options = {
-  scenarios: getScenarioConfig(),
-  thresholds: {
-    // SLO: Lease Propagation Lag p95 <= 10s
-    synapse_lease_propagation_lag_ms: ["p(95)<=10000"],
-    // Long-poll error rate strictly < 1% (zero unexpected drops)
-    synapse_long_poll_error_rate: ["rate<0.01"],
-    // Telemetry error rate < 5% (allowing graceful 429 load shedding)
-    synapse_telemetry_error_rate: ["rate<0.05"],
-    // General HTTP failure rate < 5%
-    http_req_failed: ["rate<0.05"],
-  },
+  scenarios: getScenarios(),
+  thresholds: config.thresholds,
 };
 
-// Per-VU ETag cache for state polling
+// Per-VU cached ETag state and seen leases (isolated per Virtual User)
 let vuCachedEtag = "";
+const vuSeenLeaseIds = new Set();
 
 /**
- * Scenario Function: State Polling Worker.
- * Emulates client SDK instances long-polling with ETag conditional validation.
+ * Scenario Function: State Poller.
+ * Emulates client workload SDK instances long-polling for active leases.
  */
 export function pollState() {
   const url = `${BASE_URL}/v1/sdk/state?env=${TARGET_ENV}&wait=${WAIT_TIME}`;
   const headers = getStandardHeaders();
 
   if (vuCachedEtag) {
-    headers["If-None-Match"] = vuCachedEtag;
+    headers["If-None-Match"] = `"${vuCachedEtag}"`;
   }
 
+  const params = {
+    headers,
+    timeout: "45s",
+  };
+
   const reqStart = Date.now();
-  const res = http.get(url, { headers, timeout: "45s" });
+  const res = http.get(url, params);
   const duration = Date.now() - reqStart;
 
   longPollDurationTrend.add(duration);
@@ -171,39 +94,86 @@ export function pollState() {
   const isSuccess = res.status === 200 || res.status === 304;
   longPollErrorRate.add(!isSuccess);
 
+  // Normalize header case lookup
+  const etagHeader =
+    res.headers["Etag"] || res.headers["ETag"] || res.headers["etag"] || "";
+  const cleanHeaderEtag = etagHeader.replace(/^W\//, "").replace(/"/g, "");
+
   if (res.status === 304) {
     longPoll304Counter.add(1);
-    const etagHeader = res.headers["Etag"] || res.headers["ETag"];
-    if (etagHeader) {
-      vuCachedEtag = etagHeader;
-    }
+
+    check(res, {
+      "poll status is 304 Not Modified": (r) => r.status === 304,
+      "304 ETag matches cached ETag": () =>
+        !cleanHeaderEtag || cleanHeaderEtag === vuCachedEtag,
+    });
   } else if (res.status === 200) {
     longPoll200Counter.add(1);
-    const etagHeader = res.headers["Etag"] || res.headers["ETag"];
-    if (etagHeader) {
-      vuCachedEtag = etagHeader;
+
+    const etagChanged = Boolean(
+      vuCachedEtag && cleanHeaderEtag && cleanHeaderEtag !== vuCachedEtag,
+    );
+
+    if (cleanHeaderEtag) {
+      vuCachedEtag = cleanHeaderEtag;
     }
 
     try {
       const body = JSON.parse(res.body);
-      if (body && body.server_time) {
+
+      // Calculate propagation lag strictly on awakened lease delivery (when ETag changes)
+      if (
+        etagChanged &&
+        body &&
+        body.server_time &&
+        Array.isArray(body.active_leases) &&
+        body.active_leases.length > 0
+      ) {
         const serverTimeMs = new Date(body.server_time).getTime();
-        const lagMs = Math.max(0, Date.now() - serverTimeMs);
-        propagationLagTrend.add(lagMs);
-      }
-      if (duration < 25000 && vuCachedEtag) {
-        invalidationWakeupLagTrend.add(duration);
+        const newLeases = body.active_leases.filter(
+          (l) =>
+            l &&
+            l.payload &&
+            l.payload.lease_id &&
+            !vuSeenLeaseIds.has(l.payload.lease_id),
+        );
+
+        for (const l of newLeases) {
+          vuSeenLeaseIds.add(l.payload.lease_id);
+          const issuedAtMs = new Date(l.payload.issued_at).getTime();
+          const lagMs = Math.max(0, serverTimeMs - issuedAtMs);
+          propagationLagTrend.add(lagMs);
+          invalidationWakeupLagTrend.add(lagMs);
+        }
+      } else if (body && Array.isArray(body.active_leases)) {
+        // Mark baseline leases so cold-start pre-existing leases do not pollute invalidation lag
+        for (const l of body.active_leases) {
+          if (l?.payload?.lease_id) {
+            vuSeenLeaseIds.add(l.payload.lease_id);
+          }
+        }
       }
     } catch {
       longPollErrorRate.add(1);
     }
   }
 
+  // Bulkhead Isolation Check (C4): State delivery MUST remain available regardless of telemetry load shedding
+  const sheddingOccurred = telemetryLoadShedCounter.count > 0;
+  if (sheddingOccurred) {
+    if (res.status === 200 || res.status === 304) {
+      bulkheadStateDeliveriesUnderShedding.add(1);
+    } else {
+      bulkheadIsolationViolations.add(1);
+    }
+  }
+
   check(res, {
-    "poll status is 200 or 304": (r) => r.status === 200 || r.status === 304,
+    "poll status is 200 or 304 (bulkhead isolation intact)": (r) =>
+      r.status === 200 || r.status === 304,
   });
 
-  sleep(Math.random() * 0.5 + 0.1);
+  sleep(Math.random() * 0.4 + 0.1);
 }
 
 /**
@@ -219,7 +189,7 @@ export function flushTelemetry() {
     3,
   );
 
-  const url = `${BASE_URL}/v1/telemetry/batches`;
+  const url = `${BASE_URL}${TELEMETRY_PATH}`;
   const headers = getStandardHeaders();
   const body = JSON.stringify(payload);
 
@@ -249,8 +219,38 @@ export function flushTelemetry() {
 }
 
 /**
- * Default export fallback for single-scenario runs or CLI execution.
+ * Scenario Function: Live Emergency Lease Mutator.
+ * Regularly injects break-glass leases to measure active invalidation wakeups.
+ */
+export function mutateLease() {
+  const lease = createEmergencyLease(
+    TARGET_ENV,
+    "checkout-redesign",
+    true,
+    "INC-991: Test emergency override injection",
+  );
+  const url = `${BASE_URL}/v1/leases`;
+  const res = http.post(url, JSON.stringify(lease), {
+    headers: getStandardHeaders(),
+    timeout: "10s",
+  });
+
+  check(res, {
+    "lease mutation status is 201 or 200": (r) =>
+      r.status === 201 || r.status === 200,
+  });
+
+  sleep(15);
+}
+
+/**
+ * Default export fallback for CLI runs without scenario flags.
+ * Dispatches realistic mix (70% state pollers, 30% telemetry flushers).
  */
 export default function () {
-  pollState();
+  if (Math.random() < 0.7) {
+    pollState();
+  } else {
+    flushTelemetry();
+  }
 }

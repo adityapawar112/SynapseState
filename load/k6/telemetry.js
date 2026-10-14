@@ -3,6 +3,7 @@ import { check, sleep } from "k6";
 import {
   BASE_URL,
   TARGET_ENV,
+  TELEMETRY_PATH,
   SAMPLE_SERVICES,
   generateTelemetryBatch,
   getStandardHeaders,
@@ -20,12 +21,12 @@ import {
  * - Simulates concurrent SDK clients flushing evaluation metrics batches.
  * - Enforces Invariant 5 (Zero-Context Privacy): only (flag_key, variant, reason, count).
  * - Benchmarks database batch upsert ingestion rate and bulkhead load-shedding response (429).
- * - Tests both canonical POST /v1/telemetry/batches and alias POST /v1/telemetry/flags.
+ * - Target endpoint is strictly canonical POST /v1/telemetry/batches.
  */
 
 const VUS = parseInt(__ENV.VUS || "20", 10);
 const DURATION = __ENV.DURATION;
-const ENDPOINT_PATH = __ENV.TELEMETRY_PATH || "/v1/telemetry/batches";
+const ENDPOINT_PATH = TELEMETRY_PATH;
 
 const stagesConfig = DURATION
   ? [{ duration: DURATION, target: VUS }]
@@ -107,6 +108,6 @@ export default function () {
     });
   }
 
-  // Realistic SDK flush cadence jitter (simulates 5s-10s background interval or immediate flush)
+  // Realistic SDK flush cadence jitter
   sleep(Math.random() * 0.4 + 0.1);
 }

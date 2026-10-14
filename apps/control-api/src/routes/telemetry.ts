@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import crypto from "node:crypto";
@@ -82,10 +82,7 @@ export const telemetryRoutes: FastifyPluginAsync<
 > = async (fastify, options) => {
   const { telemetryPool, metrics } = options;
 
-  const handleTelemetryBatch = async (
-    req: FastifyRequest,
-    reply: FastifyReply,
-  ) => {
+  fastify.post("/v1/telemetry/batches", async (req, reply) => {
     const rawBody = req.body as Record<string, unknown> | null;
 
     // 1. Invariant 5: Check top-level payload for forbidden context attributes
@@ -301,9 +298,15 @@ export const telemetryRoutes: FastifyPluginAsync<
       await client.query("COMMIT");
 
       if (payload.propagation_lag_ms !== undefined && metrics) {
-        metrics.leasePropagationSeconds.observe(
-          payload.propagation_lag_ms / 1000,
-        );
+        // Guard: Only trusted canary probes report directly to production SLO histogram
+        const isCanary =
+          req.headers["x-synapse-canary"] === "true" ||
+          payload.service === "synapse-canary";
+        if (isCanary) {
+          metrics.leasePropagationSeconds.observe(
+            payload.propagation_lag_ms / 1000,
+          );
+        }
       }
 
       return reply.code(202).send({
@@ -326,8 +329,5 @@ export const telemetryRoutes: FastifyPluginAsync<
     } finally {
       client.release();
     }
-  };
-
-  fastify.post("/v1/telemetry/batches", handleTelemetryBatch);
-  fastify.post("/v1/telemetry/flags", handleTelemetryBatch);
+  });
 };

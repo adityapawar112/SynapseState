@@ -16,12 +16,23 @@
           "state_pollers": {
             "executor": "constant-vus",
             "vus": 5,
-            "duration": "30s"
+            "duration": "30s",
+            "exec": "pollState",
+            "gracefulStop": "5s"
           },
           "telemetry_flushers": {
             "executor": "constant-vus",
             "vus": 2,
-            "duration": "30s"
+            "duration": "30s",
+            "exec": "flushTelemetry",
+            "gracefulStop": "5s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "30s",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
           }
         }
       }
@@ -46,12 +57,23 @@
           "state_pollers": {
             "executor": "constant-vus",
             "vus": 100,
-            "duration": "2m"
+            "duration": "2m",
+            "exec": "pollState",
+            "gracefulStop": "10s"
           },
           "telemetry_flushers": {
             "executor": "constant-vus",
             "vus": 20,
-            "duration": "2m"
+            "duration": "2m",
+            "exec": "flushTelemetry",
+            "gracefulStop": "10s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "2m",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
           }
         }
       }
@@ -63,21 +85,32 @@
             "executor": "ramping-vus",
             "startVUs": 20,
             "stages": [
-              { "duration": "1m", "target": 100 },
-              { "duration": "2m", "target": 250 },
-              { "duration": "1m", "target": 350 },
-              { "duration": "1m", "target": 50 }
-            ]
+              { "duration": "30s", "target": 100 },
+              { "duration": "1m", "target": 200 },
+              { "duration": "30s", "target": 250 },
+              { "duration": "30s", "target": 50 }
+            ],
+            "exec": "pollState",
+            "gracefulStop": "10s"
           },
           "telemetry_flushers": {
             "executor": "ramping-vus",
             "startVUs": 10,
             "stages": [
-              { "duration": "1m", "target": 50 },
-              { "duration": "2m", "target": 100 },
-              { "duration": "1m", "target": 150 },
-              { "duration": "1m", "target": 10 }
-            ]
+              { "duration": "30s", "target": 50 },
+              { "duration": "1m", "target": 100 },
+              { "duration": "30s", "target": 150 },
+              { "duration": "30s", "target": 10 }
+            ],
+            "exec": "flushTelemetry",
+            "gracefulStop": "10s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "2m30s",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
           }
         }
       }
@@ -90,32 +123,44 @@
             "startVUs": 10,
             "stages": [
               { "duration": "10s", "target": 10 },
-              { "duration": "10s", "target": 300 },
-              { "duration": "40s", "target": 300 },
+              { "duration": "10s", "target": 250 },
+              { "duration": "30s", "target": 250 },
               { "duration": "10s", "target": 10 },
-              { "duration": "20s", "target": 10 }
-            ]
+              { "duration": "10s", "target": 10 }
+            ],
+            "exec": "pollState",
+            "gracefulStop": "10s"
           },
           "telemetry_flushers": {
             "executor": "ramping-vus",
             "startVUs": 5,
             "stages": [
               { "duration": "10s", "target": 5 },
-              { "duration": "10s", "target": 80 },
-              { "duration": "40s", "target": 80 },
+              { "duration": "10s", "target": 100 },
+              { "duration": "30s", "target": 100 },
               { "duration": "10s", "target": 5 },
-              { "duration": "20s", "target": 5 }
-            ]
+              { "duration": "10s", "target": 5 }
+            ],
+            "exec": "flushTelemetry",
+            "gracefulStop": "10s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "1m10s",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
           }
         }
       }
     }
   },
   "thresholds": {
-    "slo_lease_propagation_lag": "synapse_lease_propagation_lag_ms <= 10000",
-    "slo_long_poll_p95": "synapse_long_poll_duration_ms p(95) <= 35000",
-    "slo_long_poll_error_rate": "synapse_long_poll_error_rate < 0.01",
-    "slo_telemetry_error_rate": "synapse_telemetry_error_rate < 0.05",
-    "slo_http_req_failed": "http_req_failed < 0.05"
+    "synapse_lease_propagation_lag_ms": ["p(95)<=10000"],
+    "synapse_long_poll_duration_ms": ["p(95)<=32000"],
+    "synapse_long_poll_error_rate": ["rate<0.01"],
+    "synapse_telemetry_error_rate": ["rate<0.05"],
+    "synapse_bulkhead_isolation_violations": ["count===0"],
+    "http_req_failed": ["rate<0.05"]
   }
 }

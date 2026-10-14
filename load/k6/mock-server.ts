@@ -5,9 +5,10 @@ import crypto from "node:crypto";
  * Zero-Dependency Pure Node.js Mock Control API Server for k6 Load Testing.
  *
  * Implements architectural boundaries:
- * - Invariant 1: Fail-safe state delivery with ETag conditional validation and instant in-memory wake-up.
- * - Invariant 5: Zero-context privacy verification on telemetry batches.
- * - Bulkhead emulation: sheds load (HTTP 429) when telemetry concurrency exceeds bulkhead limit.
+ * - Invariant 1: Fail-safe state delivery with per-environment ETag conditional validation and instant in-memory wake-up.
+ * - Invariant 5: Zero-context privacy verification on telemetry batches (top-level and nested item validation).
+ * - Bulkhead emulation: simulates 10-connection PostgreSQL pool with queue timeout and HTTP 429 load shedding.
+ * - RFC 8785 deterministic canonical JSON ETag hashing.
  */
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -29,29 +30,71 @@ interface ActiveLease {
   sig: string;
 }
 
-let currentRegistryVersion = 1;
-const activeLeases = new Map<string, ActiveLease>();
-let currentEtag = computeEtag();
-const suspendedWaiters = new Set<() => void>();
+interface EnvState {
+  version: number;
+  activeLeases: Map<string, ActiveLease>;
+  etag: string;
+  waiters: Set<() => void>;
+}
 
-function computeEtag(): string {
-  const content = JSON.stringify({
-    version: currentRegistryVersion,
-    leases: Array.from(activeLeases.values()),
+const envStates = new Map<string, EnvState>();
+
+/**
+ * RFC 8785 deterministic canonical JSON serializer for byte-identical ETag hashing.
+ */
+function canonicalize(val: unknown): string {
+  if (val === null || typeof val !== "object") {
+    return JSON.stringify(val);
+  }
+  if (Array.isArray(val)) {
+    return "[" + val.map(canonicalize).join(",") + "]";
+  }
+  const obj = val as Record<string, unknown>;
+  const sortedKeys = Object.keys(obj).sort();
+  return (
+    "{" +
+    sortedKeys
+      .map((k) => JSON.stringify(k) + ":" + canonicalize(obj[k]))
+      .join(",") +
+    "}"
+  );
+}
+
+function computeEtagForState(state: EnvState): string {
+  const content = canonicalize({
+    version: state.version,
+    leases: Array.from(state.activeLeases.values()),
   });
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
-function notifyStateMutation() {
-  currentRegistryVersion++;
-  currentEtag = computeEtag();
-  const waiters = Array.from(suspendedWaiters);
-  suspendedWaiters.clear();
+function getOrCreateEnvState(env: string): EnvState {
+  let state = envStates.get(env);
+  if (!state) {
+    state = {
+      version: 1,
+      activeLeases: new Map<string, ActiveLease>(),
+      etag: "",
+      waiters: new Set<() => void>(),
+    };
+    state.etag = computeEtagForState(state);
+    envStates.set(env, state);
+  }
+  return state;
+}
+
+function notifyStateMutation(env: string) {
+  const state = getOrCreateEnvState(env);
+  state.version++;
+  state.etag = computeEtagForState(state);
+  const waiters = Array.from(state.waiters);
+  state.waiters.clear();
   for (const resume of waiters) {
     resume();
   }
 }
 
+// Invariant 5: Zero-Context Forbidden Attributes (mirrors production)
 const FORBIDDEN_CONTEXT_KEYS = new Set([
   "user_id",
   "userId",
@@ -67,8 +110,86 @@ const FORBIDDEN_CONTEXT_KEYS = new Set([
   "custom_attributes",
 ]);
 
-let inFlightTelemetry = 0;
-const MAX_CONCURRENT_TELEMETRY = 15; // Simulates 10-connection pool bulkhead
+// Allowed keys mirroring production Zod schemas
+const ALLOWED_TOP_LEVEL_KEYS = new Set([
+  "instance_id",
+  "batch_id",
+  "window_start",
+  "window_end",
+  "metrics",
+  "propagation_lag_ms",
+  "dropped_count",
+  "service",
+  "service_name",
+  "env",
+  "sdk_version",
+]);
+
+const ALLOWED_METRIC_KEYS = new Set(["flag_key", "variant", "reason", "count"]);
+
+/**
+ * Bulkhead 10-Connection PostgreSQL Pool Simulation with queue timeout and 429 shedding.
+ */
+const MAX_CONCURRENT_TELEMETRY = 10;
+const TELEMETRY_QUEUE_TIMEOUT_MS = 500;
+const MAX_TELEMETRY_QUEUE_DEPTH = 50;
+
+let activeTelemetryWorkers = 0;
+const telemetryWaitQueue: Array<{
+  resolve: () => void;
+  reject: (err: Error) => void;
+  timer: NodeJS.Timeout;
+}> = [];
+
+function acquireTelemetrySlot(): Promise<void> {
+  if (activeTelemetryWorkers < MAX_CONCURRENT_TELEMETRY) {
+    activeTelemetryWorkers++;
+    return Promise.resolve();
+  }
+  if (telemetryWaitQueue.length >= MAX_TELEMETRY_QUEUE_DEPTH) {
+    return Promise.reject(new Error("TELEMETRY_POOL_OVERFLOW"));
+  }
+  return new Promise<void>((resolve, reject) => {
+    const entry = {
+      resolve,
+      reject,
+      timer: setTimeout(() => {
+        const idx = telemetryWaitQueue.indexOf(entry);
+        if (idx !== -1) {
+          telemetryWaitQueue.splice(idx, 1);
+        }
+        reject(new Error("TELEMETRY_POOL_TIMEOUT"));
+      }, TELEMETRY_QUEUE_TIMEOUT_MS),
+    };
+    telemetryWaitQueue.push(entry);
+  });
+}
+
+function releaseTelemetrySlot(): void {
+  const next = telemetryWaitQueue.shift();
+  if (next) {
+    clearTimeout(next.timer);
+    next.resolve();
+  } else {
+    activeTelemetryWorkers--;
+  }
+}
+
+/**
+ * Production-aligned wait parser (mirrors apps/control-api/src/routes/state.ts:14-25).
+ */
+function parseWaitSeconds(rawWait?: unknown): number {
+  if (rawWait === undefined || rawWait === null || rawWait === "") {
+    return 0;
+  }
+  const str = String(rawWait).trim().toLowerCase();
+  const match = str.match(/^(\d{1,2})s?$/);
+  if (!match) {
+    return 0;
+  }
+  const parsed = parseInt(match[1], 10);
+  return Math.min(Math.max(parsed, 0), 60);
+}
 
 function sendJson(
   res: http.ServerResponse,
@@ -132,37 +253,40 @@ const server = http.createServer(async (req, res) => {
 
   // GET /v1/sdk/state
   if (req.method === "GET" && pathname === "/v1/sdk/state") {
-    const rawWait = parsedUrl.searchParams.get("wait");
-    let waitSeconds = 0;
-    if (rawWait) {
-      const match = rawWait.match(/^(\d{1,2})s?$/);
-      if (match) {
-        waitSeconds = Math.min(parseInt(match[1], 10), 60);
+    const env = parsedUrl.searchParams.get("env") || "production";
+    const envState = getOrCreateEnvState(env);
+
+    const waitSeconds = parseWaitSeconds(parsedUrl.searchParams.get("wait"));
+    const ifNoneMatch = req.headers["if-none-match"];
+
+    // Clean client ETag (strip W/ and quotes)
+    let clientEtag = ifNoneMatch;
+    if (clientEtag) {
+      if (clientEtag.startsWith("W/")) {
+        clientEtag = clientEtag.slice(2);
+      }
+      if (clientEtag.startsWith('"') && clientEtag.endsWith('"')) {
+        clientEtag = clientEtag.slice(1, -1);
       }
     }
 
-    const ifNoneMatchHeader = req.headers["if-none-match"];
-    const ifNoneMatch = ifNoneMatchHeader
-      ? String(ifNoneMatchHeader).replace(/^W\//, "").replace(/"/g, "").trim()
-      : null;
+    const currentEtag = envState.etag;
 
-    const currentCleanEtag = currentEtag;
-
-    // Immediate 200 if cold or client has outdated/no ETag
-    if (!ifNoneMatch || ifNoneMatch !== currentCleanEtag) {
+    // If client ETag is absent or does not match current state, immediate 200 OK
+    if (!clientEtag || clientEtag !== currentEtag) {
       sendJson(
         res,
         200,
         {
-          etag: currentCleanEtag,
+          etag: currentEtag,
           server_time: new Date().toISOString(),
-          registry_version: currentRegistryVersion,
-          active_leases: Array.from(activeLeases.values()),
+          registry_version: envState.version,
+          active_leases: Array.from(envState.activeLeases.values()),
           revocations: [],
           key_revocations: [],
         },
         {
-          ETag: `"${currentCleanEtag}"`,
+          ETag: `"${currentEtag}"`,
           "Cache-Control": "no-cache, no-store, must-revalidate",
         },
       );
@@ -172,7 +296,7 @@ const server = http.createServer(async (req, res) => {
     // If wait=0, immediate 304 Not Modified
     if (waitSeconds <= 0) {
       res.writeHead(304, {
-        ETag: `"${currentCleanEtag}"`,
+        ETag: `"${currentEtag}"`,
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Expose-Headers": "ETag",
@@ -181,7 +305,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Suspend long-poll request
+    // Suspend long-poll request up to waitSeconds
     let timer: NodeJS.Timeout | null = null;
     let hasCompleted = false;
 
@@ -192,7 +316,7 @@ const server = http.createServer(async (req, res) => {
 
       if (status === 304) {
         res.writeHead(304, {
-          ETag: `"${currentEtag}"`,
+          ETag: `"${envState.etag}"`,
           "Cache-Control": "no-cache, no-store, must-revalidate",
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Expose-Headers": "ETag",
@@ -203,15 +327,15 @@ const server = http.createServer(async (req, res) => {
           res,
           200,
           {
-            etag: currentEtag,
+            etag: envState.etag,
             server_time: new Date().toISOString(),
-            registry_version: currentRegistryVersion,
-            active_leases: Array.from(activeLeases.values()),
+            registry_version: envState.version,
+            active_leases: Array.from(envState.activeLeases.values()),
             revocations: [],
             key_revocations: [],
           },
           {
-            ETag: `"${currentEtag}"`,
+            ETag: `"${envState.etag}"`,
             "Cache-Control": "no-cache, no-store, must-revalidate",
           },
         );
@@ -219,25 +343,24 @@ const server = http.createServer(async (req, res) => {
     };
 
     const resumeCallback = () => complete(200);
-    suspendedWaiters.add(resumeCallback);
+    envState.waiters.add(resumeCallback);
 
     req.on("close", () => {
-      suspendedWaiters.delete(resumeCallback);
+      // Guard against double clean-up when request already completed normally
+      if (hasCompleted) return;
+      envState.waiters.delete(resumeCallback);
       if (timer) clearTimeout(timer);
     });
 
     timer = setTimeout(() => {
-      suspendedWaiters.delete(resumeCallback);
+      envState.waiters.delete(resumeCallback);
       complete(304);
     }, waitSeconds * 1000);
     return;
   }
 
-  // POST /v1/telemetry/batches & POST /v1/telemetry/flags
-  if (
-    req.method === "POST" &&
-    (pathname === "/v1/telemetry/batches" || pathname === "/v1/telemetry/flags")
-  ) {
+  // POST /v1/telemetry/batches (Canonical ingestion route)
+  if (req.method === "POST" && pathname === "/v1/telemetry/batches") {
     const rawBody = await readBody(req);
     let body: Record<string, unknown> | null = null;
     try {
@@ -247,41 +370,77 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Invariant 5: Zero-Context validation
-    if (body && typeof body === "object") {
-      for (const key of Object.keys(body)) {
-        if (FORBIDDEN_CONTEXT_KEYS.has(key)) {
+    if (!body || typeof body !== "object") {
+      sendJson(res, 400, { error: "Payload must be a JSON object" });
+      return;
+    }
+
+    // Invariant 5: Top-level Zero-Context & unknown key validation
+    for (const key of Object.keys(body)) {
+      if (FORBIDDEN_CONTEXT_KEYS.has(key)) {
+        sendJson(res, 400, {
+          error: `Zero-Context violation: batch contains forbidden context or targeting attribute "${key}"`,
+        });
+        return;
+      }
+      if (!ALLOWED_TOP_LEVEL_KEYS.has(key)) {
+        sendJson(res, 400, {
+          error: `Unrecognized key in batch payload: "${key}"`,
+        });
+        return;
+      }
+    }
+
+    // Invariant 5: Nested metrics item validation
+    if (!Array.isArray(body.metrics)) {
+      sendJson(res, 400, { error: "metrics must be an array" });
+      return;
+    }
+
+    for (const item of body.metrics) {
+      if (!item || typeof item !== "object") {
+        sendJson(res, 400, { error: "metric item must be an object" });
+        return;
+      }
+      for (const mKey of Object.keys(item)) {
+        if (FORBIDDEN_CONTEXT_KEYS.has(mKey)) {
           sendJson(res, 400, {
-            error: `Zero-Context violation: batch contains forbidden context attribute "${key}"`,
+            error: `Zero-Context violation: metric item contains forbidden context attribute "${mKey}"`,
+          });
+          return;
+        }
+        if (!ALLOWED_METRIC_KEYS.has(mKey)) {
+          sendJson(res, 400, {
+            error: `Unrecognized key in metric item: "${mKey}"`,
           });
           return;
         }
       }
     }
 
-    // Emulate bulkhead load shedding
-    inFlightTelemetry++;
+    // Acquire pool worker slot (bulkhead load shedding emulation)
     try {
-      if (inFlightTelemetry > MAX_CONCURRENT_TELEMETRY) {
-        sendJson(res, 429, {
-          error: "Too Many Requests",
-          message:
-            "Telemetry connection pool exhausted or timed out; load shed.",
-        });
-        return;
-      }
+      await acquireTelemetrySlot();
+    } catch {
+      sendJson(res, 429, {
+        error: "Too Many Requests",
+        message: "Telemetry connection pool exhausted or timed out; load shed.",
+      });
+      return;
+    }
 
-      // Small async delay simulating DB upsert (5-10ms)
-      await new Promise((r) => setTimeout(r, Math.random() * 8 + 4));
+    try {
+      // Simulate DB batch insert latency (4-10ms)
+      await new Promise((r) => setTimeout(r, Math.random() * 6 + 4));
 
-      const batchId = (body?.batch_id as string) || `batch-${Date.now()}`;
+      const batchId = (body.batch_id as string) || `batch-${Date.now()}`;
       sendJson(res, 202, {
         accepted: true,
         batch_id: batchId,
       });
       return;
     } finally {
-      inFlightTelemetry--;
+      releaseTelemetrySlot();
     }
   }
 
@@ -301,13 +460,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    activeLeases.set(body.payload.lease_id, body);
-    notifyStateMutation();
+    const env = body.payload.env || "production";
+    const envState = getOrCreateEnvState(env);
+
+    envState.activeLeases.set(body.payload.lease_id, body);
+    notifyStateMutation(env);
 
     sendJson(res, 201, {
       status: "ACTIVE",
       lease_id: body.payload.lease_id,
-      etag: currentEtag,
+      etag: envState.etag,
     });
     return;
   }
