@@ -193,7 +193,7 @@ gantt
   * Drill 4: Write one formal postmortem report in `docs/postmortems/`.
 * **Recommended Branches & Pull Requests:**
   * **PR 15 (`feat/cli-signer-and-keys`):** `[COMPLETED]` `feat(cli): EncryptedKeyfileSigner and key management commands` — `packages/cli/src/signer/*`, `packages/cli/src/commands/key.ts`
-  * **PR 16 (`feat/cli-lease-lifecycle`):** `feat(cli): lease create, rollout status polling, and emergency-apply` — `packages/cli/src/commands/lease.ts`
+  * **PR 16 (`feat/cli-lease-lifecycle`):** `[COMPLETED]` `feat(cli): lease create, rollout status polling, and emergency-apply` — `packages/cli/src/commands/lease.ts`
   * **PR 17 (`feat/cli-incident-log-ranker`):** `feat(cli): synapse log incident investigation with pure rankSuspects` — `packages/cli/src/commands/log.ts`, `packages/cli/src/ranker.ts`
   * **PR 18 (`feat/git-promotion-reconciliation`):** `feat(api): GitHub App PR promotion and merge webhook reconciliation` — `apps/control-api/src/github/*`, `packages/cli/src/commands/promote.ts`
   * **PR 19 (`feat/audit-checkpoint-verifier`):** `feat(cli): isolated checkpoint signer CronJob and synapse audit verify` — `deploy/helm/cronjobs/*`, `packages/cli/src/commands/audit.ts`
