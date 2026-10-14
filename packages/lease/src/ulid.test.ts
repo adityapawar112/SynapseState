@@ -33,4 +33,19 @@ describe("generateUlid in @synapsestate/lease", () => {
     expect(() => generateUlid(NaN)).toThrow(RangeError);
     expect(() => generateUlid(Infinity)).toThrow(RangeError);
   });
+
+  it("generates strictly monotonic ULIDs when called multiple times within the same millisecond", () => {
+    const fixedMs = 1791661389781;
+    const ids: string[] = [];
+    for (let i = 0; i < 1000; i++) {
+      ids.push(generateUlid(fixedMs));
+    }
+
+    // Verify all 1000 IDs are unique and strictly monotonically increasing
+    for (let i = 1; i < ids.length; i++) {
+      expect(ids[i - 1].slice(0, 10)).toBe(ids[i].slice(0, 10));
+      expect(ids[i - 1] < ids[i]).toBe(true);
+    }
+  });
 });
+

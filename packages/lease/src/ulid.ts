@@ -3,9 +3,25 @@ import crypto from "node:crypto";
 const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 export const MAX_ULID_TIME_MS = 281474976710655; // 2^48 - 1 (year 10889 AD)
 
+let lastTimeMs = -1;
+const lastRand = new Uint8Array(10);
+
+/**
+ * Resets internal monotonic state. Used primarily for deterministic test isolation.
+ */
+export function resetUlidMonotonicStateForTest(): void {
+  lastTimeMs = -1;
+  lastRand.fill(0);
+}
+
 /**
  * Generates a 26-character Crockford Base32 ULID string.
  * Consists of a 10-character 48-bit timestamp component and a 16-character 80-bit randomness component.
+ *
+ * Implements monotonic ULID generation:
+ * - If called multiple times within the exact same millisecond, the 80-bit randomness component
+ *   is incremented by 1, guaranteeing strict lexicographic sorting order.
+ * - On 80-bit overflow within the same millisecond, the timestamp component increments by 1ms.
  */
 export function generateUlid(nowMs: number = Date.now()): string {
   if (!Number.isFinite(nowMs) || nowMs < 0 || nowMs > MAX_ULID_TIME_MS) {
@@ -15,15 +31,40 @@ export function generateUlid(nowMs: number = Date.now()): string {
   }
 
   let time = Math.floor(nowMs);
+  let bytes: Uint8Array;
+
+  if (time === lastTimeMs) {
+    // Increment the 80-bit big-endian counter
+    let carry = 1;
+    for (let i = 9; i >= 0 && carry > 0; i--) {
+      const sum = lastRand[i] + carry;
+      lastRand[i] = sum & 0xff;
+      carry = sum >> 8;
+    }
+
+    if (carry > 0) {
+      // 80-bit random counter overflowed in same ms; increment timestamp by 1ms and draw fresh random
+      time += 1;
+      bytes = crypto.randomBytes(10);
+      lastRand.set(bytes);
+    } else {
+      bytes = new Uint8Array(lastRand);
+    }
+  } else {
+    bytes = crypto.randomBytes(10);
+    lastRand.set(bytes);
+  }
+  lastTimeMs = time;
+
   let timeStr = "";
+  let tempTime = time;
   for (let i = 0; i < 10; i++) {
-    const mod = time % 32;
+    const mod = tempTime % 32;
     timeStr = ENCODING.charAt(mod) + timeStr;
-    time = Math.floor(time / 32);
+    tempTime = Math.floor(tempTime / 32);
   }
 
-  // Draw exactly 10 random bytes (80 bits) and pack into 16 5-bit Crockford characters
-  const bytes = crypto.randomBytes(10);
+  // Pack 10 bytes (80 bits) into 16 5-bit Crockford characters
   let randStr = "";
 
   // First 40 bits (bytes 0..4 -> 8 characters)

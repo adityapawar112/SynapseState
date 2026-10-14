@@ -56,6 +56,9 @@ export {
   verifyRevocation,
   signKeyRevocation,
   verifyKeyRevocation,
+  type AsyncSigner,
+  signLeaseWithSigner,
+  signRevocationWithSigner,
 } from "./crypto.js";
 
 // Dual-Clock Expiry Validator (Invariant 3)

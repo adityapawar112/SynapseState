@@ -302,3 +302,43 @@ export function verifyKeyRevocation(
 ): boolean {
   return verifyEnvelope(KEYREVOCATION_DOMAIN_PREFIX, envelope, publicKey);
 }
+
+/**
+ * Common asynchronous signer interface implemented by keyfile signers, KMS, or HSM clients.
+ */
+export interface AsyncSigner {
+  sign(message: Uint8Array): Promise<string>;
+}
+
+/**
+ * Signs an emergency lease payload with domain separation prefix using an asynchronous signer.
+ */
+export async function signLeaseWithSigner(
+  payload: LeasePayload,
+  signer: AsyncSigner,
+): Promise<LeaseEnvelope> {
+  const canonical = canonicalizeJson(payload);
+  const messageBuffer = Buffer.concat([
+    Buffer.from(LEASE_DOMAIN_PREFIX, "utf8"),
+    Buffer.from(canonical, "utf8"),
+  ]);
+  const sig = await signer.sign(messageBuffer);
+  return { payload, sig };
+}
+
+/**
+ * Signs a lease revocation payload with domain separation prefix using an asynchronous signer.
+ */
+export async function signRevocationWithSigner(
+  payload: RevocationPayload,
+  signer: AsyncSigner,
+): Promise<RevocationEnvelope> {
+  const canonical = canonicalizeJson(payload);
+  const messageBuffer = Buffer.concat([
+    Buffer.from(REVOCATION_DOMAIN_PREFIX, "utf8"),
+    Buffer.from(canonical, "utf8"),
+  ]);
+  const sig = await signer.sign(messageBuffer);
+  return { payload, sig };
+}
+

@@ -8,13 +8,14 @@ import type { Command } from "commander";
 import {
   FLAG_KEY_REGEX,
   ULID_REGEX,
-  LEASE_DOMAIN_PREFIX,
-  REVOCATION_DOMAIN_PREFIX,
-  canonicalizeJson,
+  DEFAULT_SKEW_TOLERANCE_MS,
   generateUlid,
   evaluateLeaseExpiry,
+  signLeaseWithSigner,
+  signRevocationWithSigner,
   LeasePayloadSchema,
   RevocationPayloadSchema,
+  LeaseEnvelopeSchema,
   type LeaseEnvelope,
   type LeasePayload,
   type RevocationEnvelope,
@@ -35,10 +36,13 @@ export interface LeaseCreateParams {
   kid?: string;
   keyFile?: string;
   password?: string;
+  passphraseEnv?: string;
   apiUrl?: string;
   wait?: boolean;
   timeoutSeconds?: number;
   pollIntervalMs?: number;
+  allowSkewMs?: number;
+  maxRttMs?: number;
   fetchFn?: typeof fetch;
 }
 
@@ -47,6 +51,8 @@ export interface LeaseCreateResult {
   envelope: LeaseEnvelope;
   state: string;
   rolloutConfirmed: boolean;
+  rttMs?: number;
+  deltaMs?: number;
   warnings?: string[];
 }
 
@@ -65,6 +71,7 @@ export interface LeaseRevokeParams {
   kid?: string;
   keyFile?: string;
   password?: string;
+  passphraseEnv?: string;
   apiUrl?: string;
   fetchFn?: typeof fetch;
 }
@@ -84,6 +91,7 @@ export interface EmergencyApplyParams {
   kid?: string;
   keyFile?: string;
   password?: string;
+  passphraseEnv?: string;
   namespace?: string;
   outFile?: string;
   apply?: boolean;
@@ -93,7 +101,10 @@ export interface EmergencyApplyParams {
 export interface EmergencyApplyResult {
   envelope: LeaseEnvelope;
   yaml: string;
+  configMap: Record<string, unknown>;
   filePath?: string;
+  writtenPath?: string;
+  appliedPath?: string;
 }
 
 /**
@@ -122,8 +133,8 @@ export function parseOverrideValue(
     }
   }
 
-  // Finite numeric literal
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+  // Finite numeric literal (supports integer, decimal, exponential e.g. 1e3, +5, .5)
+  if (/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(trimmed)) {
     const num = Number(trimmed);
     if (Number.isFinite(num)) {
       return num;
@@ -140,6 +151,7 @@ async function resolveSigner(params: {
   kid?: string;
   keyFile?: string;
   password?: string;
+  passphraseEnv?: string;
 }): Promise<{ signer: EncryptedKeyfileSigner; filePath: string }> {
   let filePath: string;
 
@@ -152,12 +164,23 @@ async function resolveSigner(params: {
     throw new Error("Either --kid or --key-file must be specified");
   }
 
-  const password =
-    params.password ?? process.env.SYNAPSE_KEY_PASSWORD ?? "";
+  let password = "";
+  if (params.passphraseEnv && process.env[params.passphraseEnv]) {
+    password = process.env[params.passphraseEnv]!;
+  } else if (params.password) {
+    console.warn(
+      pc.yellow(
+        "[WARN] Supplying passphrase via --password flag can expose secrets in process lists and shell history. Consider using SYNAPSE_KEY_PASSWORD or --passphrase-env.",
+      ),
+    );
+    password = params.password;
+  } else if (process.env.SYNAPSE_KEY_PASSWORD) {
+    password = process.env.SYNAPSE_KEY_PASSWORD;
+  }
 
   if (!password || password.trim().length === 0) {
     throw new Error(
-      "Passphrase required: provide --password or set SYNAPSE_KEY_PASSWORD environment variable",
+      "Passphrase required: provide --passphrase-env, set SYNAPSE_KEY_PASSWORD environment variable, or use --password",
     );
   }
 
@@ -202,12 +225,20 @@ function validateEnv(env: string): void {
 
 /**
  * Synchronizes workstation time by querying GET /v1/time from Control API.
+ * Measures round-trip time (RTT), estimates symmetric one-way latency, and enforces skew bounds.
  */
-async function syncServerTime(
+export async function syncServerTime(
   apiUrl: string,
   fetchFn: typeof fetch,
-): Promise<{ serverTimeIso: string; serverTimeMs: number }> {
+  options?: { maxRttMs?: number; allowSkewMs?: number },
+): Promise<{
+  serverTimeIso: string;
+  serverTimeMs: number;
+  rttMs: number;
+  deltaMs: number;
+}> {
   const url = `${apiUrl.replace(/\/$/, "")}/v1/time`;
+  const t0 = Date.now();
   const res = await fetchFn(url, {
     method: "GET",
     headers: { Accept: "application/json" },
@@ -216,6 +247,15 @@ async function syncServerTime(
   if (!res.ok) {
     throw new Error(
       `Failed to synchronize time with Control API (${res.status}): ${res.statusText}`,
+    );
+  }
+
+  const t1 = Date.now();
+  const rttMs = t1 - t0;
+  const maxRtt = options?.maxRttMs ?? 5000;
+  if (rttMs > maxRtt) {
+    throw new Error(
+      `Clock sync RTT ${rttMs}ms exceeds ${maxRtt}ms budget; aborting (check network/NTP).`,
     );
   }
 
@@ -228,8 +268,16 @@ async function syncServerTime(
     );
   }
 
-  const localNowMs = Date.now();
-  const deltaMs = serverTimeMs - localNowMs;
+  // Assume symmetric network delay; compensate server time by half RTT
+  const adjustedServerMs = serverTimeMs + Math.floor(rttMs / 2);
+  const deltaMs = adjustedServerMs - t1;
+  const maxSkewMs = options?.allowSkewMs ?? DEFAULT_SKEW_TOLERANCE_MS;
+
+  if (Math.abs(deltaMs) > maxSkewMs) {
+    throw new Error(
+      `Clock skew ${deltaMs}ms exceeds ${maxSkewMs}ms tolerance; aborting. Fix NTP or pass --allow-skew=<ms>.`,
+    );
+  }
 
   if (Math.abs(deltaMs) > 5000) {
     console.warn(
@@ -239,7 +287,12 @@ async function syncServerTime(
     );
   }
 
-  return { serverTimeIso: data.server_time, serverTimeMs };
+  return {
+    serverTimeIso: new Date(adjustedServerMs).toISOString(),
+    serverTimeMs: adjustedServerMs,
+    rttMs,
+    deltaMs,
+  };
 }
 
 /**
@@ -274,7 +327,14 @@ export async function executeLeaseCreate(
   const fetchFn = params.fetchFn ?? fetch;
 
   // Step 1: Synchronize workstation time with Control API
-  const { serverTimeIso, serverTimeMs } = await syncServerTime(apiUrl, fetchFn);
+  const { serverTimeIso, serverTimeMs, rttMs, deltaMs } = await syncServerTime(
+    apiUrl,
+    fetchFn,
+    {
+      maxRttMs: params.maxRttMs,
+      allowSkewMs: params.allowSkewMs,
+    },
+  );
 
   // Step 2: Construct authoritative LeasePayload
   const leaseId = generateUlid(serverTimeMs);
@@ -294,14 +354,7 @@ export async function executeLeaseCreate(
   const payload = LeasePayloadSchema.parse(rawPayload);
 
   // Step 3: Sign with domain separation prefix (synapsestate/lease/v1\n)
-  const canonical = canonicalizeJson(payload);
-  const messageBuffer = Buffer.concat([
-    Buffer.from(LEASE_DOMAIN_PREFIX, "utf8"),
-    Buffer.from(canonical, "utf8"),
-  ]);
-  const sig = await signer.sign(messageBuffer);
-
-  const envelope: LeaseEnvelope = { payload, sig };
+  const envelope = await signLeaseWithSigner(payload, signer);
 
   // Step 4: Submit signed envelope to Control API
   const postUrl = `${apiUrl}/v1/leases`;
@@ -347,11 +400,22 @@ export async function executeLeaseCreate(
     );
 
     while (Date.now() < deadline) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+
+      const controller = new AbortController();
+      const timeoutTimer = setTimeout(
+        () => controller.abort(),
+        Math.min(2000, remaining),
+      );
+
       try {
-        const stateUrl = `${apiUrl}/v1/sdk/state?env=${encodeURIComponent(params.env)}&wait=2s`;
+        const waitS = Math.max(1, Math.min(2, Math.floor(remaining / 1000)));
+        const stateUrl = `${apiUrl}/v1/sdk/state?env=${encodeURIComponent(params.env)}&wait=${waitS}s`;
         const stateRes = await fetchFn(stateUrl, {
           method: "GET",
           headers: { Accept: "application/json" },
+          signal: controller.signal as AbortSignal,
         });
 
         if (stateRes.ok) {
@@ -365,9 +429,27 @@ export async function executeLeaseCreate(
             rolloutConfirmed = true;
             break;
           }
+        } else if (
+          stateRes.status === 400 ||
+          stateRes.status === 401 ||
+          stateRes.status === 403
+        ) {
+          const body = await stateRes.text().catch(() => "");
+          throw new Error(
+            `Rollout verification aborted: Control API returned ${stateRes.status}: ${body.slice(0, 200)}`,
+          );
         }
-      } catch {
-        // Retry on transient poll error
+        // Other statuses (e.g. 5xx, 304): retry transiently
+      } catch (err: unknown) {
+        if (
+          err instanceof Error &&
+          err.message.startsWith("Rollout verification aborted")
+        ) {
+          throw err;
+        }
+        // Ignore transient fetch/abort errors during poll iteration
+      } finally {
+        clearTimeout(timeoutTimer);
       }
 
       await new Promise((r) => setTimeout(r, pollIntervalMs));
@@ -413,6 +495,8 @@ export async function executeLeaseCreate(
     envelope,
     state: resData.state,
     rolloutConfirmed,
+    rttMs,
+    deltaMs,
     warnings: resData.warnings,
   };
 }
@@ -438,22 +522,24 @@ export async function executeLeaseList(
         if (!file.endsWith(".json")) continue;
         try {
           const content = await fs.readFile(path.join(offlineDir, file), "utf8");
-          const parsed = JSON.parse(content) as LeaseEnvelope;
-          if (parsed?.payload?.lease_id) {
-            if (params.env && parsed.payload.env !== params.env) {
+          const parsedJson = JSON.parse(content);
+          const parseResult = LeaseEnvelopeSchema.safeParse(parsedJson);
+          if (parseResult.success) {
+            const envelope = parseResult.data;
+            if (params.env && envelope.payload.env !== params.env) {
               continue;
             }
             const expiry = evaluateLeaseExpiry({
-              issuedAt: parsed.payload.issued_at,
-              ttlSeconds: parsed.payload.ttl_seconds,
+              issuedAt: envelope.payload.issued_at,
+              ttlSeconds: envelope.payload.ttl_seconds,
               firstSeenMonoMs: performance.now(),
             });
             if (expiry.isValid) {
-              activeLeases.push(parsed);
+              activeLeases.push(envelope);
             }
           }
         } catch {
-          // ignore corrupted or non-lease files
+          // ignore corrupted or unreadable files
         }
       }
     } catch {
@@ -507,19 +593,33 @@ export async function executeLeaseList(
     style: { head: [], border: [] },
   });
 
-  const nowMs = Date.now();
+  const nowWall = Date.now();
+  const nowMono = performance.now();
   for (const lease of activeLeases) {
-    const issuedMs = Date.parse(lease.payload.issued_at);
-    const expiresMs = issuedMs + lease.payload.ttl_seconds * 1000;
-    const remainingSec = Math.max(0, Math.floor((expiresMs - nowMs) / 1000));
+    const eval_ = evaluateLeaseExpiry({
+      issuedAt: lease.payload.issued_at,
+      ttlSeconds: lease.payload.ttl_seconds,
+      firstSeenMonoMs: nowMono,
+      nowWallMs: nowWall,
+      nowMonoMs: nowMono,
+    });
+
+    const remainingSec = Math.max(
+      0,
+      Math.floor(eval_.remainingEffectiveMs / 1000),
+    );
 
     let remainingStr: string;
-    if (remainingSec === 0) {
-      remainingStr = pc.red("EXPIRED");
+    if (!eval_.isValid) {
+      remainingStr = pc.red(eval_.status);
     } else if (remainingSec < 300) {
-      remainingStr = pc.yellow(`${Math.floor(remainingSec / 60)}m ${remainingSec % 60}s`);
+      remainingStr = pc.yellow(
+        `${Math.floor(remainingSec / 60)}m ${remainingSec % 60}s`,
+      );
     } else {
-      remainingStr = pc.green(`${Math.floor(remainingSec / 60)}m ${remainingSec % 60}s`);
+      remainingStr = pc.green(
+        `${Math.floor(remainingSec / 60)}m ${remainingSec % 60}s`,
+      );
     }
 
     table.push([
@@ -564,15 +664,7 @@ export async function executeLeaseRevoke(
   };
 
   const payload = RevocationPayloadSchema.parse(rawRevocation);
-
-  const canonical = canonicalizeJson(payload);
-  const messageBuffer = Buffer.concat([
-    Buffer.from(REVOCATION_DOMAIN_PREFIX, "utf8"),
-    Buffer.from(canonical, "utf8"),
-  ]);
-  const sig = await signer.sign(messageBuffer);
-
-  const envelope: RevocationEnvelope = { payload, sig };
+  const envelope = await signRevocationWithSigner(payload, signer);
 
   const apiUrl = (
     params.apiUrl ??
@@ -622,6 +714,12 @@ export async function executeLeaseRevoke(
 export async function executeLeaseEmergencyApply(
   params: EmergencyApplyParams,
 ): Promise<EmergencyApplyResult> {
+  console.warn(
+    pc.yellow(
+      "[WARN] emergency-apply uses local workstation clock (no /v1/time available during outage). If this host is >30s fast, SDKs will reject the lease as FUTURE_DATED. Verify host clock with 'date -u'.",
+    ),
+  );
+
   validateEnv(params.env);
 
   if (!FLAG_KEY_REGEX.test(params.flag)) {
@@ -655,17 +753,15 @@ export async function executeLeaseEmergencyApply(
   };
 
   const payload = LeasePayloadSchema.parse(rawPayload);
-
-  const canonical = canonicalizeJson(payload);
-  const messageBuffer = Buffer.concat([
-    Buffer.from(LEASE_DOMAIN_PREFIX, "utf8"),
-    Buffer.from(canonical, "utf8"),
-  ]);
-  const sig = await signer.sign(messageBuffer);
-
-  const envelope: LeaseEnvelope = { payload, sig };
+  const envelope = await signLeaseWithSigner(payload, signer);
 
   const namespace = params.namespace ?? "default";
+  if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(namespace)) {
+    throw new Error(
+      `Invalid Kubernetes namespace "${namespace}". Must be a valid DNS-1123 label (lowercase alphanumeric and hyphens).`,
+    );
+  }
+
   const configMap = {
     apiVersion: "v1",
     kind: "ConfigMap",
@@ -691,28 +787,50 @@ export async function executeLeaseEmergencyApply(
     console.log(pc.green(`✓ Kubernetes ConfigMap written to: ${writtenPath}`));
   }
 
+  let appliedPath: string | undefined;
   if (params.apply) {
     const emergencyDir =
       params.emergencyDir ??
       process.env.SYNAPSE_EMERGENCY_LEASES_DIR ??
       "/etc/synapse/emergency-leases";
     await fs.mkdir(emergencyDir, { recursive: true });
-    writtenPath = path.join(emergencyDir, `${leaseId}.json`);
+    appliedPath = path.join(emergencyDir, `${leaseId}.json`);
     await fs.writeFile(
-      writtenPath,
+      appliedPath,
       JSON.stringify(envelope, null, 2) + "\n",
       "utf8",
     );
     console.log(
-      pc.green(`✓ Emergency lease applied directly to node: ${writtenPath}`),
+      pc.green(`✓ Emergency lease applied directly to node: ${appliedPath}`),
     );
   }
 
   return {
     envelope,
     yaml: yamlOutput,
-    filePath: writtenPath,
+    configMap,
+    filePath: writtenPath ?? appliedPath,
+    writtenPath,
+    appliedPath,
   };
+}
+
+/**
+ * Validates integer options with minimum and maximum bounds.
+ */
+function parseIntegerOption(
+  val: string,
+  flagName: string,
+  min: number,
+  max: number,
+): number {
+  const parsed = parseInt(val, 10);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(
+      `Option ${flagName} must be an integer between ${min} and ${max} (got "${val}")`,
+    );
+  }
+  return parsed;
 }
 
 /**
@@ -735,7 +853,7 @@ export function registerLeaseCommands(program: Command): void {
     .option(
       "-t, --ttl <seconds>",
       "Lease lifetime in seconds (default: 1800, max: 86400)",
-      (v) => parseInt(v, 10),
+      (v) => parseIntegerOption(v, "--ttl", 1, 86400),
       1800,
     )
     .option("-k, --kid <kid>", "Key identifier to sign the lease (e.g. alice-oncall-sre)")
@@ -743,6 +861,10 @@ export function registerLeaseCommands(program: Command): void {
     .option(
       "-p, --password <pass>",
       "Passphrase for keyfile decryption (defaults to SYNAPSE_KEY_PASSWORD env var)",
+    )
+    .option(
+      "--passphrase-env <var>",
+      "Environment variable name containing the keyfile passphrase",
     )
     .option(
       "--api-url <url>",
@@ -754,13 +876,25 @@ export function registerLeaseCommands(program: Command): void {
     )
     .option(
       "--timeout <seconds>",
-      "Rollout verification timeout in seconds (default: 30)",
-      (v) => parseInt(v, 10),
+      "Rollout verification timeout in seconds (default: 30, max: 600)",
+      (v) => parseIntegerOption(v, "--timeout", 1, 600),
       30,
+    )
+    .option(
+      "--poll-interval <ms>",
+      "State polling interval in ms (default: 1000, min: 100, max: 10000)",
+      (v) => parseIntegerOption(v, "--poll-interval", 100, 10000),
+      1000,
+    )
+    .option(
+      "--allow-skew <ms>",
+      "Permitted clock skew in ms (default: 30000, max: 300000)",
+      (v) => parseIntegerOption(v, "--allow-skew", 0, 300000),
+      30000,
     )
     .action(async (opts) => {
       try {
-        await executeLeaseCreate({
+        const res = await executeLeaseCreate({
           env: opts.env,
           flag: opts.flag,
           value: opts.value,
@@ -769,10 +903,17 @@ export function registerLeaseCommands(program: Command): void {
           kid: opts.kid,
           keyFile: opts.keyFile,
           password: opts.password,
+          passphraseEnv: opts.passphraseEnv,
           apiUrl: opts.apiUrl,
           wait: opts.wait,
           timeoutSeconds: opts.timeout,
+          pollIntervalMs: opts.pollInterval,
+          allowSkewMs: opts.allowSkew,
         });
+
+        if (opts.wait !== false && !res.rolloutConfirmed) {
+          process.exitCode = 2; // Submitted to DB, but rollout unconfirmed
+        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(pc.red(`Error: ${message}`));
@@ -823,6 +964,10 @@ export function registerLeaseCommands(program: Command): void {
       "Passphrase for keyfile decryption (defaults to SYNAPSE_KEY_PASSWORD env var)",
     )
     .option(
+      "--passphrase-env <var>",
+      "Environment variable name containing the keyfile passphrase",
+    )
+    .option(
       "--api-url <url>",
       "Control API base URL (default: http://localhost:3000 or SYNAPSE_API_URL)",
     )
@@ -834,6 +979,7 @@ export function registerLeaseCommands(program: Command): void {
           kid: opts.kid,
           keyFile: opts.keyFile,
           password: opts.password,
+          passphraseEnv: opts.passphraseEnv,
           apiUrl: opts.apiUrl,
         });
       } catch (err: unknown) {
@@ -855,7 +1001,7 @@ export function registerLeaseCommands(program: Command): void {
     .option(
       "-t, --ttl <seconds>",
       "Lease lifetime in seconds (default: 1800, max: 86400)",
-      (v) => parseInt(v, 10),
+      (v) => parseIntegerOption(v, "--ttl", 1, 86400),
       1800,
     )
     .option("-k, --kid <kid>", "Key identifier to sign the lease")
@@ -863,6 +1009,10 @@ export function registerLeaseCommands(program: Command): void {
     .option(
       "-p, --password <pass>",
       "Passphrase for keyfile decryption (defaults to SYNAPSE_KEY_PASSWORD env var)",
+    )
+    .option(
+      "--passphrase-env <var>",
+      "Environment variable name containing the keyfile passphrase",
     )
     .option("-n, --namespace <ns>", "Kubernetes namespace (default: default)", "default")
     .option("-o, --out-file <path>", "Output file path for generated ConfigMap YAML")
@@ -882,6 +1032,7 @@ export function registerLeaseCommands(program: Command): void {
           kid: opts.kid,
           keyFile: opts.keyFile,
           password: opts.password,
+          passphraseEnv: opts.passphraseEnv,
           namespace: opts.namespace,
           outFile: opts.outFile,
           apply: opts.apply,
