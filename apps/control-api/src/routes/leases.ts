@@ -23,6 +23,7 @@ import {
   FlagNotFoundError,
   InvalidFlagKeyError,
   InvalidEnvironmentError,
+  FlagDefinitionParseError,
 } from "../github/index.js";
 
 export interface LeaseRoutesOptions {
@@ -546,12 +547,13 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     }
 
     // 2. ULID validation and fetch lease from database
-    const { id } = req.params as { id: string };
-    const ULID_REGEX = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+    const rawId = (req.params as { id: string }).id;
+    const id = rawId.toUpperCase();
+    const ULID_REGEX = /^[0-9A-HJKMNP-TV-Z]{26}$/;
     if (!ULID_REGEX.test(id)) {
       return reply.code(400).send({
         error: "INVALID_LEASE_ID",
-        message: `Lease ID "${id}" is not a valid 26-character Crockford ULID`,
+        message: `Lease ID "${rawId}" is not a valid 26-character Crockford ULID`,
       });
     }
 
@@ -669,6 +671,12 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       if (err instanceof InvalidEnvironmentError) {
         return reply.code(400).send({
           error: "INVALID_ENVIRONMENT",
+          message: err.message,
+        });
+      }
+      if (err instanceof FlagDefinitionParseError) {
+        return reply.code(422).send({
+          error: "FLAG_PARSE_ERROR",
           message: err.message,
         });
       }

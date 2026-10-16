@@ -143,6 +143,21 @@ export class InvalidEnvironmentError extends Error {
   }
 }
 
+export class FlagDefinitionParseError extends Error {
+  readonly code = "FLAG_PARSE_ERROR";
+  readonly flagKey: string;
+  readonly env: string;
+
+  constructor(flagKey: string, env: string, details: string) {
+    super(
+      `Failed to parse flag definition YAML for ${flagKey} in ${env}: ${details}`,
+    );
+    this.name = "FlagDefinitionParseError";
+    this.flagKey = flagKey;
+    this.env = env;
+  }
+}
+
 export interface GitHubWebhookPullRequestPayload {
   action: string;
   number: number;

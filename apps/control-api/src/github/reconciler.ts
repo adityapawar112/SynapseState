@@ -8,6 +8,7 @@ import {
   FlagNotFoundError,
   InvalidFlagKeyError,
   InvalidEnvironmentError,
+  FlagDefinitionParseError,
 } from "./types.js";
 
 export const FLAG_KEY_REGEX = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -107,8 +108,10 @@ export class GitHubReconciler {
     // 4. Parse YAML preserving comments and metadata, update defaultVariant
     const doc = YAML.parseDocument(existingFile.content);
     if (doc.errors && doc.errors.length > 0) {
-      throw new Error(
-        `Failed to parse flag definition YAML for ${flag_key} in ${env}: ${doc.errors[0].message}`,
+      throw new FlagDefinitionParseError(
+        flag_key,
+        env,
+        doc.errors[0].message,
       );
     }
 

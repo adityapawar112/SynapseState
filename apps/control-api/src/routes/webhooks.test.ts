@@ -500,12 +500,49 @@ describe("GitHub Webhook Route (POST /v1/webhooks/github) - PR 18", () => {
         status: "ignored",
         reason: "Repository owner mismatch",
       });
+
+      // Test missing repository payload when expectations are set
+      const webhookPayloadMissingRepo = JSON.stringify({
+        action: "closed",
+        number: 102,
+        pull_request: {
+          number: 102,
+          html_url: "https://github.com/attacker/attacker-repo/pull/102",
+          state: "closed",
+          title: `feat(flags): promote override for ${flagKey}`,
+          merged: true,
+          merge_commit_sha: "merge-commit-sha-attacker",
+          head: {
+            ref: `synapse/promote-lease-${leaseId}`,
+          },
+        },
+      });
+      const sigMissingRepo = createSignature(webhookPayloadMissingRepo);
+
+      const resMissingRepo = await appWithRepoCheck.inject({
+        method: "POST",
+        url: "/v1/webhooks/github",
+        headers: {
+          "x-github-event": "pull_request",
+          "x-hub-signature-256": sigMissingRepo,
+          "content-type": "application/json",
+        },
+        payload: webhookPayloadMissingRepo,
+      });
+
+      expect(resMissingRepo.statusCode).toBe(200);
+      expect(resMissingRepo.json()).toEqual({
+        status: "ignored",
+        reason: "Missing repository owner in webhook payload",
+      });
     } finally {
       await appWithRepoCheck.close();
     }
   });
 
   it("authenticates webhook using SYNAPSE_WEBHOOK_SECRET fallback (Issue 9)", async () => {
+    const originalGithubSecret = process.env.GITHUB_WEBHOOK_SECRET;
+    delete process.env.GITHUB_WEBHOOK_SECRET;
     const fallbackSecret = "synapse-fallback-secret-987654";
     process.env.SYNAPSE_WEBHOOK_SECRET = fallbackSecret;
 
@@ -538,6 +575,9 @@ describe("GitHub Webhook Route (POST /v1/webhooks/github) - PR 18", () => {
       expect(res.json()).toEqual({ status: "pong" });
     } finally {
       delete process.env.SYNAPSE_WEBHOOK_SECRET;
+      if (originalGithubSecret !== undefined) {
+        process.env.GITHUB_WEBHOOK_SECRET = originalGithubSecret;
+      }
       await appFallback.close();
     }
   });

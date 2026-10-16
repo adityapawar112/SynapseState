@@ -18,6 +18,7 @@ import { runMigrations } from "../db/migrator.js";
 import { vi } from "vitest";
 import {
   StalePrConflictError,
+  FlagDefinitionParseError,
   type GitHubReconciler,
 } from "../github/index.js";
 
@@ -773,6 +774,32 @@ describe("Lease Ingestion & Revocation Routes", () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.json().error).toBe("ENVIRONMENT_MISMATCH");
+    });
+
+    it("returns 422 Unprocessable when reconciler throws FlagDefinitionParseError (R3)", async () => {
+      const leaseId = generateUlid();
+      const payload = createTestLease({ lease_id: leaseId });
+      await leasePool.query(
+        `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
+         VALUES ($1, $2, $3, $4, 'sig', 'ACTIVE', NOW(), 600, NOW() + INTERVAL '600s', 'sre-alice')`,
+        [leaseId, payload.flag_key, env, JSON.stringify(payload)],
+      );
+
+      mockReconciler.promoteLease.mockRejectedValueOnce(
+        new FlagDefinitionParseError(payload.flag_key, env, "tab character not allowed"),
+      );
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(422);
+      expect(res.json().error).toBe("FLAG_PARSE_ERROR");
+      expect(res.json().message).toContain("tab character not allowed");
     });
   });
 });

@@ -192,6 +192,56 @@ describe("OctokitGitHubClient", () => {
       body: "PR Body",
       head: "promo-branch",
       base: "main",
+      draft: undefined,
     });
+  });
+
+  it("distinguishes flag key prefixes symmetrically (e.g. pay vs pay-v2) in branch title matching", async () => {
+    mockOctokit.rest.pulls.list.mockResolvedValue({
+      data: [
+        {
+          number: 101,
+          html_url: "https://github.com/org/repo/pull/101",
+          head: { ref: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678" },
+          title: "feat(flags): promote override for pay-v2 in prod (lease 1)",
+        },
+      ],
+    });
+
+    // Target flag: pay (must NOT match pay-v2)
+    const matchesForPay = await client.findOpenPullRequestsForFile(
+      "org",
+      "repo",
+      "flags/prod/pay.yaml",
+    );
+    expect(matchesForPay).toHaveLength(0);
+
+    // Target flag: pay-v2 (MUST match pay-v2)
+    const matchesForPayV2 = await client.findOpenPullRequestsForFile(
+      "org",
+      "repo",
+      "flags/prod/pay-v2.yaml",
+    );
+    expect(matchesForPayV2).toHaveLength(1);
+    expect(matchesForPayV2[0].number).toBe(101);
+
+    // Reverse test: PR for pay (must NOT match pay-v2)
+    mockOctokit.rest.pulls.list.mockResolvedValue({
+      data: [
+        {
+          number: 102,
+          html_url: "https://github.com/org/repo/pull/102",
+          head: { ref: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345679" },
+          title: "feat(flags): promote override for pay in prod (lease 2)",
+        },
+      ],
+    });
+
+    const matchesReverse = await client.findOpenPullRequestsForFile(
+      "org",
+      "repo",
+      "flags/prod/pay-v2.yaml",
+    );
+    expect(matchesReverse).toHaveLength(0);
   });
 });

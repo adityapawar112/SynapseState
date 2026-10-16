@@ -123,8 +123,9 @@ export class OctokitGitHubClient implements GitHubClient {
     const matchingPrs: GitHubPullRequest[] = [];
 
     const targetFlagKey = filePath.split("/").pop()?.replace(".yaml", "") ?? "";
+    const escapedKey = targetFlagKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const flagKeyRegex = targetFlagKey
-      ? new RegExp(`(^|[^a-z0-9-])${targetFlagKey}([^a-z0-9]|$)`)
+      ? new RegExp(`(^|[^a-z0-9-])${escapedKey}($|[^a-z0-9-])`)
       : null;
 
     for (const pr of pullRequests) {

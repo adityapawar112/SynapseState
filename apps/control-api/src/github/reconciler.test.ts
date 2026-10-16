@@ -8,6 +8,7 @@ import {
   FlagNotFoundError,
   InvalidFlagKeyError,
   InvalidEnvironmentError,
+  FlagDefinitionParseError,
 } from "./types.js";
 import { GitHubReconciler } from "./reconciler.js";
 
@@ -329,7 +330,7 @@ defaultVariant: standard
     );
 
     await expect(reconciler.promoteLease(sampleLease)).rejects.toThrow(
-      /Failed to parse flag definition YAML/,
+      FlagDefinitionParseError,
     );
   });
 

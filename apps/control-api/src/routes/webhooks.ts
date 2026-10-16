@@ -34,6 +34,16 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
   options,
 ) => {
   const { leasePool, stateManager, metrics, webhookSecret } = options;
+  const expectedOwner = options.expectedOwner ?? process.env.GITHUB_OWNER;
+  const expectedRepo = options.expectedRepo ?? process.env.GITHUB_REPO;
+  const expectedBaseBranch =
+    options.expectedBaseBranch ?? process.env.GITHUB_BASE_BRANCH;
+
+  if (!expectedOwner || !expectedRepo) {
+    fastify.log.warn(
+      "[Webhook] Security notice: GITHUB_OWNER or GITHUB_REPO is not configured; source repository verification is inactive",
+    );
+  }
 
   fastify.post("/v1/webhooks/github", async (req, reply) => {
     // 1. Webhook secret validation (with SYNAPSE_WEBHOOK_SECRET fallback)
@@ -105,20 +115,23 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
     }
 
     // Verify source repository matches configured owner/repo (prevent cross-repo forgery)
-    const expectedOwner = options.expectedOwner ?? process.env.GITHUB_OWNER;
-    const expectedRepo = options.expectedRepo ?? process.env.GITHUB_REPO;
-    const expectedBaseBranch =
-      options.expectedBaseBranch ?? process.env.GITHUB_BASE_BRANCH;
-
-    if (expectedOwner && payload.repository?.owner?.login) {
-      if (
-        payload.repository.owner.login.toLowerCase() !==
-        expectedOwner.toLowerCase()
-      ) {
+    if (expectedOwner) {
+      const actualOwner = payload.repository?.owner?.login;
+      if (!actualOwner) {
+        req.log.warn(
+          { expectedOwner },
+          "[Webhook] Ignoring event with missing repository owner",
+        );
+        return reply.code(200).send({
+          status: "ignored",
+          reason: "Missing repository owner in webhook payload",
+        });
+      }
+      if (actualOwner.toLowerCase() !== expectedOwner.toLowerCase()) {
         req.log.warn(
           {
             expectedOwner,
-            actualOwner: payload.repository.owner.login,
+            actualOwner,
           },
           "[Webhook] Ignoring event from unexpected repository owner",
         );
@@ -129,14 +142,23 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       }
     }
 
-    if (expectedRepo && payload.repository?.name) {
-      if (
-        payload.repository.name.toLowerCase() !== expectedRepo.toLowerCase()
-      ) {
+    if (expectedRepo) {
+      const actualRepo = payload.repository?.name;
+      if (!actualRepo) {
+        req.log.warn(
+          { expectedRepo },
+          "[Webhook] Ignoring event with missing repository name",
+        );
+        return reply.code(200).send({
+          status: "ignored",
+          reason: "Missing repository name in webhook payload",
+        });
+      }
+      if (actualRepo.toLowerCase() !== expectedRepo.toLowerCase()) {
         req.log.warn(
           {
             expectedRepo,
-            actualRepo: payload.repository.name,
+            actualRepo,
           },
           "[Webhook] Ignoring event from unexpected repository name",
         );
