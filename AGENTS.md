@@ -32,6 +32,8 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 5. **Zero-Context Telemetry:** The `TelemetryHook` aggregates only `(flag_key, variant, reason)` tuples and counts in memory. It must **never inspect, capture, or export evaluation context, user IDs, or targeting attributes**.
 6. **Read-Only Codebase Scanner:** `synapse-purger` operates as a read-only AST scanner and candidate qualifier. It **must never execute target repository test suites or build scripts** while holding GitHub credentials. If dynamic expressions or silent services block qualification, it emits a structured Refusal Report.
 7. **Tamper-Evident Audit Ledger:** All state mutations stage to `audit_pending` and seal asynchronously to a SHA-256 hash-chained PostgreSQL ledger by a single writer. Scheduled tasks sign periodic checkpoints to an immutable external write-once store.
+8. **Ecosystem & Library-First Primitive Reuse:** Always prioritize native runtime APIs and established ecosystem primitives (e.g., Node.js `node:crypto`, Fastify ecosystem plugins, OpenFeature standard types) before writing bespoke utilities from scratch.
+
 
 ---
 

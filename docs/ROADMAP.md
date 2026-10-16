@@ -196,7 +196,7 @@ gantt
   * **PR 16 (`feat/cli-lease-lifecycle`):** `[COMPLETED]` `feat(cli): lease create, rollout status polling, and emergency-apply` — `packages/cli/src/commands/lease.ts`
   * **PR 17 (`feat/cli-incident-log-ranker`):** `[COMPLETED]` `feat(cli): synapse log incident investigation with pure rankSuspects` — `packages/cli/src/commands/log.ts`, `packages/cli/src/ranker.ts`
   * **PR 18 (`feat/git-promotion-reconciliation`):** `[COMPLETED]` `feat(api): GitHub App PR promotion and merge webhook reconciliation` — `apps/control-api/src/github/*`, `packages/cli/src/commands/promote.ts`
-  * **PR 19 (`feat/audit-checkpoint-verifier`):** `feat(cli): isolated checkpoint signer CronJob and synapse audit verify` — `deploy/helm/cronjobs/*`, `packages/cli/src/commands/audit.ts`
+  * **PR 19 (`feat/audit-checkpoint-verifier`):** `[COMPLETED]` `feat(cli): isolated checkpoint signer CronJob and synapse audit verify` — `deploy/helm/cronjobs/*`, `packages/cli/src/commands/audit.ts`
   * **PR 20 (`test/chaos-drills-and-postmortem`):** `docs(postmortem): scripted 90-second demo and chaos injection drill results` — `docs/postmortems/*`, `test/drills/*`
 * **Security & Best Practice Review Checkpoints:**
   * **Key Storage Threat Model:** `[AUDITED & VERIFIED]` Verified AES-256-GCM encryption with `crypto.scrypt` (`N=32768, r=8, p=1`), AAD binding to `kid` and format version, and POSIX file permission enforcement (`0600`) on `~/.synapse/keys/*.key`.

@@ -17,6 +17,7 @@ import { telemetryRoutes } from "./routes/telemetry.js";
 import { changeRoutes } from "./routes/changes.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { auditRoutes } from "./routes/audit.js";
 import { getMetricsRegistry, type SynapseMetrics } from "./metrics/index.js";
 import {
   type GitHubReconciler,
@@ -141,6 +142,9 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     expectedOwner: githubOwner,
     expectedRepo: githubRepo,
     expectedBaseBranch: githubBaseBranch,
+  });
+  void server.register(auditRoutes, {
+    leasePool: activePool,
   });
 
   // Audit Sealer configuration and lifecycle management

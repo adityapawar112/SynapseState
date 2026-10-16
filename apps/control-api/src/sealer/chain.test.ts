@@ -191,7 +191,7 @@ describe("Audit Ledger Chain Math & Verification (chain.ts)", () => {
       prevHash = hash;
     }
 
-    // Mutate seq of event 2 (e.g. skip to 4)
+    // Mutate seq of event 2 (e.g. skip to 4, missing seq 2)
     events[1] = {
       ...events[1]!,
       seq: 4,
@@ -199,7 +199,94 @@ describe("Audit Ledger Chain Math & Verification (chain.ts)", () => {
 
     const verification = verifyAuditChain(events);
     expect(verification.valid).toBe(false);
-    expect(verification.failedSeq).toBe(4);
+    expect(verification.failedSeq).toBe(2);
+    expect(verification.error).toContain("expected seq 2, got 4");
+  });
+
+  it("detects actor or event_type tampering in the audit chain", () => {
+    const events: AuditEventRecord[] = [];
+    let prevHash = GENESIS_PREV_HASH;
+
+    for (let i = 1; i <= 3; i++) {
+      const eventData = {
+        seq: i,
+        ts: `2026-10-11T12:00:0${i}.000Z`,
+        actor: `actor-${i}`,
+        event_type: "LEASE_CREATED",
+        payload: { index: i },
+      };
+      const hash = computeEventHash(prevHash, eventData);
+      events.push({
+        ...eventData,
+        prev_hash: prevHash,
+        hash,
+      });
+      prevHash = hash;
+    }
+
+    // Mutate actor of event 2
+    events[1] = {
+      ...events[1]!,
+      actor: "malicious-intruder",
+    };
+
+    const verification = verifyAuditChain(events);
+    expect(verification.valid).toBe(false);
+    expect(verification.failedSeq).toBe(2);
+    expect(verification.error).toContain("Hash mismatch at seq 2");
+  });
+
+  it("detects prefix truncation when chain starts at seq > 1 from genesis (C1)", () => {
+    // Generate a 10-event chain
+    const originalEvents: AuditEventRecord[] = [];
+    let prevHash = GENESIS_PREV_HASH;
+    for (let i = 1; i <= 10; i++) {
+      const eventData = {
+        seq: i,
+        ts: `2026-10-11T12:00:${i < 10 ? "0" + i : i}.000Z`,
+        actor: `actor-${i}`,
+        event_type: "LEASE_CREATED",
+        payload: { index: i },
+      };
+      const hash = computeEventHash(prevHash, eventData);
+      originalEvents.push({
+        ...eventData,
+        prev_hash: prevHash,
+        hash,
+      });
+      prevHash = hash;
+    }
+
+    // Attacker drops seq 1..5, re-hashes from seq 6 using GENESIS_PREV_HASH
+    const truncated: AuditEventRecord[] = [];
+    let forgedPrev = GENESIS_PREV_HASH;
+    for (let i = 5; i < 10; i++) {
+      const original = originalEvents[i]!;
+      const forgedHash = computeEventHash(forgedPrev, original);
+      truncated.push({
+        ...original,
+        prev_hash: forgedPrev,
+        hash: forgedHash,
+      });
+      forgedPrev = forgedHash;
+    }
+
+    expect(truncated[0]!.seq).toBe(6);
+    expect(truncated[0]!.prev_hash).toBe(GENESIS_PREV_HASH);
+
+    // Default verifyAuditChain MUST fail with prefix truncation error
+    const verification = verifyAuditChain(truncated);
+    expect(verification.valid).toBe(false);
+    expect(verification.failedSeq).toBe(6);
+    expect(verification.error).toContain(
+      "Ledger does not start at genesis: first seq is 6, expected 1 (possible prefix truncation)",
+    );
+
+    // With explicit requireGenesisStart: false and matching initialPrevHash, partial chain passes
+    const partialVerification = verifyAuditChain(truncated, GENESIS_PREV_HASH, {
+      requireGenesisStart: false,
+    });
+    expect(partialVerification.valid).toBe(true);
   });
 
   it("detects timestamp mutation in the audit chain", () => {

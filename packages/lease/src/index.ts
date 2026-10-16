@@ -5,6 +5,7 @@ export {
   LEASE_DOMAIN_PREFIX,
   REVOCATION_DOMAIN_PREFIX,
   KEYREVOCATION_DOMAIN_PREFIX,
+  CHECKPOINT_DOMAIN_PREFIX,
 } from "./domains.js";
 
 // RFC 8785 JSON Canonicalization Scheme (JCS)
@@ -34,6 +35,10 @@ export {
   type KeyRevocationPayload,
   KeyRevocationEnvelopeSchema,
   type KeyRevocationEnvelope,
+  CheckpointPayloadSchema,
+  type CheckpointPayload,
+  CheckpointEnvelopeSchema,
+  type CheckpointEnvelope,
   KeysetKeySchema,
   type KeysetKey,
   KeysetSchema,
@@ -61,6 +66,27 @@ export {
   signRevocationWithSigner,
 } from "./crypto.js";
 
+// Audit Checkpoint Signing & Keyset Verification
+export {
+  signCheckpoint,
+  verifyCheckpoint,
+  signCheckpointWithSigner,
+  verifyCheckpointWithKeyset,
+} from "./checkpoint.js";
+
+// Audit Ledger Chain Primitives (RFC 8785 + SHA-256)
+export {
+  GENESIS_PREV_HASH,
+  type AuditEventData,
+  type AuditEventRecord,
+  type ChainVerificationResult,
+  type VerifyAuditChainOptions,
+  canonicalizeAuditEvent,
+  computeEventHash,
+  verifySingleEvent,
+  verifyAuditChain,
+} from "./chain.js";
+
 // Dual-Clock Expiry Validator (Invariant 3)
 export {
   DEFAULT_SKEW_TOLERANCE_MS,
@@ -85,6 +111,7 @@ export {
   canSignLease,
   canRevokeLease,
   canRevokeKey,
+  canSignCheckpoint,
   isKeyRevoked,
   verifyLeaseWithKeyset,
   verifyRevocationWithKeyset,

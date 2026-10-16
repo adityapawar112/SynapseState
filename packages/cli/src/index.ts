@@ -4,6 +4,7 @@ import { registerKeyCommands } from "./commands/key.js";
 import { registerLeaseCommands } from "./commands/lease.js";
 import { registerLogCommands } from "./commands/log.js";
 import { registerPromoteCommands } from "./commands/promote.js";
+import { registerAuditCommands } from "./commands/audit.js";
 
 export * from "./signer/interface.js";
 export * from "./signer/encrypted-file.js";
@@ -11,6 +12,7 @@ export * from "./commands/key.js";
 export * from "./commands/lease.js";
 export * from "./commands/log.js";
 export * from "./commands/promote.js";
+export * from "./commands/audit.js";
 export * from "./ranker.js";
 
 const program = new Command();
@@ -23,6 +25,7 @@ registerKeyCommands(program);
 registerLeaseCommands(program);
 registerLogCommands(program);
 registerPromoteCommands(program);
+registerAuditCommands(program);
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
