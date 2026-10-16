@@ -27,6 +27,10 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
     it("throws on invalid since format", () => {
       expect(() => parseSince("invalid-time")).toThrow(/Invalid duration or timestamp format/i);
     });
+
+    it("throws on out-of-range since duration", () => {
+      expect(() => parseSince("9999999999d")).toThrow(/out-of-range date/i);
+    });
   });
 
   describe("Online Mode (Control API Query)", () => {
@@ -132,12 +136,12 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
       ).rejects.toThrow(/Control API unreachable at.*--offline/i);
     });
 
-    it("throws error with server status when Control API returns non-200", async () => {
+    it("throws error with server status when Control API returns non-200 and hints --offline on 500", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
-        status: 400,
-        statusText: "Bad Request",
-        json: async () => ({ error: "Missing required query parameter: env" }),
+        status: 500,
+        statusText: "Internal Server Error",
+        json: async () => ({ error: "Database connection failed" }),
       });
 
       await expect(
@@ -146,7 +150,7 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
           env: "production",
           fetchFn: mockFetch as unknown as typeof fetch,
         }),
-      ).rejects.toThrow(/Failed to fetch change history.*400/i);
+      ).rejects.toThrow(/Failed to fetch change history.*500.*--offline/i);
     });
   });
 
@@ -222,6 +226,45 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
       // Verify the more recent lease has higher recency score than the 10m old git commit
       expect(res.suspects[0].flag_key).toBe("offline-flag");
       expect(res.suspects[0].suggested_action.suggested_value).toBe("control");
+
+      // Verify git-flag without local schema file emits <TYPE> instead of hardcoding false (B2)
+      expect(res.suspects[1].flag_key).toBe("git-flag");
+      expect(res.suspects[1].suggested_action.suggested_value).toBe("<TYPE>");
+      expect(res.suspects[1].suggested_action.reason).toContain("Flag type unknown");
+    });
+
+    it("infers defaultVariant from local flag YAML file when available in offline mode (B2)", async () => {
+      // Create local flags/production/search-v2.yaml
+      const flagsDir = path.join(tempDir, "flags", "production");
+      await fs.mkdir(flagsDir, { recursive: true });
+      await fs.writeFile(
+        path.join(flagsDir, "search-v2.yaml"),
+        "defaultVariant: 'off'\nvariants:\n  - 'on'\n  - 'off'\n",
+        "utf8",
+      );
+
+      const gitLogOutput = [
+        `deadbeef1234\tgit-author\t${new Date(FIXED_NOW - 5 * 60 * 1000).toISOString()}\tfeat(flags): update search-v2`,
+        "flags/production/search-v2.yaml",
+      ].join("\n");
+
+      const mockGitRunner = vi.fn().mockResolvedValue(gitLogOutput);
+
+      const res = await executeLog({
+        service: "search-service",
+        env: "production",
+        since: "30m",
+        offline: true,
+        offlineDirs: [],
+        offlineGitCwd: tempDir,
+        gitRunner: mockGitRunner,
+        nowMs: FIXED_NOW,
+      });
+
+      expect(res.suspects).toHaveLength(1);
+      expect(res.suspects[0].flag_key).toBe("search-v2");
+      // "off" toggles to "on" based on type-aware rules
+      expect(res.suspects[0].suggested_action.suggested_value).toBe("on");
     });
 
     it("handles missing git directory or git error gracefully in offline mode", async () => {

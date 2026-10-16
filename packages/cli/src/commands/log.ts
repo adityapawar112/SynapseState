@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { Command } from "commander";
 import Table from "cli-table3";
 import pc from "picocolors";
+import YAML from "yaml";
 import { LeaseEnvelopeSchema } from "@synapsestate/lease";
 import {
   rankSuspects,
@@ -63,11 +64,16 @@ export function parseSince(sinceStr: string, now: Date = new Date()): Date {
     else if (unit === "m") ms = val * 60 * 1000;
     else if (unit === "h") ms = val * 3600 * 1000;
     else if (unit === "d") ms = val * 86400 * 1000;
-    return new Date(now.getTime() - ms);
+
+    const targetTime = now.getTime() - ms;
+    if (!Number.isFinite(targetTime) || targetTime < 0) {
+      throw new Error(`Duration or timestamp '${sinceStr}' results in an out-of-range date`);
+    }
+    return new Date(targetTime);
   }
 
   const parsed = new Date(trimmed);
-  if (!isNaN(parsed.getTime())) {
+  if (!isNaN(parsed.getTime()) && Number.isFinite(parsed.getTime())) {
     return parsed;
   }
 
@@ -79,6 +85,8 @@ export function parseSince(sinceStr: string, now: Date = new Date()): Date {
  */
 function formatRelativeTime(dateStr: string, nowMs: number): string {
   const time = new Date(dateStr).getTime();
+  if (!Number.isFinite(time)) return "unknown";
+
   const diffMs = Math.max(0, nowMs - time);
   const diffSec = Math.floor(diffMs / 1000);
 
@@ -149,7 +157,8 @@ async function inspectLocalGitCommits(
     const lines = rawOutput.split(/\r?\n/);
     let currentCommit: { hash: string; author: string; date: string; subject: string } | null =
       null;
-    let syntheticId = 1000;
+    // Use negative IDs for synthetic git events to prevent collision with database IDs
+    let syntheticId = -1000;
 
     for (const rawLine of lines) {
       const line = rawLine.trim();
@@ -167,13 +176,27 @@ async function inspectLocalGitCommits(
           };
         }
       } else if (currentCommit && line.startsWith(flagPath)) {
-        // Modified file under flags/<env>/
+        // Strict lowercase matching per ADR 0007 charset
         const fileSubPath = line.slice(flagPath.length);
-        const match = /^([a-z0-9](?:[-a-z0-9]*[a-z0-9])?)\.(?:yaml|yml)$/i.exec(fileSubPath);
+        const match = /^([a-z0-9](?:[-a-z0-9]*[a-z0-9])?)\.yaml$/.exec(fileSubPath);
         if (match) {
           const flagKey = match[1];
+
+          // Attempt to load local flag schema to infer defaultVariant if available (B2)
+          let payloadValue: unknown = undefined;
+          try {
+            const yamlPath = path.join(cwd ?? process.cwd(), flagPath, `${flagKey}.yaml`);
+            const yamlContent = await fs.readFile(yamlPath, "utf8");
+            const parsedYaml = YAML.parse(yamlContent);
+            if (parsedYaml && typeof parsedYaml === "object" && parsedYaml.defaultVariant !== undefined) {
+              payloadValue = parsedYaml.defaultVariant;
+            }
+          } catch {
+            // Local file might not exist in checkout or unreadable
+          }
+
           events.push({
-            id: syntheticId++,
+            id: syntheticId--,
             event_type: "GIT_MERGE",
             env,
             flag_key: flagKey,
@@ -182,6 +205,7 @@ async function inspectLocalGitCommits(
             payload: {
               commit_sha: currentCommit.hash,
               message: currentCommit.subject,
+              ...(payloadValue !== undefined ? { value: payloadValue } : {}),
             },
           });
         }
@@ -203,7 +227,8 @@ async function inspectLocalEmergencyLeases(
   dirs: string[],
 ): Promise<ChangeEvent[]> {
   const events: ChangeEvent[] = [];
-  let syntheticId = 5000;
+  // Use negative IDs for synthetic emergency lease events
+  let syntheticId = -5000;
 
   for (const dir of dirs) {
     try {
@@ -223,7 +248,7 @@ async function inspectLocalEmergencyLeases(
             if (occurredDate < sinceDate) continue;
 
             events.push({
-              id: syntheticId++,
+              id: syntheticId--,
               event_type: "LEASE_CREATED",
               env: envelope.payload.env,
               flag_key: envelope.payload.flag_key,
@@ -235,6 +260,7 @@ async function inspectLocalEmergencyLeases(
                 reason: envelope.payload.reason,
                 ttl_seconds: envelope.payload.ttl_seconds,
                 offline: true,
+                unverified: true,
               },
             });
           }
@@ -270,7 +296,7 @@ export async function executeLog(params: LogParams): Promise<LogResult> {
 
   if (params.offline) {
     warning =
-      "[OFFLINE MODE] Control API offline or --offline flag specified. Telemetry volume weighting unavailable; ranking based strictly on Git commits and local emergency leases.";
+      "[OFFLINE MODE] Control API offline or --offline flag specified. Telemetry volume weighting unavailable; ranking based strictly on Git commits and local emergency leases (unverified local state).";
 
     const leaseDirs: string[] = params.offlineDirs ?? [
       ...(params.offlineDir ? [params.offlineDir] : []),
@@ -326,8 +352,12 @@ export async function executeLog(params: LogParams): Promise<LogResult> {
       } catch {
         serverError = `: ${res.statusText}`;
       }
+      const offlineHint =
+        res.status >= 500
+          ? " If the control plane is degraded, rerun with --offline to inspect local Git and emergency leases."
+          : "";
       throw new Error(
-        `Failed to fetch change history from Control API (${res.status})${serverError}`,
+        `Failed to fetch change history from Control API (${res.status})${serverError}.${offlineHint}`,
       );
     }
 
@@ -344,8 +374,12 @@ export async function executeLog(params: LogParams): Promise<LogResult> {
     events = events.filter((e) => e.flag_key === flagFilter);
   }
 
-  // Sort events by occurred_at DESC, limit
-  events.sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+  // Sort events by occurred_at DESC with NaN safety, limit
+  events.sort((a, b) => {
+    const tA = new Date(a.occurred_at).getTime();
+    const tB = new Date(b.occurred_at).getTime();
+    return (Number.isFinite(tB) ? tB : 0) - (Number.isFinite(tA) ? tA : 0);
+  });
   events = events.slice(0, limit);
 
   // Pure attribution ranking

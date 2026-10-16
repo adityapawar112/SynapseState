@@ -13,7 +13,7 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
     expect(suspects).toEqual([]);
   });
 
-  it("filters out events with null or empty flag_key", () => {
+  it("filters out events with null, empty, or invalid charset flag_key", () => {
     const events: ChangeEvent[] = [
       {
         id: 1,
@@ -33,10 +33,48 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
         occurred_at: "2026-10-16T11:56:00.000Z",
         payload: {},
       },
+      {
+        id: 3,
+        event_type: "GIT_MERGE",
+        env: "production",
+        flag_key: "evil; rm -rf /",
+        actor: "malicious",
+        occurred_at: "2026-10-16T11:57:00.000Z",
+        payload: {},
+      },
+      {
+        id: 4,
+        event_type: "GIT_MERGE",
+        env: "production",
+        flag_key: "UPPERCASE_NOT_ALLOWED",
+        actor: "sre",
+        occurred_at: "2026-10-16T11:58:00.000Z",
+        payload: {},
+      },
     ];
 
     const suspects = rankSuspects(events, [], "checkout-service", FIXED_NOW);
     expect(suspects).toEqual([]);
+  });
+
+  it("handles invalid occurred_at timestamps gracefully without NaN scores", () => {
+    const events: ChangeEvent[] = [
+      {
+        id: 5,
+        event_type: "LEASE_CREATED",
+        env: "production",
+        flag_key: "valid-flag",
+        actor: "sre-alice",
+        occurred_at: "invalid-timestamp-string",
+        payload: { value: true },
+      },
+    ];
+
+    const suspects = rankSuspects(events, [], "checkout-service", FIXED_NOW);
+    expect(suspects).toHaveLength(1);
+    expect(Number.isFinite(suspects[0].score)).toBe(true);
+    expect(Number.isNaN(suspects[0].score)).toBe(false);
+    expect(suspects[0].recency_score).toBe(0);
   });
 
   it("ranks recent events higher than older events (recency decay)", () => {
@@ -208,6 +246,73 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
         "synapse lease create --flag strict-auth --env staging --value true --ttl 30m",
       );
       expect(suspect.current_variant).toBe("false");
+    });
+
+    it("handles case-insensitive boolean strings ('TRUE', 'False')", () => {
+      const events: ChangeEvent[] = [
+        {
+          id: 508,
+          event_type: "LEASE_CREATED",
+          env: "production",
+          flag_key: "case-flag-1",
+          actor: "sre",
+          occurred_at: new Date(FIXED_NOW - 60000).toISOString(),
+          payload: { value: "TRUE" },
+        },
+        {
+          id: 509,
+          event_type: "LEASE_CREATED",
+          env: "production",
+          flag_key: "case-flag-2",
+          actor: "sre",
+          occurred_at: new Date(FIXED_NOW - 60000).toISOString(),
+          payload: { value: "False" },
+        },
+      ];
+
+      const suspects = rankSuspects(events, [], "checkout-service", FIXED_NOW);
+      const s1 = suspects.find((s) => s.flag_key === "case-flag-1")!;
+      const s2 = suspects.find((s) => s.flag_key === "case-flag-2")!;
+      expect(s1.suggested_action.suggested_value).toBe(false);
+      expect(s2.suggested_action.suggested_value).toBe(true);
+    });
+
+    it("emits <TYPE> placeholder when flag type is completely unknown (B2)", () => {
+      const events: ChangeEvent[] = [
+        {
+          id: 510,
+          event_type: "GIT_MERGE",
+          env: "production",
+          flag_key: "unknown-type-flag",
+          actor: "git-committer",
+          occurred_at: new Date(FIXED_NOW - 60000).toISOString(),
+          payload: { commit_sha: "abcdef123456", message: "Update flag" },
+        },
+      ];
+
+      const [suspect] = rankSuspects(events, [], "checkout-service", FIXED_NOW);
+      expect(suspect.suggested_action.suggested_value).toBe("<TYPE>");
+      expect(suspect.suggested_action.command).toContain("--value '<TYPE>'");
+      expect(suspect.suggested_action.reason).toContain("Flag type unknown");
+    });
+
+    it("safely shell-quotes commands preventing command injection (B3)", () => {
+      const events: ChangeEvent[] = [
+        {
+          id: 511,
+          event_type: "LEASE_CREATED",
+          env: "production",
+          flag_key: "quote-test-flag",
+          actor: "sre",
+          occurred_at: new Date(FIXED_NOW - 60000).toISOString(),
+          payload: { value: "variant with spaces; rm -rf /" },
+        },
+      ];
+
+      const [suspect] = rankSuspects(events, [], "service; touch /tmp/pwn", FIXED_NOW);
+      expect(suspect.suggested_action.command).not.toContain("touch /tmp/pwn");
+      // The service should be safely quoted or sanitized
+      expect(suspect.suggested_action.command).toContain("service__touch__tmp_pwn");
     });
 
     it("suggests off when previous value was on (and vice-versa)", () => {
