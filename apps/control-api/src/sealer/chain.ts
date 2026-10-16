@@ -7,6 +7,7 @@ export {
   type AuditEventData,
   type AuditEventRecord,
   type ChainVerificationResult,
+  type VerifyAuditChainOptions,
   canonicalizeAuditEvent,
   computeEventHash,
   verifySingleEvent,

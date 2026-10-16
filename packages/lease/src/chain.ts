@@ -90,15 +90,39 @@ export function verifySingleEvent(
 }
 
 /**
+ * Options for audit chain verification.
+ */
+export interface VerifyAuditChainOptions {
+  /**
+   * If true (default when initialPrevHash is GENESIS_PREV_HASH), requires events[0].seq === 1.
+   * Set to false only when deliberately verifying a contiguous sub-range of the ledger.
+   */
+  requireGenesisStart?: boolean;
+}
+
+/**
  * Verifies an ordered sequence of audit event records from genesis (or a given starting prev_hash).
  * Checks contiguous sequence numbers, unbroken prev_hash links, and SHA-256 integrity.
  */
 export function verifyAuditChain(
   events: AuditEventRecord[],
   initialPrevHash: string = GENESIS_PREV_HASH,
+  opts: VerifyAuditChainOptions = {},
 ): ChainVerificationResult {
   if (events.length === 0) {
     return { valid: true };
+  }
+
+  // Invariant 7 (C1): Ledger must start at genesis seq 1 to prevent prefix-truncation attacks
+  if (initialPrevHash === GENESIS_PREV_HASH && opts.requireGenesisStart !== false) {
+    const firstSeq = Number(events[0]!.seq);
+    if (firstSeq !== 1) {
+      return {
+        valid: false,
+        error: `Ledger does not start at genesis: first seq is ${firstSeq}, expected 1 (possible prefix truncation)`,
+        failedSeq: firstSeq,
+      };
+    }
   }
 
   let expectedPrevHash = initialPrevHash;
@@ -121,7 +145,7 @@ export function verifyAuditChain(
       return {
         valid: false,
         error: `Sequence discontinuity at index ${i}: expected seq ${expectedSeq}, got ${currentSeq}`,
-        failedSeq: currentSeq,
+        failedSeq: expectedSeq,
       };
     }
 

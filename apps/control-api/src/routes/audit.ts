@@ -14,6 +14,30 @@ interface AuditEventsQuery {
 }
 
 /**
+ * Parses a string strictly as a non-negative integer.
+ * Rejects floats ("1.5"), trailing alphas ("10abc"), exponentials ("10e2"), and unsafe numbers.
+ */
+function parseStrictPositiveInt(raw: string): number | undefined {
+  if (!/^[0-9]+$/.test(raw.trim())) {
+    return undefined;
+  }
+  const n = Number(raw.trim());
+  return Number.isSafeInteger(n) ? n : undefined;
+}
+
+/**
+ * Safely converts an arbitrary timestamp or Date into an ISO 8601 string.
+ * Prevents unhandled RangeError throws on corrupted database values.
+ */
+function safeIsoString(ts: unknown): string {
+  if (ts instanceof Date) {
+    return Number.isNaN(ts.getTime()) ? new Date(0).toISOString() : ts.toISOString();
+  }
+  const d = new Date(String(ts));
+  return Number.isNaN(d.getTime()) ? new Date(0).toISOString() : d.toISOString();
+}
+
+/**
  * Authentication and authorization middleware verifying Bearer token.
  * Grants access to operator, admin, or audit_reader roles, or master SYNAPSE_API_TOKEN.
  */
@@ -40,9 +64,14 @@ async function authenticateAuditReader(
     return false;
   }
 
+  // Constant-time comparison against master SYNAPSE_API_TOKEN to prevent timing side-channels (I2)
+  const expectedToken = process.env.SYNAPSE_API_TOKEN ?? "";
+  const rawBuf = Buffer.from(rawToken, "utf8");
+  const expBuf = Buffer.from(expectedToken, "utf8");
   if (
-    process.env.SYNAPSE_API_TOKEN &&
-    rawToken === process.env.SYNAPSE_API_TOKEN
+    expBuf.length > 0 &&
+    rawBuf.length === expBuf.length &&
+    crypto.timingSafeEqual(rawBuf, expBuf)
   ) {
     return true;
   }
@@ -99,31 +128,31 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
       }
 
       const fromSeqRaw = req.query.from_seq ?? "1";
-      const fromSeq = parseInt(fromSeqRaw, 10);
-      if (Number.isNaN(fromSeq) || fromSeq < 1) {
+      const fromSeq = parseStrictPositiveInt(fromSeqRaw);
+      if (fromSeq === undefined || fromSeq < 1) {
         return reply.code(400).send({
           error: "INVALID_PARAM",
-          message: "from_seq must be an integer >= 1",
+          message: "from_seq must be a strict integer >= 1",
         });
       }
 
       let toSeq: number | undefined;
       if (req.query.to_seq !== undefined) {
-        toSeq = parseInt(req.query.to_seq, 10);
-        if (Number.isNaN(toSeq) || toSeq < fromSeq) {
+        toSeq = parseStrictPositiveInt(req.query.to_seq);
+        if (toSeq === undefined || toSeq < fromSeq) {
           return reply.code(400).send({
             error: "INVALID_PARAM",
-            message: "to_seq must be an integer >= from_seq",
+            message: "to_seq must be a strict integer >= from_seq",
           });
         }
       }
 
       const limitRaw = req.query.limit ?? "100";
-      const limit = parseInt(limitRaw, 10);
-      if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
+      const limit = parseStrictPositiveInt(limitRaw);
+      if (limit === undefined || limit < 1 || limit > 1000) {
         return reply.code(400).send({
           error: "INVALID_PARAM",
-          message: "limit must be an integer between 1 and 1000",
+          message: "limit must be a strict integer between 1 and 1000",
         });
       }
 
@@ -150,7 +179,7 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
 
       const events: AuditEventRecord[] = returnedRows.map((r) => ({
         seq: Number(r.seq),
-        ts: r.ts instanceof Date ? r.ts.toISOString() : new Date(r.ts).toISOString(),
+        ts: safeIsoString(r.ts),
         actor: r.actor,
         event_type: r.event_type,
         payload: r.payload,
@@ -161,7 +190,8 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
       return reply.code(200).send({
         events,
         count: events.length,
-        total,
+        total, // table-wide sealed total
+        sealed_total: total,
         has_more: hasMore,
       });
     },
@@ -199,10 +229,7 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
       checkpoint_seq: Number(latest.seq),
       checkpoint_hash: latest.hash,
       sealed_count: total,
-      timestamp:
-        latest.ts instanceof Date
-          ? latest.ts.toISOString()
-          : new Date(latest.ts).toISOString(),
+      timestamp: safeIsoString(latest.ts),
     });
   });
 

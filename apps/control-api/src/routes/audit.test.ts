@@ -181,6 +181,60 @@ describe("Phase 4 PR 19: Audit Export Routes (apps/control-api/src/routes/audit.
       expect(body.has_more).toBe(true);
     });
 
+    it("rejects non-strict integer query parameters with 400 (I1)", async () => {
+      // limit with trailing non-digits or floats
+      const resLimitAlpha = await app.inject({
+        method: "GET",
+        url: "/v1/audit/events?limit=10abc",
+        headers: { authorization: `Bearer ${masterToken}` },
+      });
+      expect(resLimitAlpha.statusCode).toBe(400);
+
+      const resLimitFloat = await app.inject({
+        method: "GET",
+        url: "/v1/audit/events?limit=10.5",
+        headers: { authorization: `Bearer ${masterToken}` },
+      });
+      expect(resLimitFloat.statusCode).toBe(400);
+
+      // from_seq with floats or non-digits
+      const resFromSeqFloat = await app.inject({
+        method: "GET",
+        url: "/v1/audit/events?from_seq=1.5",
+        headers: { authorization: `Bearer ${masterToken}` },
+      });
+      expect(resFromSeqFloat.statusCode).toBe(400);
+
+      const resFromSeqAlpha = await app.inject({
+        method: "GET",
+        url: "/v1/audit/events?from_seq=3abc",
+        headers: { authorization: `Bearer ${masterToken}` },
+      });
+      expect(resFromSeqAlpha.statusCode).toBe(400);
+
+      const resFromSeqExp = await app.inject({
+        method: "GET",
+        url: "/v1/audit/events?from_seq=10e2",
+        headers: { authorization: `Bearer ${masterToken}` },
+      });
+      expect(resFromSeqExp.statusCode).toBe(400);
+
+      // to_seq with floats or non-digits
+      const resToSeqAlpha = await app.inject({
+        method: "GET",
+        url: "/v1/audit/events?from_seq=1&to_seq=5abc",
+        headers: { authorization: `Bearer ${masterToken}` },
+      });
+      expect(resToSeqAlpha.statusCode).toBe(400);
+
+      const resToSeqFloat = await app.inject({
+        method: "GET",
+        url: "/v1/audit/events?from_seq=1&to_seq=3.9",
+        headers: { authorization: `Bearer ${masterToken}` },
+      });
+      expect(resToSeqFloat.statusCode).toBe(400);
+    });
+
     it("rejects invalid query parameters with 400", async () => {
       const res = await app.inject({
         method: "GET",

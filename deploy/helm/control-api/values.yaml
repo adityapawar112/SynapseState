@@ -118,8 +118,8 @@ resources:
     memory: 128Mi
 
 # Isolated Tamper-Evident Checkpoint Signer CronJob (ARCH §8.3 & Invariant 7)
-# NOTE: Checkpoint signer CLI logic (`synapse audit checkpoint`) is implemented in PR 19 (ROADMAP §4).
-# Manifest is fully templated and validated, but disabled by default to avoid no-op runs before PR 19.
+# Runs `synapse audit checkpoint` periodically to sign and anchor hash-chained checkpoints to S3.
+# Disabled by default in the base chart; set enabled: true when S3 checkpoint bucket and secrets are provisioned.
 cronjob:
   enabled: false
   schedule: "*/15 * * * *"

@@ -143,7 +143,7 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       expect(result.error).toContain("Broken prev_hash link at seq 4");
     });
 
-    it("detects sequence discontinuity (missing/skipped record)", async () => {
+    it("detects sequence discontinuity (missing/skipped record) and reports missing seq (I7)", async () => {
       const events = createSealedChain(5);
       // Remove event at index 2 (seq 3)
       events.splice(2, 1);
@@ -156,8 +156,66 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       });
 
       expect(result.valid).toBe(false);
-      expect(result.failedSeq).toBe(4);
-      expect(result.error).toContain("Sequence discontinuity");
+      expect(result.failedSeq).toBe(3);
+      expect(result.error).toContain("Sequence discontinuity at index 2: expected seq 3, got 4");
+    });
+
+    it("rejects prefix-truncated ledger starting at seq > 1 from genesis (C1)", async () => {
+      const fullEvents = createSealedChain(10);
+      // Drop first 4 events (keep seq 5..10)
+      const truncated = fullEvents.slice(4);
+      const filePath = path.join(tmpDir, "audit-truncated.json");
+      await fs.writeFile(filePath, JSON.stringify(truncated));
+
+      const result = await executeAuditVerify({
+        file: filePath,
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.failedSeq).toBe(5);
+      expect(result.error).toContain("Ledger does not start at genesis: first seq is 5, expected 1");
+      expect(result.formattedOutput).toContain("FAILED");
+    });
+
+    it("handles empty ledger file with NO EVENTS warning (I7)", async () => {
+      const filePath = path.join(tmpDir, "audit-empty.json");
+      await fs.writeFile(filePath, "[]");
+
+      const result = await executeAuditVerify({
+        file: filePath,
+      });
+
+      expect(result.valid).toBe(true);
+      expect(result.verifiedCount).toBe(0);
+      expect(result.fromSeq).toBe(0);
+      expect(result.toSeq).toBe(0);
+      expect(result.formattedOutput).toContain("NO EVENTS");
+    });
+
+    it("rejects malformed checkpoint envelope with schema validation error (I3)", async () => {
+      const events = createSealedChain(5);
+      const filePath = path.join(tmpDir, "audit.json");
+      await fs.writeFile(filePath, JSON.stringify(events));
+
+      // Malformed checkpoint: missing required payload fields
+      const badCheckpointPath = path.join(tmpDir, "bad-checkpoint.json");
+      await fs.writeFile(
+        badCheckpointPath,
+        JSON.stringify({
+          payload: { v: 1, checkpoint_seq: "not-a-number" },
+          sig: "invalid-sig",
+        }),
+      );
+
+      const result = await executeAuditVerify({
+        file: filePath,
+        checkpoint: badCheckpointPath,
+        keyset: keysetPath,
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.checkpoint?.status).toBe("INVALID_SIGNATURE");
+      expect(result.checkpoint?.error).toContain("Failed to validate checkpoint envelope schema");
     });
 
     it("cross-verifies valid signed checkpoint matching latest sealed event", async () => {
@@ -372,6 +430,68 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       expect(result.savedTo).toContain("s3://my-audit-bucket/audit-checkpoints/50.json");
       expect(result.savedTo).toContain("s3://my-audit-bucket/audit-checkpoints/checkpoint-latest.json");
       expect(mockSend).toHaveBeenCalledTimes(2);
+
+      // Verify Invariant & ADR 0005: S3 PutObjectCommand includes ChecksumSHA256 (I5)
+      const firstPutCmd = mockSend.mock.calls[0][0];
+      expect(firstPutCmd.input.ChecksumSHA256).toBeDefined();
+      expect(typeof firstPutCmd.input.ChecksumSHA256).toBe("string");
+      const expectedChecksum = crypto
+        .createHash("sha256")
+        .update(JSON.stringify(result.envelope, null, 2))
+        .digest("base64");
+      expect(firstPutCmd.input.ChecksumSHA256).toBe(expectedChecksum);
+    });
+
+    it("refuses to sign genesis checkpoint when audit ledger is empty (I6)", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          checkpoint_seq: 0,
+          checkpoint_hash: GENESIS_PREV_HASH,
+          sealed_count: 0,
+          timestamp: null,
+        }),
+      });
+
+      await expect(
+        executeAuditCheckpoint({
+          apiUrl: "http://localhost:3000",
+          kid,
+          key: hexPrivateKey,
+          fetchFn: mockFetch as unknown as typeof fetch,
+        }),
+      ).rejects.toThrow("Audit ledger is empty (no sealed events); refusing to sign genesis checkpoint. Seal at least one event first.");
+    });
+
+    it("verifies kid and key match when trusted keyset is provided (I4)", async () => {
+      const otherPair = crypto.generateKeyPairSync("ed25519");
+      const otherHexPrivateKey = otherPair.privateKey
+        .export({ type: "pkcs8", format: "der" })
+        .subarray(-32)
+        .toString("hex");
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          checkpoint_seq: 10,
+          checkpoint_hash: "d".repeat(64),
+          sealed_count: 10,
+          timestamp: "2026-10-16T23:45:00.000Z",
+        }),
+      });
+
+      // Passing wrong key for kid with keyset loaded should throw key mismatch
+      await expect(
+        executeAuditCheckpoint({
+          apiUrl: "http://localhost:3000",
+          kid,
+          key: otherHexPrivateKey,
+          keyset: keysetPath,
+          fetchFn: mockFetch as unknown as typeof fetch,
+        }),
+      ).rejects.toThrow(/does not match public key .* in keyset/);
     });
 
     it("reads latest event directly from PostgreSQL if DB configured", async () => {

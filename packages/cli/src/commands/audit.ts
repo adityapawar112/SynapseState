@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import pc from "picocolors";
 import type { Command } from "commander";
 import pg from "pg";
@@ -11,6 +12,9 @@ import {
   signCheckpointWithSigner,
   verifyCheckpointWithKeyset,
   parseKeysetJson,
+  resolvePrivateKey,
+  formatPublicKeyToHex,
+  CheckpointEnvelopeSchema,
   type AuditEventRecord,
   type CheckpointPayload,
   type CheckpointEnvelope,
@@ -71,10 +75,12 @@ export interface AuditCheckpointParams {
   keyFile?: string;
   password?: string;
   passphraseEnv?: string;
+  keyset?: string;
   out?: string;
   s3Bucket?: string;
   s3Region?: string;
   s3Prefix?: string;
+  s3ObjectLock?: boolean;
   json?: boolean;
   fetchFn?: typeof fetch;
   pgPool?: pg.Pool;
@@ -223,18 +229,24 @@ async function loadKeyset(explicitPath?: string): Promise<Keyset | null> {
   try {
     const content = await fs.readFile(keysetPath, "utf-8");
     return parseKeysetJson(content);
-  } catch {
+  } catch (err: unknown) {
+    if (explicitPath) {
+      throw new Error(
+        `Failed to load trusted keyset at "${keysetPath}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     return null;
   }
 }
 
 /**
- * Loads checkpoint envelope from file or HTTP URL.
+ * Loads checkpoint envelope from file or HTTP URL and validates its schema via CheckpointEnvelopeSchema.
  */
 async function loadCheckpoint(
   checkpointPathOrUrl: string,
   fetchFn: typeof fetch = fetch,
 ): Promise<CheckpointEnvelope> {
+  let rawJson: unknown;
   if (
     checkpointPathOrUrl.startsWith("http://") ||
     checkpointPathOrUrl.startsWith("https://")
@@ -245,11 +257,14 @@ async function loadCheckpoint(
         `Failed to fetch checkpoint from URL: ${res.status} ${res.statusText}`,
       );
     }
-    return (await res.json()) as CheckpointEnvelope;
+    rawJson = await res.json();
+  } else {
+    const raw = await fs.readFile(checkpointPathOrUrl, "utf-8");
+    rawJson = JSON.parse(raw);
   }
 
-  const raw = await fs.readFile(checkpointPathOrUrl, "utf-8");
-  return JSON.parse(raw) as CheckpointEnvelope;
+  // Invariant & I3: Validate envelope structure, fields, and types via Zod schema
+  return CheckpointEnvelopeSchema.parse(rawJson);
 }
 
 /**
@@ -297,6 +312,13 @@ export async function executeAuditVerify(
   let overallValid = chainResult.valid;
   let failureError = chainResult.error;
   let failedSeq = chainResult.failedSeq;
+
+  // Invariant 7 (C1): Enforce that verified ledger starts at genesis seq 1
+  if (overallValid && verifiedCount > 0 && fromSeq !== 1) {
+    overallValid = false;
+    failureError = `Ledger starts at seq ${fromSeq}, not genesis seq 1 (prefix truncation or partial export)`;
+    failedSeq = fromSeq;
+  }
 
   // 3. Invariant 2: External Checkpoint verification against trusted keyset
   if (params.checkpoint) {
@@ -353,7 +375,7 @@ export async function executeAuditVerify(
       }
     } catch (err: unknown) {
       checkpointStatus = "INVALID_SIGNATURE";
-      checkpointError = `Failed to parse or load checkpoint: ${err instanceof Error ? err.message : String(err)}`;
+      checkpointError = `Failed to validate checkpoint envelope schema: ${err instanceof Error ? err.message : String(err)}`;
       overallValid = false;
       failureError = failureError || checkpointError;
     }
@@ -362,13 +384,24 @@ export async function executeAuditVerify(
   const elapsedMs = Date.now() - startTime;
 
   // 4. Format styled terminal status box
-  const statusHeader = overallValid
-    ? pc.green(pc.bold("✔ AUDIT LEDGER VERIFICATION: PASSED"))
-    : pc.red(pc.bold("✖ AUDIT LEDGER VERIFICATION: FAILED (TAMPERING DETECTED)"));
+  let statusHeader: string;
+  let rawHeader: string;
+  if (!overallValid) {
+    statusHeader = pc.red(pc.bold("✖ AUDIT LEDGER VERIFICATION: FAILED (TAMPERING DETECTED)"));
+    rawHeader = "✖ AUDIT LEDGER VERIFICATION: FAILED (TAMPERING DETECTED)";
+  } else if (verifiedCount === 0) {
+    statusHeader = pc.yellow(pc.bold("⚠ AUDIT LEDGER VERIFICATION: NO EVENTS (EMPTY LEDGER)"));
+    rawHeader = "⚠ AUDIT LEDGER VERIFICATION: NO EVENTS (EMPTY LEDGER)";
+  } else {
+    statusHeader = pc.green(pc.bold("✔ AUDIT LEDGER VERIFICATION: PASSED"));
+    rawHeader = "✔ AUDIT LEDGER VERIFICATION: PASSED";
+  }
+
+  const padRight = Math.max(0, 70 - rawHeader.length);
 
   const lines = [
     pc.cyan("┌────────────────────────────────────────────────────────────────────────┐"),
-    pc.cyan("│ ") + statusHeader + " ".repeat(Math.max(0, 50 - (overallValid ? 35 : 55))) + pc.cyan("│"),
+    pc.cyan("│ ") + statusHeader + " ".repeat(padRight) + pc.cyan("│"),
     pc.cyan("├────────────────────────────────────────────────────────────────────────┤"),
     pc.cyan("│ ") + pc.white(`Verified Events:  `) + pc.bold(String(verifiedCount)).padEnd(52) + pc.cyan("│"),
     pc.cyan("│ ") + pc.white(`Sequence Span:    `) + `${fromSeq} → ${toSeq}`.padEnd(52) + pc.cyan("│"),
@@ -499,6 +532,13 @@ export async function executeAuditCheckpoint(
     total = data.sealed_count;
   }
 
+  // Invariant 7 (I6): Refuse to sign checkpoint if ledger has no sealed events
+  if (seq === 0 && total === 0) {
+    throw new Error(
+      "Audit ledger is empty (no sealed events); refusing to sign genesis checkpoint. Seal at least one event first.",
+    );
+  }
+
   // 2. Resolve kid and key
   const kid = params.kid || process.env.CHECKPOINT_SIGNING_KID || "audit-signer";
   const payload: CheckpointPayload = {
@@ -512,9 +552,33 @@ export async function executeAuditCheckpoint(
 
   // 3. Sign checkpoint envelope
   let envelope: CheckpointEnvelope;
+  let signerFingerprint: string | undefined;
   const privateKey = params.key || process.env.CHECKPOINT_SIGNING_KEY;
 
   if (privateKey) {
+    // Invariant 2 & I4: Bind kid to private key by deriving public key and verifying against keyset
+    const privKey = resolvePrivateKey(privateKey);
+    const pubKey = crypto.createPublicKey(privKey);
+    signerFingerprint = formatPublicKeyToHex(pubKey);
+
+    const keyset = await loadKeyset(params.keyset);
+    if (keyset) {
+      const keyEntry = getKey(keyset, kid);
+      if (!keyEntry) {
+        throw new Error(`Signer key "${kid}" not found in trusted keyset`);
+      }
+      if (keyEntry.public_key.toLowerCase() !== signerFingerprint.toLowerCase()) {
+        throw new Error(
+          `Derived public key fingerprint "${signerFingerprint}" does not match public key "${keyEntry.public_key}" in keyset for kid "${kid}"`,
+        );
+      }
+      if (!canSignCheckpoint(keyEntry)) {
+        throw new Error(
+          `Key "${kid}" in keyset does not have checkpoint_signer, audit_signer, or admin role`,
+        );
+      }
+    }
+
     envelope = signCheckpoint(payload, privateKey);
   } else if (params.keyFile || params.password || params.passphraseEnv || process.env.SYNAPSE_KEY_PASSWORD) {
     const filePath = params.keyFile ? path.resolve(params.keyFile) : path.join(process.cwd(), `${kid}.key`);
@@ -552,30 +616,53 @@ export async function executeAuditCheckpoint(
   const s3Bucket = params.s3Bucket || process.env.S3_BUCKET;
   if (s3Bucket) {
     const s3Region = params.s3Region || process.env.S3_REGION || "us-east-1";
-    const s3Prefix = (params.s3Prefix || process.env.S3_PREFIX || "checkpoints").replace(/^\/|\/$/g, "");
+    const s3Prefix = (params.s3Prefix || process.env.S3_PREFIX || "checkpoints").replace(/^\/+|\/+$/g, "");
 
     const s3Client = params.s3Client ?? new S3Client({ region: s3Region });
 
     const seqKey = `${s3Prefix}/${seq}.json`;
     const latestKey = `${s3Prefix}/checkpoint-latest.json`;
 
+    // ADR 0005 & I5: Compute SHA-256 base64 checksum for end-to-end immutability
+    const checksumSha256 = crypto
+      .createHash("sha256")
+      .update(envelopeJson)
+      .digest("base64");
+
+    const putSeqCommandInput: {
+      Bucket: string;
+      Key: string;
+      Body: string;
+      ContentType: string;
+      ChecksumSHA256: string;
+      ObjectLockMode?: "COMPLIANCE" | "GOVERNANCE";
+      ObjectLockRetainUntilDate?: Date;
+    } = {
+      Bucket: s3Bucket,
+      Key: seqKey,
+      Body: envelopeJson,
+      ContentType: "application/json",
+      ChecksumSHA256: checksumSha256,
+    };
+
+    if (params.s3ObjectLock || process.env.S3_OBJECT_LOCK === "true") {
+      putSeqCommandInput.ObjectLockMode = "COMPLIANCE";
+      putSeqCommandInput.ObjectLockRetainUntilDate = new Date(
+        Date.now() + 365 * 24 * 3600 * 1000,
+      );
+    }
+
+    const putLatestCommandInput = {
+      Bucket: s3Bucket,
+      Key: latestKey,
+      Body: envelopeJson,
+      ContentType: "application/json",
+      ChecksumSHA256: checksumSha256,
+    };
+
     await Promise.all([
-      s3Client.send(
-        new PutObjectCommand({
-          Bucket: s3Bucket,
-          Key: seqKey,
-          Body: envelopeJson,
-          ContentType: "application/json",
-        }),
-      ),
-      s3Client.send(
-        new PutObjectCommand({
-          Bucket: s3Bucket,
-          Key: latestKey,
-          Body: envelopeJson,
-          ContentType: "application/json",
-        }),
-      ),
+      s3Client.send(new PutObjectCommand(putSeqCommandInput)),
+      s3Client.send(new PutObjectCommand(putLatestCommandInput)),
     ]);
 
     savedTo.push(`s3://${s3Bucket}/${seqKey}`);
@@ -588,8 +675,13 @@ export async function executeAuditCheckpoint(
     pc.white(`Checkpoint Hash: `) + pc.cyan(hash),
     pc.white(`Timestamp:       `) + payload.timestamp,
     pc.white(`Signer Kid:      `) + kid,
-    pc.white(`Saved Targets:   `) + (savedTo.length > 0 ? savedTo.join(", ") : pc.yellow("(none specified)")),
   ];
+  if (signerFingerprint) {
+    lines.push(pc.white(`Signer PubKey:   `) + pc.cyan(`${signerFingerprint.slice(0, 16)}...${signerFingerprint.slice(-8)}`));
+  }
+  lines.push(
+    pc.white(`Saved Targets:   `) + (savedTo.length > 0 ? savedTo.join(", ") : pc.yellow("(none specified)")),
+  );
   const formattedOutput = lines.join("\n");
 
   return {
@@ -644,6 +736,7 @@ export function registerAuditCommands(program: Command): void {
     .option("--api-url <url>", "Control API URL (or SYNAPSE_API_URL)")
     .option("-t, --token <token>", "Control API authentication Bearer token (or SYNAPSE_API_TOKEN)")
     .option("-d, --db <url>", "PostgreSQL connection string (or DATABASE_URL)")
+    .option("-k, --keyset <path>", "Path to trusted keyset.json to verify key binding (or KEYSET_PATH)")
     .option("--kid <kid>", "Signer key identifier matching keyset.json")
     .option("--key <private-key>", "Ed25519 private key (or CHECKPOINT_SIGNING_KEY)")
     .option("--key-file <path>", "Path to encrypted keyfile")
@@ -653,6 +746,7 @@ export function registerAuditCommands(program: Command): void {
     .option("--s3-bucket <bucket>", "S3 bucket for immutable checkpoint anchoring (or S3_BUCKET)")
     .option("--s3-region <region>", "S3 region (or S3_REGION, default us-east-1)")
     .option("--s3-prefix <prefix>", "S3 prefix (or S3_PREFIX, default checkpoints)")
+    .option("--s3-object-lock", "Enable S3 Object Lock in COMPLIANCE mode (or S3_OBJECT_LOCK)")
     .option("--json", "Emit structured machine-readable JSON output")
     .action(async (opts) => {
       try {
