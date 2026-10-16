@@ -16,7 +16,14 @@ import { healthRoutes } from "./routes/health.js";
 import { telemetryRoutes } from "./routes/telemetry.js";
 import { changeRoutes } from "./routes/changes.js";
 import { metricsRoutes } from "./routes/metrics.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 import { getMetricsRegistry, type SynapseMetrics } from "./metrics/index.js";
+import {
+  type GitHubReconciler,
+  type GitHubClient,
+  GitHubReconciler as DefaultGitHubReconciler,
+  createGitHubClient,
+} from "./github/index.js";
 
 export interface ServerOptions {
   fastifyOptions?: FastifyServerOptions;
@@ -29,6 +36,12 @@ export interface ServerOptions {
   auditSealer?: AuditSealer;
   enableAuditSealer?: boolean;
   metrics?: SynapseMetrics;
+  githubClient?: GitHubClient;
+  githubReconciler?: GitHubReconciler;
+  githubWebhookSecret?: string;
+  githubOwner?: string;
+  githubRepo?: string;
+  githubBaseBranch?: string;
 }
 
 /**
@@ -53,6 +66,40 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     options.stateManager ?? new StateManager(activePool);
   const activeMetrics = options.metrics ?? getMetricsRegistry();
 
+  const githubOwner = options.githubOwner ?? process.env.GITHUB_OWNER;
+  const githubRepo = options.githubRepo ?? process.env.GITHUB_REPO;
+  const githubBaseBranch =
+    options.githubBaseBranch ?? process.env.GITHUB_BASE_BRANCH;
+
+  let activeReconciler = options.githubReconciler;
+  if (!activeReconciler && (githubOwner || options.githubClient)) {
+    const client = options.githubClient ?? createGitHubClient();
+    activeReconciler = new DefaultGitHubReconciler(client, {
+      owner: githubOwner || "synapsestate",
+      repo: githubRepo || "flags",
+      baseBranch: githubBaseBranch || "main",
+    });
+  }
+
+  // Parse JSON with raw body capture for HMAC verification
+  server.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (_req, body, done) => {
+      try {
+        (_req as unknown as { rawBody?: Buffer | string }).rawBody = body;
+        if (!body || body.length === 0) {
+          done(null, {});
+          return;
+        }
+        const json = JSON.parse(body.toString("utf-8"));
+        done(null, json);
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   // Enable CORS
   void server.register(cors, {
     origin: true,
@@ -73,6 +120,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     keysetProvider: activeKeysetProvider,
     stateManager: activeStateManager,
     metrics: activeMetrics,
+    githubReconciler: activeReconciler,
   });
   void server.register(stateRoutes, {
     stateManager: activeStateManager,
@@ -84,6 +132,15 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
   void server.register(changeRoutes, {
     leasePool: activePool,
+  });
+  void server.register(webhookRoutes, {
+    leasePool: activePool,
+    stateManager: activeStateManager,
+    metrics: activeMetrics,
+    webhookSecret: options.githubWebhookSecret,
+    expectedOwner: githubOwner,
+    expectedRepo: githubRepo,
+    expectedBaseBranch: githubBaseBranch,
   });
 
   // Audit Sealer configuration and lifecycle management

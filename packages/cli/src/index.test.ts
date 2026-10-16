@@ -4,7 +4,9 @@ import { program } from "./index.js";
 describe("CLI Program Entrypoint (packages/cli/src/index.ts)", () => {
   it("initializes commander program with name and description", () => {
     expect(program.name()).toBe("synapse");
-    expect(program.description()).toBe("SRE CLI for SynapseState emergency leases and governance");
+    expect(program.description()).toBe(
+      "SRE CLI for SynapseState emergency leases and governance",
+    );
   });
 
   it("registers key subcommands under program", () => {
@@ -13,11 +15,17 @@ describe("CLI Program Entrypoint (packages/cli/src/index.ts)", () => {
 
     const generateCmd = keyCmd?.commands.find((c) => c.name() === "generate");
     expect(generateCmd).toBeDefined();
-    expect(generateCmd?.options.some((opt) => opt.flags.includes("-k, --kid"))).toBe(true);
+    expect(
+      generateCmd?.options.some((opt) => opt.flags.includes("-k, --kid")),
+    ).toBe(true);
 
-    const exportCmd = keyCmd?.commands.find((c) => c.name() === "export-public");
+    const exportCmd = keyCmd?.commands.find(
+      (c) => c.name() === "export-public",
+    );
     expect(exportCmd).toBeDefined();
-    expect(exportCmd?.options.some((opt) => opt.flags.includes("--format"))).toBe(true);
+    expect(
+      exportCmd?.options.some((opt) => opt.flags.includes("--format")),
+    ).toBe(true);
   });
 
   it("registers lease subcommands under program", () => {
@@ -31,32 +39,80 @@ describe("CLI Program Entrypoint (packages/cli/src/index.ts)", () => {
     expect(subcommands).toContain("emergency-apply");
 
     const createCmd = leaseCmd?.commands.find((c) => c.name() === "create");
-    expect(createCmd?.options.some((opt) => opt.flags.includes("-f, --flag"))).toBe(true);
-    expect(createCmd?.options.some((opt) => opt.flags.includes("-e, --env"))).toBe(true);
-    expect(createCmd?.options.some((opt) => opt.flags.includes("--poll-interval"))).toBe(true);
-    expect(createCmd?.options.some((opt) => opt.flags.includes("--allow-skew"))).toBe(true);
-    expect(createCmd?.options.some((opt) => opt.flags.includes("--passphrase-env"))).toBe(true);
+    expect(
+      createCmd?.options.some((opt) => opt.flags.includes("-f, --flag")),
+    ).toBe(true);
+    expect(
+      createCmd?.options.some((opt) => opt.flags.includes("-e, --env")),
+    ).toBe(true);
+    expect(
+      createCmd?.options.some((opt) => opt.flags.includes("--poll-interval")),
+    ).toBe(true);
+    expect(
+      createCmd?.options.some((opt) => opt.flags.includes("--allow-skew")),
+    ).toBe(true);
+    expect(
+      createCmd?.options.some((opt) => opt.flags.includes("--passphrase-env")),
+    ).toBe(true);
   });
 
   it("registers log command under program", () => {
     const logCmd = program.commands.find((c) => c.name() === "log");
     expect(logCmd).toBeDefined();
-    expect(logCmd?.options.some((opt) => opt.flags.includes("-s, --service"))).toBe(true);
-    expect(logCmd?.options.some((opt) => opt.flags.includes("-e, --env"))).toBe(true);
-    expect(logCmd?.options.some((opt) => opt.flags.includes("--offline"))).toBe(true);
-    expect(logCmd?.options.some((opt) => opt.flags.includes("--json"))).toBe(true);
+    expect(
+      logCmd?.options.some((opt) => opt.flags.includes("-s, --service")),
+    ).toBe(true);
+    expect(logCmd?.options.some((opt) => opt.flags.includes("-e, --env"))).toBe(
+      true,
+    );
+    expect(logCmd?.options.some((opt) => opt.flags.includes("--offline"))).toBe(
+      true,
+    );
+    expect(logCmd?.options.some((opt) => opt.flags.includes("--json"))).toBe(
+      true,
+    );
+  });
+
+  it("registers promote command under program (PR 18)", () => {
+    const promoteCmd = program.commands.find((c) => c.name() === "promote");
+    expect(promoteCmd).toBeDefined();
+    expect(promoteCmd?.description()).toContain("Pull Request");
+    expect(
+      promoteCmd?.options.some((opt) => opt.flags.includes("-e, --env")),
+    ).toBe(true);
+    expect(
+      promoteCmd?.options.some((opt) => opt.flags.includes("-u, --api-url")),
+    ).toBe(true);
+    expect(
+      promoteCmd?.options.some((opt) => opt.flags.includes("-t, --token")),
+    ).toBe(true);
+    expect(
+      promoteCmd?.options.some((opt) => opt.flags.includes("--json")),
+    ).toBe(true);
   });
 
   it("evaluates isMainModule correctly across platforms and flags", async () => {
     const { isMainModule } = await import("./index.js");
 
-    const metaUrl = "file:///C:/projects/synapsestate/packages/cli/dist/index.js";
-    expect(isMainModule(metaUrl, "C:\\projects\\synapsestate\\packages\\cli\\dist\\index.js")).toBe(true);
-    expect(isMainModule(metaUrl, "C:/projects/synapsestate/packages/cli/dist/index.js")).toBe(true);
-    expect(isMainModule(metaUrl, "C:/projects/other-pkg/dist/index.js")).toBe(false);
+    const metaUrl =
+      "file:///C:/projects/synapsestate/packages/cli/dist/index.js";
+    expect(
+      isMainModule(
+        metaUrl,
+        "C:\\projects\\synapsestate\\packages\\cli\\dist\\index.js",
+      ),
+    ).toBe(true);
+    expect(
+      isMainModule(
+        metaUrl,
+        "C:/projects/synapsestate/packages/cli/dist/index.js",
+      ),
+    ).toBe(true);
+    expect(isMainModule(metaUrl, "C:/projects/other-pkg/dist/index.js")).toBe(
+      false,
+    );
     expect(isMainModule(metaUrl, "/usr/local/bin/synapse")).toBe(true);
     expect(isMainModule(metaUrl, "other-script.js")).toBe(false);
     expect(isMainModule(metaUrl, undefined)).toBe(false);
   });
 });
-
