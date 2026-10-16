@@ -38,6 +38,15 @@ describe("CLI Program Entrypoint (packages/cli/src/index.ts)", () => {
     expect(createCmd?.options.some((opt) => opt.flags.includes("--passphrase-env"))).toBe(true);
   });
 
+  it("registers log command under program", () => {
+    const logCmd = program.commands.find((c) => c.name() === "log");
+    expect(logCmd).toBeDefined();
+    expect(logCmd?.options.some((opt) => opt.flags.includes("-s, --service"))).toBe(true);
+    expect(logCmd?.options.some((opt) => opt.flags.includes("-e, --env"))).toBe(true);
+    expect(logCmd?.options.some((opt) => opt.flags.includes("--offline"))).toBe(true);
+    expect(logCmd?.options.some((opt) => opt.flags.includes("--json"))).toBe(true);
+  });
+
   it("evaluates isMainModule correctly across platforms and flags", async () => {
     const { isMainModule } = await import("./index.js");
 
