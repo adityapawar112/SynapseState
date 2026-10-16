@@ -15,12 +15,22 @@ import { buildServer } from "../app.js";
 import { leasePool, closePools } from "../db/pool.js";
 import { runMigrations } from "../db/migrator.js";
 
+import { vi } from "vitest";
+import {
+  StalePrConflictError,
+  type GitHubReconciler,
+} from "../github/index.js";
+
 describe("Lease Ingestion & Revocation Routes", () => {
   let app: FastifyInstance;
   let operatorKey: ReturnType<typeof crypto.generateKeyPairSync>;
   let operatorPubB64: string;
   let testKeyset: Keyset;
+  let mockReconciler: {
+    promoteLease: ReturnType<typeof vi.fn>;
+  };
   const env = "leases-test-env";
+  const validToken = "sre-secret-bearer-token";
 
   function createTestLease(overrides?: Partial<LeasePayload>): LeasePayload {
     return {
@@ -56,12 +66,29 @@ describe("Lease Ingestion & Revocation Routes", () => {
           roles: ["key_revoker"], // not a lease_signer
           status: "active",
         },
-      })
+      }),
     );
+
+    // Insert valid API token for promotion tests
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(validToken)
+      .digest("hex");
+    await leasePool.query(
+      `INSERT INTO api_tokens (token_id, token_hash, service_name, env, roles)
+       VALUES ('tok-test-promote', $1, 'sre-alice', 'leases-test-env', ARRAY['operator', 'admin'])
+       ON CONFLICT (token_id) DO UPDATE SET token_hash = EXCLUDED.token_hash`,
+      [tokenHash],
+    );
+
+    mockReconciler = {
+      promoteLease: vi.fn(),
+    };
 
     app = buildServer({
       leasePool,
       keyset: testKeyset,
+      githubReconciler: mockReconciler as unknown as GitHubReconciler,
       fastifyOptions: { logger: false },
     });
     await app.ready();
@@ -76,11 +103,11 @@ describe("Lease Ingestion & Revocation Routes", () => {
     // Clean test state before each run scoped to this test environment (P1.9)
     await leasePool.query(
       "DELETE FROM revocations WHERE lease_id IN (SELECT lease_id FROM leases WHERE env = $1)",
-      [env]
+      [env],
     );
     await leasePool.query(
       "DELETE FROM audit_pending WHERE payload->>'env' = $1 OR payload->>'lease_id' IN (SELECT lease_id FROM leases WHERE env = $1)",
-      [env]
+      [env],
     );
     await leasePool.query("DELETE FROM leases WHERE env = $1", [env]);
     await leasePool.query("DELETE FROM change_events WHERE env = $1", [env]);
@@ -111,20 +138,23 @@ describe("Lease Ingestion & Revocation Routes", () => {
     });
 
     // Verify DB persistence
-    const leaseRow = await leasePool.query("SELECT * FROM leases WHERE lease_id = $1", [payload.lease_id]);
+    const leaseRow = await leasePool.query(
+      "SELECT * FROM leases WHERE lease_id = $1",
+      [payload.lease_id],
+    );
     expect(leaseRow.rows).toHaveLength(1);
     expect(leaseRow.rows[0].state).toBe("ACTIVE");
     expect(leaseRow.rows[0].created_by_kid).toBe("sre-alice");
 
     // Verify audit_pending & change_events staging
     const auditRow = await leasePool.query(
-      "SELECT * FROM audit_pending WHERE event_type = 'LEASE_CREATED'"
+      "SELECT * FROM audit_pending WHERE event_type = 'LEASE_CREATED'",
     );
     expect(auditRow.rows.length).toBeGreaterThan(0);
 
     const changeRow = await leasePool.query(
       "SELECT * FROM change_events WHERE event_type = 'LEASE_CREATED' AND flag_key = $1",
-      ["test-unregistered-flag"]
+      ["test-unregistered-flag"],
     );
     expect(changeRow.rows).toHaveLength(1);
   });
@@ -135,7 +165,7 @@ describe("Lease Ingestion & Revocation Routes", () => {
       `INSERT INTO flags (key, env, class, owner, description)
        VALUES ($1, $2, 'release', 'team-checkout', 'Checkout flag')
        ON CONFLICT (key, env) DO NOTHING`,
-      [flagKey, env]
+      [flagKey, env],
     );
 
     const payload = createTestLease({
@@ -193,16 +223,22 @@ describe("Lease Ingestion & Revocation Routes", () => {
     expect(res2.statusCode).toBe(201);
 
     // Verify lease 1 became SUPERSEDED and lease 2 is ACTIVE
-    const l1 = await leasePool.query("SELECT state FROM leases WHERE lease_id = $1", [payload1.lease_id]);
+    const l1 = await leasePool.query(
+      "SELECT state FROM leases WHERE lease_id = $1",
+      [payload1.lease_id],
+    );
     expect(l1.rows[0].state).toBe("SUPERSEDED");
 
-    const l2 = await leasePool.query("SELECT state FROM leases WHERE lease_id = $1", [payload2.lease_id]);
+    const l2 = await leasePool.query(
+      "SELECT state FROM leases WHERE lease_id = $1",
+      [payload2.lease_id],
+    );
     expect(l2.rows[0].state).toBe("ACTIVE");
 
     // Verify LEASE_SUPERSEDED change event was recorded
     const supersededChanges = await leasePool.query(
       "SELECT * FROM change_events WHERE event_type = 'LEASE_SUPERSEDED' AND flag_key = $1 AND env = $2",
-      [flagKey, env]
+      [flagKey, env],
     );
     expect(supersededChanges.rows).toHaveLength(1);
     expect(supersededChanges.rows[0].payload).toMatchObject({
@@ -275,7 +311,7 @@ describe("Lease Ingestion & Revocation Routes", () => {
     // Partial unique index guarantees EXACTLY ONE active lease in the DB
     const activeRows = await leasePool.query(
       "SELECT * FROM leases WHERE flag_key = $1 AND env = $2 AND state = 'ACTIVE'",
-      [flagKey, env]
+      [flagKey, env],
     );
     expect(activeRows.rows).toHaveLength(1);
   });
@@ -305,7 +341,7 @@ describe("Lease Ingestion & Revocation Routes", () => {
 
     const countRows = await leasePool.query(
       "SELECT COUNT(*)::int AS count FROM leases WHERE lease_id = $1",
-      [payload.lease_id]
+      [payload.lease_id],
     );
     expect(countRows.rows[0].count).toBe(1);
   });
@@ -470,19 +506,211 @@ describe("Lease Ingestion & Revocation Routes", () => {
     });
 
     // Verify lease row state in DB
-    const leaseRow = await leasePool.query("SELECT state FROM leases WHERE lease_id = $1", [payload.lease_id]);
+    const leaseRow = await leasePool.query(
+      "SELECT state FROM leases WHERE lease_id = $1",
+      [payload.lease_id],
+    );
     expect(leaseRow.rows[0].state).toBe("REVOKED");
 
     // Verify revocations table row
-    const revRow = await leasePool.query("SELECT * FROM revocations WHERE lease_id = $1", [payload.lease_id]);
+    const revRow = await leasePool.query(
+      "SELECT * FROM revocations WHERE lease_id = $1",
+      [payload.lease_id],
+    );
     expect(revRow.rows).toHaveLength(1);
     expect(revRow.rows[0].revoked_by_kid).toBe("sre-alice");
 
     // Verify change event
     const changeRow = await leasePool.query(
       "SELECT * FROM change_events WHERE event_type = 'LEASE_REVOKED' AND flag_key = $1 AND env = $2",
-      [flagKey, env]
+      [flagKey, env],
     );
     expect(changeRow.rows).toHaveLength(1);
+  });
+
+  describe("POST /v1/leases/:id/promote (PR 18)", () => {
+    it("rejects promotion request missing Bearer token with 401 Unauthorized", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/leases/01J9X57YTRPQ8A7F4E12345678/promote",
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error).toBe("UNAUTHORIZED");
+    });
+
+    it("rejects promotion request with invalid Bearer token with 401 Unauthorized", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/leases/01J9X57YTRPQ8A7F4E12345678/promote",
+        headers: {
+          authorization: "Bearer wrong-token",
+        },
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error).toBe("UNAUTHORIZED");
+    });
+
+    it("returns 404 when lease is not found", async () => {
+      const nonExistentId = generateUlid();
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${nonExistentId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error).toBe("NOT_FOUND");
+    });
+
+    it("returns 409 Conflict when lease is already in state PROMOTED", async () => {
+      const leaseId = generateUlid();
+      await leasePool.query(
+        `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid, promote_pr_url)
+         VALUES ($1, 'flag-already-promoted', $2, '{}'::jsonb, 'sig', 'PROMOTED', NOW(), 600, NOW() + INTERVAL '600s', 'sre-alice', 'https://github.com/org/repo/pull/123')`,
+        [leaseId, env],
+      );
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe("CONFLICT");
+      expect(res.json().promote_pr_url).toBe(
+        "https://github.com/org/repo/pull/123",
+      );
+    });
+
+    it("returns 409 Conflict when lease is REVOKED", async () => {
+      const leaseId = generateUlid();
+      await leasePool.query(
+        `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
+         VALUES ($1, 'flag-revoked', $2, '{}'::jsonb, 'sig', 'REVOKED', NOW(), 600, NOW() + INTERVAL '600s', 'sre-alice')`,
+        [leaseId, env],
+      );
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe("CONFLICT");
+    });
+
+    it("returns 409 STALE_PR_CONFLICT when reconciler throws StalePrConflictError", async () => {
+      const leaseId = generateUlid();
+      const payload = createTestLease({ lease_id: leaseId });
+      await leasePool.query(
+        `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
+         VALUES ($1, $2, $3, $4, 'sig', 'ACTIVE', NOW(), 600, NOW() + INTERVAL '600s', 'sre-alice')`,
+        [leaseId, payload.flag_key, env, JSON.stringify(payload)],
+      );
+
+      mockReconciler.promoteLease.mockRejectedValueOnce(
+        new StalePrConflictError(
+          "Stale PR conflict",
+          "https://github.com/org/repo/pull/999",
+        ),
+      );
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe("STALE_PR_CONFLICT");
+      expect(res.json().existing_pr_url).toBe(
+        "https://github.com/org/repo/pull/999",
+      );
+    });
+
+    it("promotes ACTIVE lease: calls reconciler, records promote_pr_url, and returns 202 Accepted", async () => {
+      const leaseId = generateUlid();
+      const payload = createTestLease({ lease_id: leaseId });
+      await leasePool.query(
+        `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
+         VALUES ($1, $2, $3, $4, 'sig', 'ACTIVE', NOW(), 600, NOW() + INTERVAL '600s', 'sre-alice')`,
+        [leaseId, payload.flag_key, env, JSON.stringify(payload)],
+      );
+
+      mockReconciler.promoteLease.mockResolvedValueOnce({
+        lease_id: leaseId,
+        pr_url: "https://github.com/org/repo/pull/333",
+        branch: `synapse/promote-lease-${leaseId}`,
+        number: 333,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(202);
+      expect(res.json()).toEqual({
+        lease_id: leaseId,
+        pr_url: "https://github.com/org/repo/pull/333",
+        branch: `synapse/promote-lease-${leaseId}`,
+      });
+
+      // Verify DB was updated with promote_pr_url
+      const checkDb = await leasePool.query(
+        "SELECT promote_pr_url FROM leases WHERE lease_id = $1",
+        [leaseId],
+      );
+      expect(checkDb.rows[0].promote_pr_url).toBe(
+        "https://github.com/org/repo/pull/333",
+      );
+    });
+
+    it("promotes EXPIRED lease: calls reconciler and returns 202 Accepted", async () => {
+      const leaseId = generateUlid();
+      const payload = createTestLease({ lease_id: leaseId });
+      await leasePool.query(
+        `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
+         VALUES ($1, $2, $3, $4, 'sig', 'EXPIRED', NOW() - INTERVAL '1200s', 600, NOW() - INTERVAL '600s', 'sre-alice')`,
+        [leaseId, payload.flag_key, env, JSON.stringify(payload)],
+      );
+
+      mockReconciler.promoteLease.mockResolvedValueOnce({
+        lease_id: leaseId,
+        pr_url: "https://github.com/org/repo/pull/444",
+        branch: `synapse/promote-lease-${leaseId}`,
+        number: 444,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(202);
+      expect(res.json()).toEqual({
+        lease_id: leaseId,
+        pr_url: "https://github.com/org/repo/pull/444",
+        branch: `synapse/promote-lease-${leaseId}`,
+      });
+    });
   });
 });

@@ -49,6 +49,9 @@ importers:
       "@fastify/cors":
         specifier: ^10.0.0
         version: 10.1.0
+      "@octokit/rest":
+        specifier: ^21.1.1
+        version: 21.1.1
       "@synapsestate/lease":
         specifier: workspace:*
         version: link:../../packages/lease
@@ -67,6 +70,9 @@ importers:
       prom-client:
         specifier: ^15.1.3
         version: 15.1.3
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       zod:
         specifier: ^3.24.2
         version: 3.25.76

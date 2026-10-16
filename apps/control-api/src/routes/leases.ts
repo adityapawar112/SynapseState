@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import type { Pool } from "pg";
 import {
@@ -15,12 +16,20 @@ import { withTransaction } from "../db/transaction.js";
 import type { KeysetProvider } from "../keyset.js";
 import type { StateManager } from "../services/state-manager.js";
 import type { SynapseMetrics } from "../metrics/index.js";
+import {
+  type GitHubReconciler,
+  type LeaseRecord,
+  StalePrConflictError,
+  FlagNotFoundError,
+  InvalidFlagKeyError,
+} from "../github/index.js";
 
 export interface LeaseRoutesOptions {
   leasePool: Pool;
   keysetProvider: KeysetProvider;
   stateManager: StateManager;
   metrics?: SynapseMetrics;
+  githubReconciler?: GitHubReconciler;
 }
 
 /**
@@ -35,7 +44,7 @@ export interface LeaseRoutesOptions {
  */
 export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
   fastify,
-  options
+  options,
 ) => {
   const { leasePool, keysetProvider, stateManager, metrics } = options;
 
@@ -84,7 +93,10 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       });
     }
 
-    if (key.max_ttl_seconds !== undefined && payload.ttl_seconds > key.max_ttl_seconds) {
+    if (
+      key.max_ttl_seconds !== undefined &&
+      payload.ttl_seconds > key.max_ttl_seconds
+    ) {
       return reply.code(400).send({
         error: `Lease TTL (${payload.ttl_seconds}s) exceeds key max TTL (${key.max_ttl_seconds}s)`,
       });
@@ -123,32 +135,38 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         // Soft reference check
         const flagRes = await client.query(
           "SELECT 1 FROM flags WHERE key = $1 AND env = $2 LIMIT 1",
-          [payload.flag_key, payload.env]
+          [payload.flag_key, payload.env],
         );
         let knownFlag = flagRes.rowCount !== null && flagRes.rowCount > 0;
 
         if (!knownFlag) {
           const telemetryRes = await client.query(
             "SELECT 1 FROM flag_usage_daily WHERE flag_key = $1 AND env = $2 LIMIT 1",
-            [payload.flag_key, payload.env]
+            [payload.flag_key, payload.env],
           );
-          knownFlag = telemetryRes.rowCount !== null && telemetryRes.rowCount > 0;
+          knownFlag =
+            telemetryRes.rowCount !== null && telemetryRes.rowCount > 0;
         }
 
         warnings = knownFlag ? [] : ["UNKNOWN_FLAG"];
 
         // Check for existing lease by lease_id (idempotency & retry guard - P1.10)
-        const existingLeaseIdRes = await client.query<{ lease_id: string; sig: string; state: string }>(
-          "SELECT lease_id, sig, state FROM leases WHERE lease_id = $1",
-          [payload.lease_id]
-        );
+        const existingLeaseIdRes = await client.query<{
+          lease_id: string;
+          sig: string;
+          state: string;
+        }>("SELECT lease_id, sig, state FROM leases WHERE lease_id = $1", [
+          payload.lease_id,
+        ]);
         if (existingLeaseIdRes.rows.length > 0) {
           const row = existingLeaseIdRes.rows[0];
           if (row.sig === sig) {
             // Idempotent retry: identical signed lease already committed
             return;
           }
-          const conflictErr = new Error(`Lease with ID "${payload.lease_id}" already exists with different payload or signature`);
+          const conflictErr = new Error(
+            `Lease with ID "${payload.lease_id}" already exists with different payload or signature`,
+          );
           (conflictErr as unknown as { statusCode: number }).statusCode = 409;
           throw conflictErr;
         }
@@ -158,12 +176,14 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
           `SELECT lease_id FROM leases 
            WHERE flag_key = $1 AND env = $2 AND state = 'ACTIVE' 
            FOR UPDATE`,
-          [payload.flag_key, payload.env]
+          [payload.flag_key, payload.env],
         );
 
         if (existingRes.rows.length > 0) {
           if (!allowSupersede) {
-            const err = new Error("An active lease already exists for this flag and environment");
+            const err = new Error(
+              "An active lease already exists for this flag and environment",
+            );
             (err as unknown as { statusCode: number }).statusCode = 409;
             throw err;
           }
@@ -172,7 +192,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
           await client.query(
             `UPDATE leases SET state = 'SUPERSEDED' 
              WHERE flag_key = $1 AND env = $2 AND state = 'ACTIVE'`,
-            [payload.flag_key, payload.env]
+            [payload.flag_key, payload.env],
           );
 
           for (const oldLease of existingRes.rows) {
@@ -187,7 +207,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
                   superseded_lease_id: oldLease.lease_id,
                   new_lease_id: payload.lease_id,
                 }),
-              ]
+              ],
             );
 
             await client.query(
@@ -201,13 +221,15 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
                   flag_key: payload.flag_key,
                   env: payload.env,
                 }),
-              ]
+              ],
             );
           }
         }
 
         // Insert new ACTIVE lease
-        const expiresAt = new Date(issuedAtMs + payload.ttl_seconds * 1000).toISOString();
+        const expiresAt = new Date(
+          issuedAtMs + payload.ttl_seconds * 1000,
+        ).toISOString();
         await client.query(
           `INSERT INTO leases (
              lease_id, flag_key, env, payload, sig, state, 
@@ -223,7 +245,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
             payload.ttl_seconds,
             expiresAt,
             payload.kid,
-          ]
+          ],
         );
 
         // Stage LEASE_CREATED to change_events
@@ -240,7 +262,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
               reason: payload.reason,
               ttl_seconds: payload.ttl_seconds,
             }),
-          ]
+          ],
         );
 
         // Stage LEASE_CREATED to audit_pending
@@ -258,7 +280,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
               ttl_seconds: payload.ttl_seconds,
               issued_at: payload.issued_at,
             }),
-          ]
+          ],
         );
 
         // Record metrics
@@ -266,7 +288,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
           if (existingRes.rows.length > 0) {
             metrics.leaseTransitionsTotal.inc(
               { from: "ACTIVE", to: "SUPERSEDED" },
-              existingRes.rows.length
+              existingRes.rows.length,
             );
           } else {
             // Synchronous increment provides immediate local visibility; periodic GET /metrics scrape provides authoritative eventual consistency
@@ -283,7 +305,8 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       }
       if ((err as { code?: string }).code === "23505") {
         return reply.code(409).send({
-          error: "An active lease already exists or was created concurrently for this flag and environment",
+          error:
+            "An active lease already exists or was created concurrently for this flag and environment",
         });
       }
       throw err;
@@ -293,7 +316,10 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     try {
       await stateManager.notifyChange(payload.env);
     } catch (notifyErr) {
-      req.log.warn({ err: notifyErr }, "[POST /v1/leases] Error waking up long-polling connections");
+      req.log.warn(
+        { err: notifyErr },
+        "[POST /v1/leases] Error waking up long-polling connections",
+      );
     }
 
     // 7. Response 201 Created
@@ -350,9 +376,14 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     let env = "prod";
     try {
       await withTransaction(leasePool, async (client) => {
-        const leaseRes = await client.query<{ flag_key: string; env: string; expires_at: Date; state: string }>(
+        const leaseRes = await client.query<{
+          flag_key: string;
+          env: string;
+          expires_at: Date;
+          state: string;
+        }>(
           "SELECT flag_key, env, expires_at, state FROM leases WHERE lease_id = $1 FOR UPDATE",
-          [id]
+          [id],
         );
 
         if (leaseRes.rows.length === 0) {
@@ -363,7 +394,9 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
 
         const lease = leaseRes.rows[0];
         if (lease.state !== "ACTIVE") {
-          const err = new Error(`Cannot revoke lease "${id}": lease is in state "${lease.state}"`);
+          const err = new Error(
+            `Cannot revoke lease "${id}": lease is in state "${lease.state}"`,
+          );
           (err as unknown as { statusCode: number }).statusCode = 409;
           throw err;
         }
@@ -371,15 +404,20 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         env = lease.env;
 
         // Transition lease to REVOKED
-        await client.query("UPDATE leases SET state = 'REVOKED' WHERE lease_id = $1", [id]);
+        await client.query(
+          "UPDATE leases SET state = 'REVOKED' WHERE lease_id = $1",
+          [id],
+        );
 
         // Insert into revocations (retention bounded by expires_at + SKEW)
-        const expiresAt = new Date(new Date(lease.expires_at).getTime() + DEFAULT_SKEW_TOLERANCE_MS).toISOString();
+        const expiresAt = new Date(
+          new Date(lease.expires_at).getTime() + DEFAULT_SKEW_TOLERANCE_MS,
+        ).toISOString();
         await client.query(
           `INSERT INTO revocations (lease_id, payload, sig, revoked_by_kid, revoked_at, expires_at)
            VALUES ($1, $2, $3, $4, NOW(), $5)
            ON CONFLICT (lease_id) DO NOTHING`,
-          [id, JSON.stringify(payload), sig, payload.kid, expiresAt]
+          [id, JSON.stringify(payload), sig, payload.kid, expiresAt],
         );
 
         // Stage LEASE_REVOKED to change_events
@@ -394,7 +432,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
               lease_id: id,
               reason: payload.reason,
             }),
-          ]
+          ],
         );
 
         // Stage LEASE_REVOKED to audit_pending
@@ -409,7 +447,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
               env,
               reason: payload.reason,
             }),
-          ]
+          ],
         );
 
         // Record metrics
@@ -436,12 +474,153 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     try {
       await stateManager.notifyChange(env);
     } catch (notifyErr) {
-      req.log.warn({ err: notifyErr }, "[POST /v1/leases/:id/revoke] Error waking up long-polling connections");
+      req.log.warn(
+        { err: notifyErr },
+        "[POST /v1/leases/:id/revoke] Error waking up long-polling connections",
+      );
     }
 
     return reply.code(200).send({
       lease_id: id,
       state: "REVOKED",
     });
+  });
+
+  // POST /v1/leases/:id/promote
+  fastify.post("/v1/leases/:id/promote", async (req, reply) => {
+    // 1. Bearer token authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return reply.code(401).send({
+        error: "UNAUTHORIZED",
+        message: "Missing or invalid Authorization header with Bearer token",
+      });
+    }
+
+    const rawToken = authHeader.slice(7).trim();
+    if (!rawToken) {
+      return reply.code(401).send({
+        error: "UNAUTHORIZED",
+        message: "Empty Bearer token",
+      });
+    }
+
+    let authorized = false;
+    if (
+      process.env.SYNAPSE_API_TOKEN &&
+      rawToken === process.env.SYNAPSE_API_TOKEN
+    ) {
+      authorized = true;
+    } else {
+      const tokenHash = crypto
+        .createHash("sha256")
+        .update(rawToken)
+        .digest("hex");
+      const tokenRes = await leasePool.query<{
+        service_name: string;
+        roles: string[];
+      }>(
+        "SELECT service_name, roles FROM api_tokens WHERE token_hash = $1 LIMIT 1",
+        [tokenHash],
+      );
+      if (tokenRes.rows.length > 0) {
+        authorized = true;
+      }
+    }
+
+    if (!authorized) {
+      return reply.code(401).send({
+        error: "UNAUTHORIZED",
+        message: "Invalid or unauthorized API token",
+      });
+    }
+
+    // 2. Fetch lease from database
+    const { id } = req.params as { id: string };
+    const leaseRes = await leasePool.query<LeaseRecord>(
+      `SELECT lease_id, flag_key, env, payload, sig, state, created_by_kid, promote_pr_url
+       FROM leases WHERE lease_id = $1`,
+      [id],
+    );
+
+    if (leaseRes.rows.length === 0) {
+      return reply.code(404).send({
+        error: "NOT_FOUND",
+        message: `Lease "${id}" not found`,
+      });
+    }
+
+    const lease = leaseRes.rows[0];
+
+    // 3. State validation
+    if (lease.state === "PROMOTED") {
+      return reply.code(409).send({
+        error: "CONFLICT",
+        message: `Cannot promote lease "${id}": lease is already in state "PROMOTED"`,
+        promote_pr_url: lease.promote_pr_url,
+      });
+    }
+
+    if (lease.state !== "ACTIVE" && lease.state !== "EXPIRED") {
+      return reply.code(409).send({
+        error: "CONFLICT",
+        message: `Cannot promote lease "${id}": lease is in state "${lease.state}"`,
+      });
+    }
+
+    // 4. Verify GitHub reconciler is configured
+    const reconciler = options.githubReconciler;
+    if (!reconciler) {
+      return reply.code(503).send({
+        error: "GITHUB_NOT_CONFIGURED",
+        message: "GitHub reconciler is not configured on this server",
+      });
+    }
+
+    // 5. Execute promotion via reconciler
+    try {
+      const parsedPayload =
+        typeof lease.payload === "string"
+          ? JSON.parse(lease.payload)
+          : lease.payload;
+
+      const result = await reconciler.promoteLease({
+        ...lease,
+        payload: parsedPayload,
+      });
+
+      // Update promote_pr_url in database
+      await leasePool.query(
+        "UPDATE leases SET promote_pr_url = $1 WHERE lease_id = $2",
+        [result.pr_url, id],
+      );
+
+      return reply.code(202).send({
+        lease_id: lease.lease_id,
+        pr_url: result.pr_url,
+        branch: result.branch,
+      });
+    } catch (err: unknown) {
+      if (err instanceof StalePrConflictError) {
+        return reply.code(409).send({
+          error: "STALE_PR_CONFLICT",
+          message: err.message,
+          existing_pr_url: err.existingPrUrl,
+        });
+      }
+      if (err instanceof FlagNotFoundError) {
+        return reply.code(404).send({
+          error: "FLAG_NOT_FOUND",
+          message: err.message,
+        });
+      }
+      if (err instanceof InvalidFlagKeyError) {
+        return reply.code(400).send({
+          error: "INVALID_FLAG_KEY",
+          message: err.message,
+        });
+      }
+      throw err;
+    }
   });
 };
