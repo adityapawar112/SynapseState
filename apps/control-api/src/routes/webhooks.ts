@@ -11,6 +11,9 @@ export interface WebhookRoutesOptions {
   stateManager: StateManager;
   metrics?: SynapseMetrics;
   webhookSecret?: string;
+  expectedOwner?: string;
+  expectedRepo?: string;
+  expectedBaseBranch?: string;
 }
 
 const LEASE_ID_BRANCH_REGEX = /synapse\/promote-lease-([0-9A-HJKMNP-TV-Z]{26})/;
@@ -33,10 +36,15 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
   const { leasePool, stateManager, metrics, webhookSecret } = options;
 
   fastify.post("/v1/webhooks/github", async (req, reply) => {
-    // 1. Webhook secret validation
-    const secret = webhookSecret ?? process.env.GITHUB_WEBHOOK_SECRET;
+    // 1. Webhook secret validation (with SYNAPSE_WEBHOOK_SECRET fallback)
+    const secret =
+      webhookSecret ??
+      process.env.GITHUB_WEBHOOK_SECRET ??
+      process.env.SYNAPSE_WEBHOOK_SECRET;
     if (!secret) {
-      req.log.error("GITHUB_WEBHOOK_SECRET is not configured on server");
+      req.log.error(
+        "Neither GITHUB_WEBHOOK_SECRET nor SYNAPSE_WEBHOOK_SECRET is configured on server",
+      );
       return reply.code(500).send({
         error: "WEBHOOK_SECRET_NOT_CONFIGURED",
         message: "Webhook secret is not configured on the server",
@@ -96,7 +104,66 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       });
     }
 
+    // Verify source repository matches configured owner/repo (prevent cross-repo forgery)
+    const expectedOwner = options.expectedOwner ?? process.env.GITHUB_OWNER;
+    const expectedRepo = options.expectedRepo ?? process.env.GITHUB_REPO;
+    const expectedBaseBranch =
+      options.expectedBaseBranch ?? process.env.GITHUB_BASE_BRANCH;
+
+    if (expectedOwner && payload.repository?.owner?.login) {
+      if (
+        payload.repository.owner.login.toLowerCase() !==
+        expectedOwner.toLowerCase()
+      ) {
+        req.log.warn(
+          {
+            expectedOwner,
+            actualOwner: payload.repository.owner.login,
+          },
+          "[Webhook] Ignoring event from unexpected repository owner",
+        );
+        return reply.code(200).send({
+          status: "ignored",
+          reason: "Repository owner mismatch",
+        });
+      }
+    }
+
+    if (expectedRepo && payload.repository?.name) {
+      if (
+        payload.repository.name.toLowerCase() !== expectedRepo.toLowerCase()
+      ) {
+        req.log.warn(
+          {
+            expectedRepo,
+            actualRepo: payload.repository.name,
+          },
+          "[Webhook] Ignoring event from unexpected repository name",
+        );
+        return reply.code(200).send({
+          status: "ignored",
+          reason: "Repository name mismatch",
+        });
+      }
+    }
+
     const pr = payload.pull_request;
+    if (expectedBaseBranch && pr.base?.ref) {
+      if (pr.base.ref !== expectedBaseBranch) {
+        req.log.warn(
+          {
+            expectedBaseBranch,
+            actualBaseBranch: pr.base.ref,
+          },
+          "[Webhook] Ignoring event with unexpected target base branch",
+        );
+        return reply.code(200).send({
+          status: "ignored",
+          reason: "Target base branch mismatch",
+        });
+      }
+    }
+
     const branchName = pr.head.ref;
 
     // 4. Extract lease ID from branch or URL lookup
@@ -125,6 +192,8 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
     let targetEnv = "";
     let reconciled = false;
     let alreadyPromoted = false;
+    let revokedIgnored = false;
+    let stateIgnored = false;
 
     await withTransaction(leasePool, async (client) => {
       const leaseRes = await client.query<{
@@ -149,6 +218,18 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
 
       if (previousState === "PROMOTED") {
         alreadyPromoted = true;
+        return;
+      }
+
+      // Invariant 4 & Lifecycle: Revoked leases must NEVER be promoted
+      if (previousState === "REVOKED") {
+        revokedIgnored = true;
+        return;
+      }
+
+      // Only ACTIVE or EXPIRED leases may be promoted
+      if (previousState !== "ACTIVE" && previousState !== "EXPIRED") {
+        stateIgnored = true;
         return;
       }
 
@@ -236,6 +317,24 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       return reply.code(200).send({
         status: "already_promoted",
         lease_id: targetLeaseId,
+      });
+    }
+
+    if (revokedIgnored) {
+      req.log.warn(
+        { leaseId: targetLeaseId },
+        "[Webhook] Lease is REVOKED and cannot be promoted to Git",
+      );
+      return reply.code(200).send({
+        status: "ignored",
+        reason: "Lease has been revoked and cannot be promoted",
+      });
+    }
+
+    if (stateIgnored) {
+      return reply.code(200).send({
+        status: "ignored",
+        reason: "Lease state is not eligible for promotion",
       });
     }
 

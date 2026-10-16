@@ -8,6 +8,7 @@ export interface PromoteParams {
   apiUrl?: string;
   token?: string;
   json?: boolean;
+  timeoutMs?: number;
   fetchFn?: typeof fetch;
 }
 
@@ -52,17 +53,33 @@ export async function executePromote(
     headers.Authorization = `Bearer ${token}`;
   }
 
+  const timeoutMs = params.timeoutMs ?? 30000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   let res: Response;
   try {
     res = await fetchFn(url, {
       method: "POST",
       headers,
+      body: params.env ? JSON.stringify({ env: params.env }) : undefined,
+      signal: controller.signal,
     });
   } catch (err: unknown) {
+    if (
+      (err as { name?: string }).name === "AbortError" ||
+      (err as { name?: string }).name === "TimeoutError"
+    ) {
+      throw new Error(
+        `Control API request timed out after ${timeoutMs}ms while contacting ${apiUrl}.`,
+      );
+    }
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(
       `Control API unreachable at ${apiUrl} (${msg}). Ensure Control API is running.`,
     );
+  } finally {
+    clearTimeout(timer);
   }
 
   if (res.status === 401) {
@@ -71,8 +88,26 @@ export async function executePromote(
     );
   }
 
+  if (res.status === 403) {
+    throw new Error(
+      "Forbidden (HTTP 403). API token does not have operator or admin role required to promote overrides.",
+    );
+  }
+
   if (res.status === 404) {
     throw new Error(`Emergency lease "${leaseId}" not found (HTTP 404).`);
+  }
+
+  if (res.status === 400) {
+    let errBody: { error?: string; message?: string } = {};
+    try {
+      errBody = (await res.json()) as typeof errBody;
+    } catch {
+      // ignore
+    }
+    throw new Error(
+      errBody.message || `Bad request (HTTP 400): ${JSON.stringify(errBody)}`,
+    );
   }
 
   if (res.status === 409) {

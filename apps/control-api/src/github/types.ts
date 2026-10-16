@@ -53,6 +53,7 @@ export interface GitHubClient {
       body: string;
       head: string;
       base: string;
+      draft?: boolean;
     },
   ): Promise<GitHubPullRequest>;
 }
@@ -94,9 +95,9 @@ export interface PromoteLeaseResult {
 
 export class StalePrConflictError extends Error {
   readonly code = "STALE_PR_CONFLICT";
-  readonly existingPrUrl: string;
+  readonly existingPrUrl?: string;
 
-  constructor(message: string, existingPrUrl: string) {
+  constructor(message: string, existingPrUrl?: string) {
     super(message);
     this.name = "StalePrConflictError";
     this.existingPrUrl = existingPrUrl;
@@ -126,6 +127,19 @@ export class InvalidFlagKeyError extends Error {
     );
     this.name = "InvalidFlagKeyError";
     this.flagKey = flagKey;
+  }
+}
+
+export class InvalidEnvironmentError extends Error {
+  readonly code = "INVALID_ENVIRONMENT";
+  readonly env: string;
+
+  constructor(env: string) {
+    super(
+      `Environment "${env}" does not match required regex ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`,
+    );
+    this.name = "InvalidEnvironmentError";
+    this.env = env;
   }
 }
 

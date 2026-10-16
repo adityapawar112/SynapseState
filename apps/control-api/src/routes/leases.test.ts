@@ -712,5 +712,67 @@ describe("Lease Ingestion & Revocation Routes", () => {
         branch: `synapse/promote-lease-${leaseId}`,
       });
     });
+
+    it("rejects promotion with 403 Forbidden when token lacks operator role (C3 blocker)", async () => {
+      const readOnlyToken = "readonly-telemetry-token-xyz";
+      const tokenHash = crypto
+        .createHash("sha256")
+        .update(readOnlyToken)
+        .digest("hex");
+      await leasePool.query(
+        `INSERT INTO api_tokens (token_id, token_hash, service_name, env, roles)
+         VALUES ('tok-test-readonly', $1, 'telemetry-collector', $2, ARRAY['telemetry'])
+         ON CONFLICT (token_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, roles = EXCLUDED.roles`,
+        [tokenHash, env],
+      );
+
+      const leaseId = generateUlid();
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${readOnlyToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe("FORBIDDEN");
+    });
+
+    it("rejects promotion with 400 when lease ID is not a valid 26-char Crockford ULID", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/leases/invalid-id-too-short/promote",
+        headers: {
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe("INVALID_LEASE_ID");
+    });
+
+    it("rejects promotion with 400 when requested env does not match lease env", async () => {
+      const leaseId = generateUlid();
+      const payload = createTestLease({ lease_id: leaseId });
+      await leasePool.query(
+        `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
+         VALUES ($1, $2, $3, $4, 'sig', 'ACTIVE', NOW(), 600, NOW() + INTERVAL '600s', 'sre-alice')`,
+        [leaseId, payload.flag_key, env, JSON.stringify(payload)],
+      );
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/v1/leases/${leaseId}/promote`,
+        headers: {
+          authorization: `Bearer ${validToken}`,
+          "content-type": "application/json",
+        },
+        payload: JSON.stringify({ env: "other-env" }),
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe("ENVIRONMENT_MISMATCH");
+    });
   });
 });

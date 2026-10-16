@@ -185,4 +185,68 @@ describe("Promote Command (packages/cli/src/commands/promote.ts) - PR 18", () =>
     expect(cmd).toBeDefined();
     expect(cmd?.description()).toContain("Git reconciliation Pull Request");
   });
+
+  it("passes env in POST body when env param is provided (Issue 7)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        lease_id: validUlid,
+        pr_url: "https://github.com/synapsestate/flags/pull/101",
+        branch: `synapse/promote-lease-${validUlid}`,
+      }),
+    });
+
+    await executePromote({
+      leaseId: validUlid,
+      env: "production",
+      apiUrl: defaultApiUrl,
+      token: "secret-operator-token",
+      fetchFn: mockFetch as unknown as typeof fetch,
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${defaultApiUrl}/v1/leases/${validUlid}/promote`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ env: "production" }),
+      }),
+    );
+  });
+
+  it("handles 403 Forbidden with clear operator role error (C3 blocker)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        error: "FORBIDDEN",
+        message:
+          "API token does not have operator or admin role required for promotion",
+      }),
+    });
+
+    await expect(
+      executePromote({
+        leaseId: validUlid,
+        apiUrl: defaultApiUrl,
+        token: "telemetry-token",
+        fetchFn: mockFetch as unknown as typeof fetch,
+      }),
+    ).rejects.toThrow(/Forbidden.*operator or admin role/i);
+  });
+
+  it("handles request timeout with clear error message (Issue 8)", async () => {
+    const timeoutErr = new Error("The operation was aborted due to timeout");
+    timeoutErr.name = "TimeoutError";
+    const mockFetch = vi.fn().mockRejectedValue(timeoutErr);
+
+    await expect(
+      executePromote({
+        leaseId: validUlid,
+        apiUrl: defaultApiUrl,
+        timeoutMs: 100,
+        fetchFn: mockFetch as unknown as typeof fetch,
+      }),
+    ).rejects.toThrow(/timed out after 100ms/i);
+  });
 });

@@ -7,6 +7,7 @@ import {
   StalePrConflictError,
   FlagNotFoundError,
   InvalidFlagKeyError,
+  InvalidEnvironmentError,
 } from "./types.js";
 
 export const FLAG_KEY_REGEX = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -68,9 +69,12 @@ export class GitHubReconciler {
     const { owner, repo } = this.config;
     const baseBranch = this.config.baseBranch || "main";
 
-    // 1. Flag key charset validation
+    // 1. Flag key and environment charset validation (prevent path traversal / ref injection)
     if (!FLAG_KEY_REGEX.test(flag_key)) {
       throw new InvalidFlagKeyError(flag_key);
+    }
+    if (!FLAG_KEY_REGEX.test(env)) {
+      throw new InvalidEnvironmentError(env);
     }
 
     const filePath = `flags/${env}/${flag_key}.yaml`;
@@ -102,14 +106,31 @@ export class GitHubReconciler {
 
     // 4. Parse YAML preserving comments and metadata, update defaultVariant
     const doc = YAML.parseDocument(existingFile.content);
+    if (doc.errors && doc.errors.length > 0) {
+      throw new Error(
+        `Failed to parse flag definition YAML for ${flag_key} in ${env}: ${doc.errors[0].message}`,
+      );
+    }
+
     const newDefaultVariant = resolveDefaultVariant(doc, lease.payload.value);
     doc.set("defaultVariant", newDefaultVariant);
     const updatedYaml = doc.toString();
 
-    // 5. Get base branch commit SHA and create promotion branch
+    // 5. Get base branch commit SHA and create promotion branch (with 422 branch race handling)
     const baseSha = await this.client.getBranchSha(owner, repo, baseBranch);
     const branchName = `synapse/promote-lease-${lease_id}`;
-    await this.client.createBranch(owner, repo, branchName, baseSha);
+    try {
+      await this.client.createBranch(owner, repo, branchName, baseSha);
+    } catch (err: unknown) {
+      const is422 = (err as { status?: number }).status === 422;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (is422 || msg.toLowerCase().includes("already exists")) {
+        throw new StalePrConflictError(
+          `Promotion branch "${branchName}" already exists for lease ${lease_id}`,
+        );
+      }
+      throw err;
+    }
 
     // 6. Commit updated flag YAML file to branch
     const commitMessage = `feat(flags): promote override for ${flag_key} in ${env} (lease ${lease_id})`;
@@ -121,7 +142,7 @@ export class GitHubReconciler {
       sha: existingFile.sha,
     });
 
-    // 7. Open GitHub Pull Request with incident metadata & dual-control notice
+    // 7. Open GitHub Draft Pull Request with incident metadata & dual-control notice
     const prTitle = `feat(flags): promote override for ${flag_key} in ${env} (lease ${lease_id})`;
     const prBody = `## SynapseState Git Reconciliation (Dual-Control Promotion)
 
@@ -150,6 +171,7 @@ This pull request reconciles an emergency override back to the Git baseline conf
       body: prBody,
       head: branchName,
       base: baseBranch,
+      draft: true,
     });
 
     return {

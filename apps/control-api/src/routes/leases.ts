@@ -22,6 +22,7 @@ import {
   StalePrConflictError,
   FlagNotFoundError,
   InvalidFlagKeyError,
+  InvalidEnvironmentError,
 } from "../github/index.js";
 
 export interface LeaseRoutesOptions {
@@ -524,7 +525,16 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         [tokenHash],
       );
       if (tokenRes.rows.length > 0) {
-        authorized = true;
+        const roles = tokenRes.rows[0].roles || [];
+        if (roles.includes("operator") || roles.includes("admin")) {
+          authorized = true;
+        } else {
+          return reply.code(403).send({
+            error: "FORBIDDEN",
+            message:
+              "API token does not have operator or admin role required for promotion",
+          });
+        }
       }
     }
 
@@ -535,8 +545,16 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       });
     }
 
-    // 2. Fetch lease from database
+    // 2. ULID validation and fetch lease from database
     const { id } = req.params as { id: string };
+    const ULID_REGEX = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+    if (!ULID_REGEX.test(id)) {
+      return reply.code(400).send({
+        error: "INVALID_LEASE_ID",
+        message: `Lease ID "${id}" is not a valid 26-character Crockford ULID`,
+      });
+    }
+
     const leaseRes = await leasePool.query<LeaseRecord>(
       `SELECT lease_id, flag_key, env, payload, sig, state, created_by_kid, promote_pr_url
        FROM leases WHERE lease_id = $1`,
@@ -551,6 +569,17 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     }
 
     const lease = leaseRes.rows[0];
+
+    // Optional environment check from request body
+    const body = req.body as { env?: string } | undefined;
+    if (body && typeof body === "object" && body.env) {
+      if (body.env !== lease.env) {
+        return reply.code(400).send({
+          error: "ENVIRONMENT_MISMATCH",
+          message: `Requested environment "${body.env}" does not match lease environment "${lease.env}"`,
+        });
+      }
+    }
 
     // 3. State validation
     if (lease.state === "PROMOTED") {
@@ -589,11 +618,18 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         payload: parsedPayload,
       });
 
-      // Update promote_pr_url in database
-      await leasePool.query(
-        "UPDATE leases SET promote_pr_url = $1 WHERE lease_id = $2",
-        [result.pr_url, id],
-      );
+      // Update promote_pr_url in database (fault-tolerant against transient DB errors)
+      try {
+        await leasePool.query(
+          "UPDATE leases SET promote_pr_url = $1 WHERE lease_id = $2",
+          [result.pr_url, id],
+        );
+      } catch (dbErr) {
+        req.log.error(
+          { err: dbErr, prUrl: result.pr_url, leaseId: id },
+          "[Promote] Failed to persist promote_pr_url to database after PR creation",
+        );
+      }
 
       return reply.code(202).send({
         lease_id: lease.lease_id,
@@ -602,6 +638,16 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       });
     } catch (err: unknown) {
       if (err instanceof StalePrConflictError) {
+        if (err.existingPrUrl) {
+          try {
+            await leasePool.query(
+              "UPDATE leases SET promote_pr_url = $1 WHERE lease_id = $2 AND promote_pr_url IS NULL",
+              [err.existingPrUrl, id],
+            );
+          } catch {
+            // Non-fatal backstop
+          }
+        }
         return reply.code(409).send({
           error: "STALE_PR_CONFLICT",
           message: err.message,
@@ -617,6 +663,12 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       if (err instanceof InvalidFlagKeyError) {
         return reply.code(400).send({
           error: "INVALID_FLAG_KEY",
+          message: err.message,
+        });
+      }
+      if (err instanceof InvalidEnvironmentError) {
+        return reply.code(400).send({
+          error: "INVALID_ENVIRONMENT",
           message: err.message,
         });
       }

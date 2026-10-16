@@ -371,4 +371,174 @@ describe("GitHub Webhook Route (POST /v1/webhooks/github) - PR 18", () => {
       lease_id: leaseId,
     });
   });
+
+  it("ignores webhook and refuses to promote if lease is REVOKED (C1 blocker)", async () => {
+    const leaseId = generateUlid();
+    const flagKey = "revoked-guard-flag";
+
+    // Insert REVOKED lease
+    await leasePool.query(
+      `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
+       VALUES ($1, $2, $3, $4, 'test-sig', 'REVOKED', NOW(), 1800, NOW() + INTERVAL '1800 seconds', 'sre-alice')`,
+      [
+        leaseId,
+        flagKey,
+        env,
+        JSON.stringify({
+          v: 1,
+          lease_id: leaseId,
+          env,
+          flag_key: flagKey,
+          value: false,
+          reason: "Revoked incident",
+          issued_at: new Date().toISOString(),
+          ttl_seconds: 1800,
+          kid: "sre-alice",
+        }),
+      ],
+    );
+
+    const webhookPayload = JSON.stringify({
+      action: "closed",
+      number: 99,
+      pull_request: {
+        number: 99,
+        html_url: "https://github.com/org/repo/pull/99",
+        state: "closed",
+        title: `feat(flags): promote override for ${flagKey}`,
+        merged: true,
+        merge_commit_sha: "merge-commit-sha-999",
+        head: {
+          ref: `synapse/promote-lease-${leaseId}`,
+        },
+      },
+    });
+    const sig = createSignature(webhookPayload);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/github",
+      headers: {
+        "x-github-event": "pull_request",
+        "x-hub-signature-256": sig,
+        "content-type": "application/json",
+      },
+      payload: webhookPayload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      status: "ignored",
+      reason: "Lease has been revoked and cannot be promoted",
+    });
+
+    // Verify lease remains REVOKED in database
+    const leaseCheck = await leasePool.query(
+      "SELECT state FROM leases WHERE lease_id = $1",
+      [leaseId],
+    );
+    expect(leaseCheck.rows[0].state).toBe("REVOKED");
+
+    // Verify zero GIT_MERGE or LEASE_PROMOTED events emitted
+    const eventsCheck = await leasePool.query(
+      "SELECT COUNT(*) FROM change_events WHERE env = $1",
+      [env],
+    );
+    expect(Number(eventsCheck.rows[0].count)).toBe(0);
+  });
+
+  it("ignores webhook if repository owner or name does not match expected (C2 blocker)", async () => {
+    const appWithRepoCheck = buildServer({
+      leasePool,
+      githubWebhookSecret: webhookSecret,
+      githubOwner: "synapsestate-trusted",
+      githubRepo: "flags-trusted",
+      fastifyOptions: { logger: false },
+    });
+    await appWithRepoCheck.ready();
+
+    try {
+      const leaseId = generateUlid();
+      const flagKey = "cross-repo-spoof-flag";
+
+      const webhookPayload = JSON.stringify({
+        action: "closed",
+        number: 101,
+        repository: {
+          name: "attacker-repo",
+          owner: {
+            login: "attacker",
+          },
+        },
+        pull_request: {
+          number: 101,
+          html_url: "https://github.com/attacker/attacker-repo/pull/101",
+          state: "closed",
+          title: `feat(flags): promote override for ${flagKey}`,
+          merged: true,
+          merge_commit_sha: "merge-commit-sha-attacker",
+          head: {
+            ref: `synapse/promote-lease-${leaseId}`,
+          },
+        },
+      });
+      const sig = createSignature(webhookPayload);
+
+      const res = await appWithRepoCheck.inject({
+        method: "POST",
+        url: "/v1/webhooks/github",
+        headers: {
+          "x-github-event": "pull_request",
+          "x-hub-signature-256": sig,
+          "content-type": "application/json",
+        },
+        payload: webhookPayload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        status: "ignored",
+        reason: "Repository owner mismatch",
+      });
+    } finally {
+      await appWithRepoCheck.close();
+    }
+  });
+
+  it("authenticates webhook using SYNAPSE_WEBHOOK_SECRET fallback (Issue 9)", async () => {
+    const fallbackSecret = "synapse-fallback-secret-987654";
+    process.env.SYNAPSE_WEBHOOK_SECRET = fallbackSecret;
+
+    const appFallback = buildServer({
+      leasePool,
+      fastifyOptions: { logger: false },
+    });
+    await appFallback.ready();
+
+    try {
+      const webhookPayload = JSON.stringify({ action: "ping" });
+      const hmac = crypto
+        .createHmac("sha256", fallbackSecret)
+        .update(webhookPayload)
+        .digest("hex");
+      const sig = `sha256=${hmac}`;
+
+      const res = await appFallback.inject({
+        method: "POST",
+        url: "/v1/webhooks/github",
+        headers: {
+          "x-github-event": "ping",
+          "x-hub-signature-256": sig,
+          "content-type": "application/json",
+        },
+        payload: webhookPayload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ status: "pong" });
+    } finally {
+      delete process.env.SYNAPSE_WEBHOOK_SECRET;
+      await appFallback.close();
+    }
+  });
 });

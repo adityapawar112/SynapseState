@@ -7,6 +7,7 @@ import {
   StalePrConflictError,
   FlagNotFoundError,
   InvalidFlagKeyError,
+  InvalidEnvironmentError,
 } from "./types.js";
 import { GitHubReconciler } from "./reconciler.js";
 
@@ -295,6 +296,55 @@ defaultVariant: standard
     expect(prBody).toContain("Dual-Control Peer Review Required");
     expect(prBody).toContain(
       "reconcile the Git baseline and transition emergency lease",
+    );
+    expect(mockClient.createPullRequest.mock.calls[0][2].draft).toBe(true);
+  });
+
+  it("rejects environments with path traversal or invalid characters (Issue 1)", async () => {
+    const reconciler = new GitHubReconciler(
+      mockClient as unknown as GitHubClient,
+      config,
+    );
+
+    const invalidEnvs = ["../../etc", "prod/dev", "prod*env", "Production"];
+    for (const badEnv of invalidEnvs) {
+      await expect(
+        reconciler.promoteLease({
+          ...sampleLease,
+          env: badEnv,
+        }),
+      ).rejects.toThrow(InvalidEnvironmentError);
+    }
+  });
+
+  it("aborts and throws error if flag YAML has parse errors (Issue 5)", async () => {
+    mockClient.getFileContent.mockResolvedValueOnce({
+      content: "description: broken yaml\n\tinvalid tab character\nvariants: [",
+      sha: "broken-sha",
+    });
+
+    const reconciler = new GitHubReconciler(
+      mockClient as unknown as GitHubClient,
+      config,
+    );
+
+    await expect(reconciler.promoteLease(sampleLease)).rejects.toThrow(
+      /Failed to parse flag definition YAML/,
+    );
+  });
+
+  it("maps Octokit 422 branch collision to StalePrConflictError (Issue 2)", async () => {
+    const error422 = new Error("Reference already exists");
+    (error422 as { status?: number }).status = 422;
+    mockClient.createBranch.mockRejectedValueOnce(error422);
+
+    const reconciler = new GitHubReconciler(
+      mockClient as unknown as GitHubClient,
+      config,
+    );
+
+    await expect(reconciler.promoteLease(sampleLease)).rejects.toThrow(
+      StalePrConflictError,
     );
   });
 });

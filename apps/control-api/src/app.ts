@@ -39,6 +39,9 @@ export interface ServerOptions {
   githubClient?: GitHubClient;
   githubReconciler?: GitHubReconciler;
   githubWebhookSecret?: string;
+  githubOwner?: string;
+  githubRepo?: string;
+  githubBaseBranch?: string;
 }
 
 /**
@@ -63,13 +66,18 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     options.stateManager ?? new StateManager(activePool);
   const activeMetrics = options.metrics ?? getMetricsRegistry();
 
+  const githubOwner = options.githubOwner ?? process.env.GITHUB_OWNER;
+  const githubRepo = options.githubRepo ?? process.env.GITHUB_REPO;
+  const githubBaseBranch =
+    options.githubBaseBranch ?? process.env.GITHUB_BASE_BRANCH;
+
   let activeReconciler = options.githubReconciler;
-  if (!activeReconciler && (process.env.GITHUB_OWNER || options.githubClient)) {
+  if (!activeReconciler && (githubOwner || options.githubClient)) {
     const client = options.githubClient ?? createGitHubClient();
     activeReconciler = new DefaultGitHubReconciler(client, {
-      owner: process.env.GITHUB_OWNER || "synapsestate",
-      repo: process.env.GITHUB_REPO || "flags",
-      baseBranch: process.env.GITHUB_BASE_BRANCH || "main",
+      owner: githubOwner || "synapsestate",
+      repo: githubRepo || "flags",
+      baseBranch: githubBaseBranch || "main",
     });
   }
 
@@ -130,6 +138,9 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     stateManager: activeStateManager,
     metrics: activeMetrics,
     webhookSecret: options.githubWebhookSecret,
+    expectedOwner: githubOwner,
+    expectedRepo: githubRepo,
+    expectedBaseBranch: githubBaseBranch,
   });
 
   // Audit Sealer configuration and lifecycle management

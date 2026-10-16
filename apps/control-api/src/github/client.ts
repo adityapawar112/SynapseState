@@ -122,11 +122,17 @@ export class OctokitGitHubClient implements GitHubClient {
 
     const matchingPrs: GitHubPullRequest[] = [];
 
+    const targetFlagKey = filePath.split("/").pop()?.replace(".yaml", "") ?? "";
+    const flagKeyRegex = targetFlagKey
+      ? new RegExp(`(^|[^a-z0-9-])${targetFlagKey}([^a-z0-9]|$)`)
+      : null;
+
     for (const pr of pullRequests) {
       // If the branch name already matches promotion branch pattern for this lease/flag
       if (
         pr.head.ref.startsWith("synapse/promote-lease-") &&
-        pr.title.includes(filePath.split("/").pop()?.replace(".yaml", "") ?? "")
+        flagKeyRegex &&
+        flagKeyRegex.test(pr.title)
       ) {
         matchingPrs.push({
           number: pr.number,
@@ -170,6 +176,7 @@ export class OctokitGitHubClient implements GitHubClient {
       body: string;
       head: string;
       base: string;
+      draft?: boolean;
     },
   ): Promise<GitHubPullRequest> {
     const { data } = await this.octokit.rest.pulls.create({
@@ -179,6 +186,7 @@ export class OctokitGitHubClient implements GitHubClient {
       body: params.body,
       head: params.head,
       base: params.base,
+      draft: params.draft,
     });
 
     return {
