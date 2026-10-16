@@ -451,6 +451,40 @@ describe("Phase 3 PR 13: Observability Dashboards & Alertmanager Rules", () => {
         expect(enabledOutput).toContain("synapsestate-slo-alerts");
       },
     );
+
+    it.skipIf(!isHelmAvailable)(
+      "renders Checkpoint Signer CronJob and ServiceAccount conditionally when cronjob.enabled=true (PR 19)",
+      async () => {
+        // 1. Disabled by default
+        const defaultOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}"`,
+          { encoding: "utf-8" },
+        );
+        expect(defaultOutput).not.toContain("kind: CronJob");
+        expect(defaultOutput).not.toContain("checkpoint-signer");
+
+        // 2. Enabled renders CronJob and ServiceAccount with strict security contexts
+        const enabledOutput = execSync(
+          `helm template test-rel "${CONTROL_API_CHART_PATH}" --set cronjob.enabled=true`,
+          { encoding: "utf-8" },
+        );
+        expect(enabledOutput).toContain("kind: CronJob");
+        expect(enabledOutput).toContain("kind: ServiceAccount");
+        expect(enabledOutput).toContain("test-rel-control-api-checkpoint-signer");
+        expect(enabledOutput).toContain("automountServiceAccountToken: false");
+        expect(enabledOutput).toContain("- synapse");
+        expect(enabledOutput).toContain("- audit");
+        expect(enabledOutput).toContain("- checkpoint");
+        expect(enabledOutput).toContain("- --s3-bucket");
+        expect(enabledOutput).toContain("runAsNonRoot: true");
+        expect(enabledOutput).toContain("readOnlyRootFilesystem: true");
+        expect(enabledOutput).toContain("allowPrivilegeEscalation: false");
+        expect(enabledOutput).toContain("- ALL");
+        expect(enabledOutput).toContain("type: RuntimeDefault");
+        expect(enabledOutput).toContain("mountPath: /tmp");
+        expect(enabledOutput).toContain("emptyDir: {}");
+      },
+    );
   });
 
   describe("Source of Truth Integrity (Drift Guard)", () => {

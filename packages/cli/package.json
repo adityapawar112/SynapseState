@@ -13,14 +13,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
     "@synapsestate/lease": "workspace:*",
     "cli-table3": "^0.6.5",
     "commander": "^14.0.0",
+    "pg": "^8.23.1",
     "picocolors": "^1.1.1",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.8.0",
     "vitest": "^3.0.0"
   }

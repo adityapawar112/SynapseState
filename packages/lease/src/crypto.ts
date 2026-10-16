@@ -20,6 +20,7 @@ import {
  * 12 bytes: 302a 3005 0603 2b6570 032100
  */
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+const ED25519_PKCS8_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
 export type PublicKeyInput = crypto.KeyObject | string | Buffer;
 export type PrivateKeyInput = crypto.KeyObject | string | Buffer;
@@ -143,13 +144,92 @@ export function resolvePrivateKey(input: PrivateKeyInput): crypto.KeyObject {
     );
   }
 
-  const key = crypto.createPrivateKey(input);
-  if (key.asymmetricKeyType !== "ed25519") {
-    throw new TypeError(
-      `Expected ed25519 private key, got ${key.asymmetricKeyType}`,
-    );
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    if (trimmed.includes("BEGIN PRIVATE KEY")) {
+      const key = crypto.createPrivateKey(trimmed);
+      if (key.asymmetricKeyType !== "ed25519") {
+        throw new TypeError(
+          `Expected ed25519 PEM key, got ${key.asymmetricKeyType}`,
+        );
+      }
+      return key;
+    }
+
+    // Hex representation
+    if (/^[0-9a-fA-F]+$/.test(trimmed)) {
+      if (trimmed.length === 64) {
+        // 32-byte raw private key in hex
+        const rawBytes = Buffer.from(trimmed, "hex");
+        const pkcs8 = Buffer.concat([ED25519_PKCS8_PREFIX, rawBytes]);
+        return crypto.createPrivateKey({
+          key: pkcs8,
+          format: "der",
+          type: "pkcs8",
+        });
+      } else if (trimmed.length === 96) {
+        // 48-byte PKCS#8 DER in hex
+        return crypto.createPrivateKey({
+          key: Buffer.from(trimmed, "hex"),
+          format: "der",
+          type: "pkcs8",
+        });
+      }
+    }
+
+    // Base64url representation (43 chars = 32 raw bytes)
+    if (BASE64URL_REGEX.test(trimmed)) {
+      const rawBytes = Buffer.from(trimmed, "base64url");
+      if (rawBytes.length === 32) {
+        const pkcs8 = Buffer.concat([ED25519_PKCS8_PREFIX, rawBytes]);
+        return crypto.createPrivateKey({
+          key: pkcs8,
+          format: "der",
+          type: "pkcs8",
+        });
+      } else if (rawBytes.length === 48) {
+        return crypto.createPrivateKey({
+          key: rawBytes,
+          format: "der",
+          type: "pkcs8",
+        });
+      }
+    }
+
+    const key = crypto.createPrivateKey(trimmed);
+    if (key.asymmetricKeyType !== "ed25519") {
+      throw new TypeError(`Expected ed25519 key, got ${key.asymmetricKeyType}`);
+    }
+    return key;
   }
-  return key;
+
+  if (Buffer.isBuffer(input)) {
+    if (input.length === 32) {
+      const pkcs8 = Buffer.concat([ED25519_PKCS8_PREFIX, input]);
+      return crypto.createPrivateKey({
+        key: pkcs8,
+        format: "der",
+        type: "pkcs8",
+      });
+    } else if (input.length === 48) {
+      return crypto.createPrivateKey({
+        key: input,
+        format: "der",
+        type: "pkcs8",
+      });
+    }
+    const key = crypto.createPrivateKey({
+      key: input,
+      format: "der",
+      type: "pkcs8",
+    });
+    if (key.asymmetricKeyType !== "ed25519") {
+      throw new TypeError(`Expected ed25519 key, got ${key.asymmetricKeyType}`);
+    }
+    return key;
+  }
+
+  throw new TypeError("Unsupported private key input type");
 }
 
 /**

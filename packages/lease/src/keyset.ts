@@ -183,6 +183,21 @@ export function canRevokeKey(key: KeysetKey): boolean {
 }
 
 /**
+ * Checks whether a key is authorized to sign audit checkpoints.
+ * Requires active status and checkpoint_signer, audit_signer, or admin role.
+ */
+export function canSignCheckpoint(key: KeysetKey): boolean {
+  if (!isKeyActive(key)) {
+    return false;
+  }
+  return (
+    key.roles.includes("checkpoint_signer") ||
+    key.roles.includes("audit_signer") ||
+    key.roles.includes("admin")
+  );
+}
+
+/**
  * Checks if a given key ID has been explicitly revoked via signed key revocations.
  */
 export function isKeyRevoked(

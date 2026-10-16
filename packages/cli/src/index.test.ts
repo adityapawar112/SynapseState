@@ -91,6 +91,29 @@ describe("CLI Program Entrypoint (packages/cli/src/index.ts)", () => {
     ).toBe(true);
   });
 
+  it("registers audit command under program (PR 19)", () => {
+    const auditCmd = program.commands.find((c) => c.name() === "audit");
+    expect(auditCmd).toBeDefined();
+    expect(auditCmd?.description()).toContain("audit ledger");
+
+    const verifyCmd = auditCmd?.commands.find((c) => c.name() === "verify");
+    expect(verifyCmd).toBeDefined();
+    expect(
+      verifyCmd?.options.some((opt) => opt.flags.includes("-c, --checkpoint")),
+    ).toBe(true);
+    expect(
+      verifyCmd?.options.some((opt) => opt.flags.includes("-f, --file")),
+    ).toBe(true);
+
+    const checkpointCmd = auditCmd?.commands.find(
+      (c) => c.name() === "checkpoint",
+    );
+    expect(checkpointCmd).toBeDefined();
+    expect(
+      checkpointCmd?.options.some((opt) => opt.flags.includes("--s3-bucket")),
+    ).toBe(true);
+  });
+
   it("evaluates isMainModule correctly across platforms and flags", async () => {
     const { isMainModule } = await import("./index.js");
 

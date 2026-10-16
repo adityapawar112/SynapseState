@@ -157,6 +157,37 @@ export const KeyRevocationEnvelopeSchema = z.object({
 export type KeyRevocationEnvelope = z.infer<typeof KeyRevocationEnvelopeSchema>;
 
 /**
+ * Schema for signed audit checkpoint payloads (external anchoring).
+ */
+export const CheckpointPayloadSchema = z.object({
+  v: z.literal(1),
+  checkpoint_seq: z.number().int().nonnegative(),
+  checkpoint_hash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, "checkpoint_hash must be a 64-char lowercase hex SHA-256 string"),
+  timestamp: z
+    .string()
+    .datetime({ message: "timestamp must be an ISO 8601 UTC timestamp" }),
+  sealed_count: z.number().int().nonnegative(),
+  kid: KidSchema,
+});
+
+export type CheckpointPayload = z.infer<typeof CheckpointPayloadSchema>;
+
+/**
+ * Schema for signed checkpoint envelopes.
+ */
+export const CheckpointEnvelopeSchema = z.object({
+  payload: CheckpointPayloadSchema,
+  sig: z
+    .string()
+    .min(1, "sig must not be empty")
+    .regex(BASE64URL_REGEX, "sig must be base64url encoded"),
+});
+
+export type CheckpointEnvelope = z.infer<typeof CheckpointEnvelopeSchema>;
+
+/**
  * Supported key roles and permissions (ARCHITECTURE.md:286, 309).
  */
 export const KEY_ROLE_VALUES = [
@@ -164,6 +195,8 @@ export const KEY_ROLE_VALUES = [
   "key_revoker",
   "operator",
   "admin",
+  "audit_signer",
+  "checkpoint_signer",
 ] as const;
 
 export type KeyRole = (typeof KEY_ROLE_VALUES)[number];
@@ -197,6 +230,8 @@ export const KeysetKeySchema = z
       if (key.role === "admin") {
         roleSet.add("lease_signer");
         roleSet.add("key_revoker");
+        roleSet.add("audit_signer");
+        roleSet.add("checkpoint_signer");
       } else if (key.role === "operator") {
         roleSet.add("lease_signer");
       }
@@ -204,6 +239,8 @@ export const KeysetKeySchema = z
       if (roleSet.has("admin")) {
         roleSet.add("lease_signer");
         roleSet.add("key_revoker");
+        roleSet.add("audit_signer");
+        roleSet.add("checkpoint_signer");
       }
       if (roleSet.has("operator")) {
         roleSet.add("lease_signer");
