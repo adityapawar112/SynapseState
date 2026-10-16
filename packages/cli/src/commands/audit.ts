@@ -12,6 +12,7 @@ import {
   signCheckpointWithSigner,
   verifyCheckpointWithKeyset,
   parseKeysetJson,
+  resolvePublicKey,
   resolvePrivateKey,
   formatPublicKeyToHex,
   CheckpointEnvelopeSchema,
@@ -567,7 +568,9 @@ export async function executeAuditCheckpoint(
       if (!keyEntry) {
         throw new Error(`Signer key "${kid}" not found in trusted keyset`);
       }
-      if (keyEntry.public_key.toLowerCase() !== signerFingerprint.toLowerCase()) {
+      // O1: Normalize keyset public key (supports hex, base64url, PEM, SPKI-DER) to 64-char hex
+      const expectedHex = formatPublicKeyToHex(resolvePublicKey(keyEntry.public_key));
+      if (expectedHex.toLowerCase() !== signerFingerprint.toLowerCase()) {
         throw new Error(
           `Derived public key fingerprint "${signerFingerprint}" does not match public key "${keyEntry.public_key}" in keyset for kid "${kid}"`,
         );
@@ -616,7 +619,8 @@ export async function executeAuditCheckpoint(
   const s3Bucket = params.s3Bucket || process.env.S3_BUCKET;
   if (s3Bucket) {
     const s3Region = params.s3Region || process.env.S3_REGION || "us-east-1";
-    const s3Prefix = (params.s3Prefix || process.env.S3_PREFIX || "checkpoints").replace(/^\/+|\/+$/g, "");
+    // O4: Strip leading/trailing slashes and fall back safely if an all-slash string was provided
+    const s3Prefix = (params.s3Prefix || process.env.S3_PREFIX || "checkpoints").replace(/^\/+|\/+$/g, "") || "checkpoints";
 
     const s3Client = params.s3Client ?? new S3Client({ region: s3Region });
 
@@ -652,6 +656,7 @@ export async function executeAuditCheckpoint(
       );
     }
 
+    // ADR 0005 & O2: Latest pointer intentionally not Object-Locked: mutated each checkpoint; immutability lives on <seq>.json
     const putLatestCommandInput = {
       Bucket: s3Bucket,
       Key: latestKey,

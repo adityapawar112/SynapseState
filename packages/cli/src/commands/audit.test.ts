@@ -494,6 +494,42 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       ).rejects.toThrow(/does not match public key .* in keyset/);
     });
 
+    it("normalizes base64url keyset public key and verifies match against derived key (O1)", async () => {
+      const b64UrlPublicKey = Buffer.from(hexPublicKey, "hex").toString("base64url");
+      const b64KeysetPath = path.join(tmpDir, "keyset-b64.json");
+      await fs.writeFile(
+        b64KeysetPath,
+        JSON.stringify({
+          [kid]: {
+            public_key: b64UrlPublicKey,
+            roles: ["checkpoint_signer"],
+            status: "active",
+          },
+        }),
+      );
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          checkpoint_seq: 15,
+          checkpoint_hash: "e".repeat(64),
+          sealed_count: 15,
+          timestamp: "2026-10-16T23:50:00.000Z",
+        }),
+      });
+
+      const result = await executeAuditCheckpoint({
+        apiUrl: "http://localhost:3000",
+        kid,
+        key: hexPrivateKey,
+        keyset: b64KeysetPath,
+        fetchFn: mockFetch as unknown as typeof fetch,
+      });
+
+      expect(result.envelope.payload.checkpoint_seq).toBe(15);
+    });
+
     it("reads latest event directly from PostgreSQL if DB configured", async () => {
       const mockQuery = vi.fn().mockImplementation((sql: string) => {
         if (sql.includes("COUNT(*)")) {
