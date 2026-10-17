@@ -27,32 +27,34 @@ The next agent picking up this task should call the following skills:
 
 ## 2. Executive Summary & Monorepo State (PR 23 Completion)
 
-**PR 23 (`feat/purger-candidate-reports`)** is complete, verified, and adheres strictly to Invariant 6 (read-only AST parsing, zero untrusted code execution):
+**PR 23 (`feat/purger-candidate-reports`)** is complete, peer-reviewed, hardened against all feedback, verified, and pushed to `origin/feat/purger-candidate-reports` (`417efe6`):
 
 - **Domain Modeling & Reporting Surface (`apps/purger/src/reports/`):**
   - Canonical domain types in `apps/purger/src/reports/types.ts`: `CandidateReport`, `RefusalReport`, `RefusalItem`, `CallSiteReportRow`, `PiranhaConfig`, `GritQLPattern`, `PurgerAuditResult`, `PurgerAuditOptions`.
   - Added `Candidate Report` to canonical [GLOSSARY.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/GLOSSARY.md).
 - **Structured Candidate Reports (`apps/purger/src/reports/candidate.ts`):**
   - Ingests qualified `CandidateFlag` and static AST `ConsumerCrossReference` results.
-  - Automatically infers literal variant data type (`boolean`, `string`, `number`, `object`).
-  - Generates machine-readable **Uber Piranha** configurations (`piranha_arguments.json`) mapping target flags to winning variants with sorted method bindings.
-  - Generates machine-readable **GritQL** pattern query definitions (`rules.grit`) for declarative AST transformation.
+  - Automatically infers literal variant data type (`boolean`, `string`, `number`, `object`) with strict regex and JSON validation.
+  - Generates machine-readable **Uber Piranha** configurations (`piranha_arguments.json`) mapping target flags to winning variants with type-aware method bindings.
+  - Generates machine-readable **GritQL** pattern query definitions (`rules.grit`) for declarative AST transformation with safe string and flag key escaping.
   - Formats GitHub-flavored Markdown issue bodies and CLI terminal summaries.
 - **Structured Refusal Reports (`apps/purger/src/reports/refusal.ts`):**
   - Handles qualification refusals: `BLOCKED_BY_SILENT_SERVICE`, `ACTIVE_LEASE_EXISTS`, `MULTI_VARIANT_ACTIVE`, `INSUFFICIENT_WINDOW`, `EXCLUDED_LIFECYCLE_CLASS`, `UNREGISTERED_FLAG`, `MISSING_DEFAULT_VARIANT`.
-  - Handles AST scanner / cross-reference refusals: `NON_LITERAL_FLAG_KEY`, `UNDECLARED_CONSUMER_SERVICE`, `MISSING_ARGUMENTS`, `MISSING_DEFAULT_VALUE`, `SCAN_ERROR`.
-  - Emits actionable operator remediation commands (e.g. `synapse service retire --service <name>` or static refactoring instructions).
+  - Handles AST scanner / cross-reference refusals: `NON_LITERAL_FLAG_KEY`, `UNDECLARED_CONSUMER_SERVICE`, `MISSING_ARGUMENTS`, `MISSING_DEFAULT_VALUE`, `SCAN_ERROR`, `CONSISTENCY_MISMATCH`.
+  - Emits copy-pasteable operator remediation commands with multi-service command chaining (`synapse service retire --service s1 && synapse service retire --service s2`).
 - **Full Purger Audit Pipeline (`apps/purger/src/reports/audit.ts`):**
-  - `runPurgerAudit(options)`: Orchestrates qualification -> AST codebase scanning -> consumer cross-referencing -> candidate/refusal report emission.
-  - `formatPurgerAuditMarkdown(audit)` and `formatPurgerAuditCli(audit)`: Summary report formatters.
+  - `runPurgerAudit(options)`: Connects qualification -> AST codebase scanning -> consumer cross-referencing -> candidate/refusal report emission.
+  - **Refusal-by-default on 0 call sites (C1):** Flags with 0 discovered AST call sites fail closed to refusal rather than qualifying without evidence.
+  - **Strict unreferenced service verification:** `allowUnreferencedServices` defaults to `false`.
+  - Multi-report summary formatters: `formatPurgerAuditMarkdown(audit)` and `formatPurgerAuditCli(audit)`.
 - **Purger Package Surface (`apps/purger/src/index.ts`):**
   - Full named exports for all candidate, refusal, and audit pipeline utilities and domain types.
 - **Verification Evidence:**
-  - Purger test suite (`pnpm --filter @synapsestate/purger test`): **87/87 passed** across 5 test files (`reports.test.ts`, `scanner.test.ts`, `queries.test.ts`, `engine.test.ts`, `index.test.ts`).
+  - Purger test suite (`pnpm --filter @synapsestate/purger test`): **93/93 passed** across 5 test files (`reports.test.ts`, `scanner.test.ts`, `queries.test.ts`, `engine.test.ts`, `index.test.ts`).
   - Monorepo linter (`pnpm run lint`): **0 errors, 0 warnings** across all packages.
   - Monorepo build (`pnpm -r run build`): **0 errors** across all workspace packages.
   - Monorepo typecheck (`pnpm run typecheck`): **0 errors** across all workspace projects, load scripts, and drill tests.
-  - Full test suite (`pnpm test`): **599 passed** (0 failures).
+  - Full test suite (`pnpm test`): **605 passed** (0 failures).
 
 ---
 
