@@ -62,5 +62,47 @@ export {
   crossReferenceConsumers,
 } from "./scanner/scanner.js";
 
+// Explicit re-exports for candidate & refusal report domain types and utilities
+export type {
+  VariantDataType,
+  CallSiteReportRow,
+  PiranhaConfig,
+  GritQLPattern,
+  CandidateReport,
+  RefusalOrigin,
+  RefusalItem,
+  RefusalReport,
+  ReportOutputFormat,
+  ReportFormatOptions,
+  PurgerAuditResult,
+  PurgerAuditOptions,
+} from "./reports/types.js";
+
+export {
+  CLI_SEPARATOR,
+  getDefaultMethodsForVariantType,
+  inferVariantType,
+  formatScopeDescription,
+  formatCallSiteReportRow,
+  buildPiranhaConfig,
+  buildGritQLPattern,
+  createCandidateReport,
+  formatCandidateReportMarkdown,
+  formatCandidateReportCli,
+  formatCandidateReportJson,
+  mapDisqualificationReasonToItem,
+  createRefusalReportFromQualification,
+  mapRefusalMarkerToItem,
+  createRefusalReportFromCrossReference,
+  formatRefusalReportMarkdown,
+  formatRefusalReportCli,
+  formatRefusalReportJson,
+  runPurgerAudit,
+  formatPurgerAuditMarkdown,
+  formatPurgerAuditCli,
+  formatPurgerAuditJson,
+} from "./reports/index.js";
+
+
 
 

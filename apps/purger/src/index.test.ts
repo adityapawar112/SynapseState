@@ -41,5 +41,22 @@ describe("Purger Package Exports", () => {
     expect(Array.isArray(OPENFEATURE_EVAL_METHODS)).toBe(true);
     expect(OPENFEATURE_EVAL_METHODS).toContain("getBooleanValue");
   });
+
+  it("exports candidate and refusal report generators and audit pipeline", async () => {
+    const purger = await import("./index.js");
+    expect(purger.createCandidateReport).toBeTypeOf("function");
+    expect(purger.formatCandidateReportMarkdown).toBeTypeOf("function");
+    expect(purger.formatCandidateReportCli).toBeTypeOf("function");
+    expect(purger.formatCandidateReportJson).toBeTypeOf("function");
+    expect(purger.createRefusalReportFromQualification).toBeTypeOf("function");
+    expect(purger.createRefusalReportFromCrossReference).toBeTypeOf("function");
+    expect(purger.formatRefusalReportMarkdown).toBeTypeOf("function");
+    expect(purger.formatRefusalReportCli).toBeTypeOf("function");
+    expect(purger.formatRefusalReportJson).toBeTypeOf("function");
+    expect(purger.runPurgerAudit).toBeTypeOf("function");
+    expect(purger.formatPurgerAuditMarkdown).toBeTypeOf("function");
+    expect(purger.formatPurgerAuditCli).toBeTypeOf("function");
+    expect(purger.formatPurgerAuditJson).toBeTypeOf("function");
+  });
 });
 

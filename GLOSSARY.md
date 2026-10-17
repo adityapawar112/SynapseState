@@ -18,6 +18,10 @@ A short-lived, cryptographically signed emergency override issued by a single on
 
 A specific syntactic location in application source code where an OpenFeature client evaluates a feature flag.
 
+### Candidate Report
+
+A structured artifact emitted by the automated code scanner detailing a qualified stale feature flag, its winning variant, associated call site coordinates, and tool-compatible configuration rules (such as Uber Piranha properties or GritQL patterns) for automated refactoring or human review.
+
 ### Change Attribution
 
 The process of correlating operational incidents with recent feature flag modifications to identify likely causal changes and suggest mitigation actions.
