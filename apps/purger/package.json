@@ -12,11 +12,13 @@
   "dependencies": {
     "@octokit/rest": "^21.1.0",
     "@synapsestate/lease": "workspace:*",
+    "pg": "^8.13.0",
     "ts-morph": "^25.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
+    "@types/pg": "^8.11.11",
     "typescript": "^5.8.0",
     "vitest": "^3.0.0"
   }
