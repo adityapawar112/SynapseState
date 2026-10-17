@@ -76,6 +76,22 @@ describe("GitHub Webhook Route (POST /v1/webhooks/github) - PR 18", () => {
     expect(body.error).toBe("INVALID_SIGNATURE");
   });
 
+  it("fails closed with 500 when rawBody is unavailable", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/github",
+      headers: {
+        "x-github-event": "ping",
+        "x-hub-signature-256": "sha256=abcdef",
+        "content-type": "text/plain",
+      },
+      payload: "plain text without json parser buffer capture",
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe("RAW_BODY_UNAVAILABLE");
+  });
+
   it("handles ping event with 200 OK { status: 'pong' }", async () => {
     const payload = JSON.stringify({ zen: "Design for failure." });
     const sig = createSignature(payload);

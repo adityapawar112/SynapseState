@@ -608,30 +608,52 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       });
     }
 
-    // 5. Execute promotion via reconciler
+    // 5. Execute promotion via reconciler with transaction-level advisory lock
     try {
       const parsedPayload =
         typeof lease.payload === "string"
           ? JSON.parse(lease.payload)
           : lease.payload;
 
-      const result = await reconciler.promoteLease({
-        ...lease,
-        payload: parsedPayload,
-      });
+      const result = await withTransaction(leasePool, async (client) => {
+        // Advisory transaction lock per flag + env to serialize concurrent promotion attempts
+        const lockRes = await client.query<{ locked: boolean }>(
+          "SELECT pg_try_advisory_xact_lock(hashtext($1)) as locked",
+          [`synapse_promote:${lease.flag_key}:${lease.env}`],
+        );
+        if (!lockRes.rows[0]?.locked) {
+          throw new StalePrConflictError(
+            `Concurrent promotion already in progress for flag "${lease.flag_key}" in "${lease.env}"`,
+            lease.promote_pr_url ?? undefined,
+          );
+        }
 
-      // Update promote_pr_url in database (fault-tolerant against transient DB errors)
-      try {
-        await leasePool.query(
+        // Re-check state inside locked transaction
+        const currentRes = await client.query<{
+          state: string;
+          promote_pr_url: string | null;
+        }>("SELECT state, promote_pr_url FROM leases WHERE lease_id = $1", [
+          id,
+        ]);
+        if (currentRes.rows[0]?.state === "PROMOTED") {
+          throw new StalePrConflictError(
+            `Cannot promote lease "${id}": lease is already in state "PROMOTED"`,
+            currentRes.rows[0].promote_pr_url ?? undefined,
+          );
+        }
+
+        const promResult = await reconciler.promoteLease({
+          ...lease,
+          payload: parsedPayload,
+        });
+
+        await client.query(
           "UPDATE leases SET promote_pr_url = $1 WHERE lease_id = $2",
-          [result.pr_url, id],
+          [promResult.pr_url, id],
         );
-      } catch (dbErr) {
-        req.log.error(
-          { err: dbErr, prUrl: result.pr_url, leaseId: id },
-          "[Promote] Failed to persist promote_pr_url to database after PR creation",
-        );
-      }
+
+        return promResult;
+      });
 
       return reply.code(202).send({
         lease_id: lease.lease_id,

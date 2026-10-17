@@ -5,9 +5,12 @@ import os from "node:os";
 import crypto from "node:crypto";
 import {
   signLease,
+  signRevocation,
+  signKeyRevocation,
   formatPublicKeyToBase64Url,
   type Keyset,
   type LeasePayload,
+  type RevocationPayload,
   type KeyRevocationPayload,
 } from "@synapsestate/lease";
 import { LeaseStore } from "./lease-store.js";
@@ -244,5 +247,80 @@ describe("EmergencyScanner", () => {
 
     scanner.stop();
     expect(scanner.isRunning()).toBe(false);
+  });
+
+  it("ingests air-gapped lease revocation and evicts active lease from store", async () => {
+    const leaseId = "01J9X57YTRPQ8A7F4E12345678";
+    createSignedLeaseFile("lease-target.json", {
+      flag_key: "killswitch-checkout",
+      lease_id: leaseId,
+    });
+
+    scanner = new EmergencyScanner({
+      emergencyDir,
+      leaseStore,
+    });
+
+    await scanner.scanOnce();
+    expect(leaseStore.getActiveLease("killswitch-checkout")).toBeDefined();
+
+    // Write a signed revocation file into the emergency directory
+    const revPayload: RevocationPayload = {
+      v: 1,
+      lease_id: leaseId,
+      reason: "Air-gapped manual emergency revocation",
+      revoked_at: new Date().toISOString(),
+      kid: "sre-alice",
+    };
+    const revEnv = signRevocation(revPayload, alicePair.privateKey);
+    fs.writeFileSync(
+      path.join(emergencyDir, "lease-revocation.json"),
+      JSON.stringify(revEnv, null, 2),
+      "utf8",
+    );
+
+    const ingested = await scanner.scanOnce();
+    expect(ingested).toBe(1);
+    expect(leaseStore.getActiveLease("killswitch-checkout")).toBeUndefined();
+  });
+
+  it("ingests air-gapped key revocation, evicts all leases by that key, and blocks future ones", async () => {
+    createSignedLeaseFile("alice-lease.json", {
+      flag_key: "killswitch-checkout",
+      lease_id: "01J9X57YTRPQ8A7F4E12345678",
+      kid: "sre-alice",
+    });
+
+    scanner = new EmergencyScanner({
+      emergencyDir,
+      leaseStore,
+    });
+
+    await scanner.scanOnce();
+    expect(leaseStore.getActiveLease("killswitch-checkout")).toBeDefined();
+
+    // Write a key revocation file signed by Bob revoking Alice
+    const keyRevPayload: KeyRevocationPayload = {
+      v: 1,
+      kid: "sre-alice",
+      reason: "Compromised Alice laptop air-gap revocation",
+      revoked_at: new Date().toISOString(),
+      revoked_by_kid: "revoker-bob",
+    };
+    const keyRevEnv = signKeyRevocation(keyRevPayload, bobPair.privateKey);
+    fs.writeFileSync(
+      path.join(emergencyDir, "key-revocation-alice.json"),
+      JSON.stringify(keyRevEnv, null, 2),
+      "utf8",
+    );
+
+    const ingested = await scanner.scanOnce();
+    expect(ingested).toBe(1);
+    expect(leaseStore.getActiveLease("killswitch-checkout")).toBeUndefined();
+
+    // Alice's lease is rejected
+    const secondScan = await scanner.scanOnce();
+    expect(secondScan).toBe(0);
+    expect(leaseStore.getActiveLease("killswitch-checkout")).toBeUndefined();
   });
 });

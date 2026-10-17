@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "paths": {
+      "@synapsestate/lease": ["../packages/lease/src/index.ts"],
+      "@synapsestate/sdk": ["../packages/sdk/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts"]
+}
