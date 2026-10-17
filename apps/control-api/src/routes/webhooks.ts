@@ -70,9 +70,18 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       });
     }
 
-    const rawPayload =
-      (req as unknown as { rawBody?: Buffer | string }).rawBody ??
-      (typeof req.body === "string" ? req.body : JSON.stringify(req.body));
+    const rawPayload = (req as unknown as { rawBody?: Buffer | string })
+      .rawBody;
+    if (!rawPayload) {
+      req.log.error(
+        "Raw request body is missing for webhook signature verification",
+      );
+      return reply.code(500).send({
+        error: "RAW_BODY_UNAVAILABLE",
+        message:
+          "Server configuration error: raw body capture unavailable for webhook signature verification",
+      });
+    }
 
     const hmac = crypto
       .createHmac("sha256", secret)

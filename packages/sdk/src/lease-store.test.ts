@@ -297,4 +297,22 @@ describe("LeaseStore", () => {
     expect(metrics.leasesEvictedExpiredCount).toBe(0);
     expect(metrics.leasesEvictedRevokedCount).toBe(0);
   });
+
+  it("preserves firstSeenMonoMs from active lease if tracking map entry was evicted", () => {
+    const payload = createLeasePayload();
+    const env = signLease(payload, alicePair.privateKey);
+    expect(store.addLease(env, trustedKeyset)).toBe(true);
+    const originalMono = store.getActiveLease("killswitch-cart")!.firstSeenMonoMs;
+
+    // Simulate eviction of the lease_id from the monotonic tracking map
+    (
+      store as unknown as { firstSeenMonoByLeaseId: Map<string, number> }
+    ).firstSeenMonoByLeaseId.delete(payload.lease_id);
+
+    // Re-ingest the exact same lease
+    expect(store.addLease(env, trustedKeyset)).toBe(true);
+    expect(store.getActiveLease("killswitch-cart")!.firstSeenMonoMs).toBe(
+      originalMono,
+    );
+  });
 });
