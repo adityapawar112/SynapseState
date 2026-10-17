@@ -15,15 +15,15 @@ import type {
 } from "./types.js";
 
 export const DEFAULT_MIN_WINDOW_DAYS = 35;
-export const DEFAULT_MAX_WINDOW_DAYS = 45;
 
 /**
  * Evaluates a single flag's telemetry snapshot against the quiescence rule matrix:
  * 1. Lifecycle Class: class === 'release' (killswitch and permanent flags excluded).
- * 2. Invariance Window: served a single variant continuously for >= minWindowDays (or 0 evaluations).
+ * 2. Invariance Window: served a single variant continuously for >= minWindowDays (or 0 evaluations across entire window).
  * 3. Consumer Coverage: 100% of evaluating consumer services have status IN ('ACTIVE', 'RETIRED').
  *    Any service with status 'SILENT' blocks qualification and is recorded in blockingServices.
  * 4. Lease Quiescence: zero active emergency leases.
+ * 5. Winning Variant: single invariant variant, or verified defaultVariant when 0 evaluations.
  */
 export function evaluateCandidateQuiescence(
   snapshot: FlagTelemetrySnapshot,
@@ -57,7 +57,7 @@ export function evaluateCandidateQuiescence(
     reasons.push("BLOCKED_BY_SILENT_SERVICE");
   }
 
-  // 4. Observation Window Check
+  // 4. Observation Window & Telemetry Span Check
   if (snapshot.windowDays < minWindowDays) {
     reasons.push("INSUFFICIENT_WINDOW");
   }
@@ -71,11 +71,40 @@ export function evaluateCandidateQuiescence(
     0,
   );
 
+  // If the flag recorded evaluations, verify that telemetry span spans >= minWindowDays
+  if (activeVariants.length > 0) {
+    if (snapshot.firstSeen && snapshot.lastSeen) {
+      const first = new Date(snapshot.firstSeen).getTime();
+      const last = new Date(snapshot.lastSeen).getTime();
+      const spanDays = Math.floor((last - first) / (86400 * 1000));
+      if (
+        spanDays < minWindowDays &&
+        !reasons.includes("INSUFFICIENT_WINDOW")
+      ) {
+        reasons.push("INSUFFICIENT_WINDOW");
+      }
+    } else if (!reasons.includes("INSUFFICIENT_WINDOW")) {
+      reasons.push("INSUFFICIENT_WINDOW");
+    }
+  }
+
   if (activeVariants.length > 1) {
     reasons.push("MULTI_VARIANT_ACTIVE");
   }
 
-  // If disqualified, return early with reasons and any blocking services
+  // 6. Winning Variant Determination (Fail-closed on 0-eval flags without defaultVariant)
+  let winningVariant: string | undefined;
+  if (activeVariants.length === 1) {
+    winningVariant = activeVariants[0].variant;
+  } else if (activeVariants.length === 0) {
+    if (!snapshot.defaultVariant) {
+      reasons.push("MISSING_DEFAULT_VARIANT");
+    } else {
+      winningVariant = snapshot.defaultVariant;
+    }
+  }
+
+  // If disqualified, return early with all accumulated reasons and blocking services
   if (reasons.length > 0) {
     return {
       flagKey: snapshot.flagKey,
@@ -88,12 +117,6 @@ export function evaluateCandidateQuiescence(
     };
   }
 
-  // 6. Winning Variant Determination
-  let winningVariant = snapshot.defaultVariant ?? "off";
-  if (activeVariants.length === 1) {
-    winningVariant = activeVariants[0].variant;
-  }
-
   const evaluatingServices = Array.from(
     new Set(snapshot.services.map((s) => s.serviceName)),
   ).sort();
@@ -101,12 +124,12 @@ export function evaluateCandidateQuiescence(
   const candidate: CandidateFlag = {
     flagKey: snapshot.flagKey,
     env: snapshot.env,
-    winningVariant,
+    winningVariant: winningVariant!,
     totalEvaluations,
     evaluatingServices,
     windowDays: snapshot.windowDays,
-    firstSeen: snapshot.firstSeen ?? new Date(0).toISOString(),
-    lastSeen: snapshot.lastSeen ?? new Date(0).toISOString(),
+    ...(snapshot.firstSeen ? { firstSeen: snapshot.firstSeen } : {}),
+    ...(snapshot.lastSeen ? { lastSeen: snapshot.lastSeen } : {}),
   };
 
   return {
@@ -119,10 +142,11 @@ export function evaluateCandidateQuiescence(
 }
 
 /**
- * Batch evaluates an array of flag telemetry snapshots, preserving order.
+ * Batch evaluates an array of flag telemetry snapshots, preserving order
+ * and ensuring input array immutability.
  */
 export function qualifyFlagTelemetryBatch(
-  snapshots: FlagTelemetrySnapshot[],
+  snapshots: readonly FlagTelemetrySnapshot[],
   options?: QualificationOptions,
 ): QualificationResult[] {
   return snapshots.map((snapshot) =>

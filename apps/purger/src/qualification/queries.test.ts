@@ -15,12 +15,13 @@ describe("Purger Quiescence SQL Rollup Engine", () => {
       expect(query.values).toEqual([35, null, null]);
 
       // Verify date math and interval logic
-      expect(query.text).toMatch(/INTERVAL/i);
+      expect(query.text).toMatch(/make_interval\(days => \$1::int\)/i);
       expect(query.text).toMatch(/flag_usage_daily/);
       expect(query.text).toMatch(/services/);
       expect(query.text).toMatch(/flags/);
       expect(query.text).toMatch(/leases/);
       expect(query.text).toMatch(/state = 'ACTIVE'/);
+      expect(query.text).toMatch(/expires_at > NOW\(\)/);
     });
 
     it("binds custom windowDays, env, and flagKey parameters", () => {
@@ -46,11 +47,11 @@ describe("Purger Quiescence SQL Rollup Engine", () => {
       );
     });
 
-    it("verifies GROUP BY aggregation covers all projected non-aggregate columns", () => {
+    it("quotes reserved columns 'key' and 'class' in queries", () => {
       const query = buildQuiescenceRollupQuery();
 
-      expect(query.text).toMatch(/GROUP BY/i);
-      expect(query.text).toMatch(/ORDER BY/i);
+      expect(query.text).toMatch(/f\."class"/);
+      expect(query.text).toMatch(/f\."key"/);
     });
   });
 
@@ -66,7 +67,7 @@ describe("Purger Quiescence SQL Rollup Engine", () => {
           variant: "exponential",
           evalCount: "125000",
           firstSeen: "2026-09-01T12:00:00.000Z",
-          lastSeen: "2026-10-06T15:30:00.000Z",
+          lastSeen: "2026-10-06T15:30:00.000Z", // 35-day span
         },
       ],
       services: [
@@ -109,6 +110,61 @@ describe("Purger Quiescence SQL Rollup Engine", () => {
       });
     });
 
+    it("derives effective windowDays from actual telemetry firstSeen/lastSeen span (C1)", () => {
+      const shortSpanRow: RawRollupRow = {
+        ...sampleRawRow,
+        variants: [
+          {
+            variant: "exponential",
+            evalCount: "1000",
+            firstSeen: "2026-10-04T00:00:00.000Z",
+            lastSeen: "2026-10-06T00:00:00.000Z", // 2 days span
+          },
+        ],
+      };
+
+      // Even if caller requested 35 days, effectiveWindowDays must be capped at actual 2 days
+      const snapshot = mapRowToFlagTelemetrySnapshot(shortSpanRow, 35);
+      expect(snapshot.windowDays).toBe(2);
+    });
+
+    it("derives effective windowDays from flag_created_at age when 0 evaluations recorded (C1)", () => {
+      const recentFlagRow: RawRollupRow = {
+        flag_key: "brand-new-flag",
+        env: "production",
+        flag_class: "release",
+        flag_created_at: new Date(Date.now() - 3 * 86400 * 1000).toISOString(), // created 3 days ago
+        has_active_lease: false,
+        variants: [],
+        services: [],
+      };
+
+      const snapshot = mapRowToFlagTelemetrySnapshot(recentFlagRow, 35);
+      expect(snapshot.windowDays).toBe(3);
+    });
+
+    it("safely handles invalid date strings without throwing RangeError (I4)", () => {
+      const invalidDateRow: RawRollupRow = {
+        ...sampleRawRow,
+        variants: [
+          {
+            variant: "test",
+            evalCount: "10",
+            firstSeen: "not-a-valid-date",
+            lastSeen: "invalid-time",
+          },
+        ],
+      };
+
+      // Must not throw RangeError
+      expect(() =>
+        mapRowToFlagTelemetrySnapshot(invalidDateRow, 35),
+      ).not.toThrow();
+      const snapshot = mapRowToFlagTelemetrySnapshot(invalidDateRow, 35);
+      expect(snapshot.firstSeen).toBeUndefined();
+      expect(snapshot.lastSeen).toBeUndefined();
+    });
+
     it("handles null flag_class as undefined (unregistered flag)", () => {
       const rawRow: RawRollupRow = {
         ...sampleRawRow,
@@ -122,6 +178,7 @@ describe("Purger Quiescence SQL Rollup Engine", () => {
     it("handles empty or null JSON variant and service arrays gracefully", () => {
       const rawRow: RawRollupRow = {
         ...sampleRawRow,
+        flag_created_at: null,
         variants: null as unknown as RawRollupRow["variants"],
         services: null as unknown as RawRollupRow["services"],
       };

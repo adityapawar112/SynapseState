@@ -76,7 +76,7 @@ An extensible abstraction responsible for producing cryptographic signatures usi
 
 ### Silent Service
 
-A registered microservice workload that has stopped emitting evaluation telemetry heartbeats for longer than the tolerance threshold, temporarily blocking the automated retirement of flags it consumed.
+A registered microservice workload that has stopped emitting evaluation telemetry heartbeats for longer than the tolerance threshold (>14 days), temporarily blocking the automated retirement of flags it consumed.
 
 ### Stale Candidate
 

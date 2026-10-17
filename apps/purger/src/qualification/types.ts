@@ -19,7 +19,8 @@ export type DisqualificationReason =
   | "INSUFFICIENT_WINDOW"
   | "BLOCKED_BY_SILENT_SERVICE"
   | "ACTIVE_LEASE_EXISTS"
-  | "UNREGISTERED_FLAG";
+  | "UNREGISTERED_FLAG"
+  | "MISSING_DEFAULT_VARIANT";
 
 /**
  * Represents a qualified stale flag candidate ready for AST code scanning and retirement.
@@ -31,8 +32,8 @@ export interface CandidateFlag {
   totalEvaluations: number;
   evaluatingServices: string[];
   windowDays: number;
-  firstSeen: string;
-  lastSeen: string;
+  firstSeen?: string;
+  lastSeen?: string;
 }
 
 /**
@@ -127,6 +128,7 @@ export interface RawRollupRow {
   env: string;
   flag_class: FlagLifecycleClass | null;
   flag_created_at: string | Date | null;
+  actual_window_days?: number | string | null;
   has_active_lease: boolean;
   variants: Array<{
     variant: string;

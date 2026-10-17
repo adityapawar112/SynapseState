@@ -206,7 +206,7 @@ describe("Purger Quiescence Qualification Engine", () => {
     ]);
   });
 
-  it("qualifies flag with 0 evaluations across entire window using defaultVariant", () => {
+  it("qualifies flag with 0 evaluations across entire window when defaultVariant is provided (without epoch sentinel)", () => {
     const snapshot: FlagTelemetrySnapshot = {
       flagKey: "abandoned-experiment",
       env: "production",
@@ -230,9 +230,28 @@ describe("Purger Quiescence Qualification Engine", () => {
       totalEvaluations: 0,
       evaluatingServices: [],
       windowDays: 35,
-      firstSeen: expect.any(String),
-      lastSeen: expect.any(String),
     });
+    // Verifies I1: no bogus 1970-01-01 epoch sentinels
+    expect(result.candidate?.firstSeen).toBeUndefined();
+    expect(result.candidate?.lastSeen).toBeUndefined();
+  });
+
+  it("fails closed on 0-evaluation flag when defaultVariant is missing (C2)", () => {
+    const snapshot: FlagTelemetrySnapshot = {
+      flagKey: "zero-eval-unconfigured",
+      env: "production",
+      flagClass: "release",
+      hasActiveLease: false,
+      windowDays: 35,
+      variants: [],
+      services: [],
+    };
+
+    const result = evaluateCandidateQuiescence(snapshot);
+
+    expect(result.status).toBe("DISQUALIFIED");
+    expect(result.reasons).toContain("MISSING_DEFAULT_VARIANT");
+    expect(result.candidate).toBeUndefined();
   });
 
   it("disqualifies flag when recorded history window is insufficient (< 35 days)", () => {
@@ -248,10 +267,44 @@ describe("Purger Quiescence Qualification Engine", () => {
     expect(result.candidate).toBeUndefined();
   });
 
+  it("disqualifies flag when telemetry history span is < minWindowDays even if windowDays requested is 35 (C1)", () => {
+    // 2-day evaluation history span despite windowDays=35
+    const snapshot: FlagTelemetrySnapshot = {
+      ...baseValidSnapshot,
+      windowDays: 35,
+      firstSeen: "2026-10-04T00:00:00.000Z",
+      lastSeen: "2026-10-06T00:00:00.000Z",
+      variants: [
+        {
+          variant: "treatment",
+          evalCount: 5000,
+          firstSeen: "2026-10-04T00:00:00.000Z",
+          lastSeen: "2026-10-06T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const result = evaluateCandidateQuiescence(snapshot);
+
+    expect(result.status).toBe("DISQUALIFIED");
+    expect(result.reasons).toContain("INSUFFICIENT_WINDOW");
+    expect(result.candidate).toBeUndefined();
+  });
+
   it("supports configurable minWindowDays option", () => {
     const snapshot: FlagTelemetrySnapshot = {
       ...baseValidSnapshot,
       windowDays: 14,
+      firstSeen: "2026-09-20T00:00:00.000Z",
+      lastSeen: "2026-10-06T00:00:00.000Z", // 16 days span
+      variants: [
+        {
+          variant: "treatment",
+          evalCount: 450000,
+          firstSeen: "2026-09-20T00:00:00.000Z",
+          lastSeen: "2026-10-06T00:00:00.000Z",
+        },
+      ],
     };
 
     // Fails with default 35 days
@@ -273,6 +326,8 @@ describe("Purger Quiescence Qualification Engine", () => {
         {
           variant: "treatment",
           evalCount: 450000,
+          firstSeen: "2026-09-01T00:00:00.000Z",
+          lastSeen: "2026-10-06T00:00:00.000Z",
         },
         {
           variant: "control",
@@ -294,6 +349,8 @@ describe("Purger Quiescence Qualification Engine", () => {
       flagClass: "killswitch",
       hasActiveLease: true,
       windowDays: 10,
+      firstSeen: "2026-10-01T00:00:00.000Z",
+      lastSeen: "2026-10-06T00:00:00.000Z",
       services: [{ serviceName: "silent-svc", status: "SILENT" }],
       variants: [
         { variant: "A", evalCount: 100 },
@@ -316,7 +373,7 @@ describe("Purger Quiescence Qualification Engine", () => {
     expect(result.blockingServices).toEqual(["silent-svc"]);
   });
 
-  it("batch qualifies multiple snapshots preserving evaluation order", () => {
+  it("batch qualifies multiple snapshots preserving evaluation order and ensuring input immutability (M4)", () => {
     const snapshots: FlagTelemetrySnapshot[] = [
       baseValidSnapshot,
       {
@@ -331,7 +388,9 @@ describe("Purger Quiescence Qualification Engine", () => {
       },
     ];
 
-    const results = qualifyFlagTelemetryBatch(snapshots);
+    // Verify immutability by freezing input objects
+    const frozenSnapshots = snapshots.map((s) => Object.freeze({ ...s }));
+    const results = qualifyFlagTelemetryBatch(frozenSnapshots);
 
     expect(results).toHaveLength(3);
     expect(results[0].status).toBe("QUALIFIED");

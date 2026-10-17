@@ -18,6 +18,18 @@ import type {
 } from "./types.js";
 
 /**
+ * Safely parses and converts a date-like value into an ISO string,
+ * returning undefined for invalid or missing timestamps.
+ */
+function safeIsoString(
+  val: string | Date | null | undefined,
+): string | undefined {
+  if (!val) return undefined;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+/**
  * Builds the parameterized SQL rollup query aggregating flag telemetry,
  * consumer service statuses, flag classifications, and active emergency leases.
  */
@@ -31,10 +43,10 @@ export function buildQuiescenceRollupQuery(options?: RollupQueryOptions): {
 
   const text = `
 WITH target_flags AS (
-    SELECT key AS flag_key, env
+    SELECT "key" AS flag_key, env
     FROM flags
     WHERE ($2::text IS NULL OR env = $2)
-      AND ($3::text IS NULL OR key = $3)
+      AND ($3::text IS NULL OR "key" = $3)
     UNION
     SELECT flag_key, env
     FROM flag_usage_daily
@@ -45,6 +57,7 @@ active_leases AS (
     SELECT flag_key, env, COUNT(*) AS active_count
     FROM leases
     WHERE state = 'ACTIVE'
+      AND expires_at > NOW()
     GROUP BY flag_key, env
 ),
 usage_window AS (
@@ -57,7 +70,7 @@ usage_window AS (
         first_seen,
         last_seen
     FROM flag_usage_daily
-    WHERE usage_date >= CURRENT_DATE - ($1 || ' days')::INTERVAL
+    WHERE usage_date >= CURRENT_DATE - make_interval(days => $1::int)
       AND ($2::text IS NULL OR env = $2)
       AND ($3::text IS NULL OR flag_key = $3)
 ),
@@ -87,7 +100,7 @@ service_agg AS (
 SELECT
     tf.flag_key,
     tf.env,
-    f.class AS flag_class,
+    f."class" AS flag_class,
     f.created_at AS flag_created_at,
     COALESCE(al.active_count, 0) > 0 AS has_active_lease,
     COALESCE(
@@ -121,9 +134,8 @@ SELECT
         '[]'::json
     ) AS services
 FROM target_flags tf
-LEFT JOIN flags f ON f.key = tf.flag_key AND f.env = tf.env
+LEFT JOIN flags f ON f."key" = tf.flag_key AND f.env = tf.env
 LEFT JOIN active_leases al ON al.flag_key = tf.flag_key AND al.env = tf.env
-GROUP BY tf.flag_key, tf.env, f.class, f.created_at, al.active_count
 ORDER BY tf.flag_key ASC, tf.env ASC;
   `.trim();
 
@@ -144,19 +156,26 @@ export function mapRowToFlagTelemetrySnapshot(
   const rawVariants = Array.isArray(row.variants) ? row.variants : [];
   const rawServices = Array.isArray(row.services) ? row.services : [];
 
-  const variants: VariantEvaluation[] = rawVariants.map((v) => ({
-    variant: v.variant,
-    evalCount: Number(v.evalCount) || 0,
-    ...(v.firstSeen ? { firstSeen: new Date(v.firstSeen).toISOString() } : {}),
-    ...(v.lastSeen ? { lastSeen: new Date(v.lastSeen).toISOString() } : {}),
-  }));
+  const variants: VariantEvaluation[] = rawVariants.map((v) => {
+    const firstSeen = safeIsoString(v.firstSeen);
+    const lastSeen = safeIsoString(v.lastSeen);
+    return {
+      variant: v.variant,
+      evalCount: Number(v.evalCount) || 0,
+      ...(firstSeen ? { firstSeen } : {}),
+      ...(lastSeen ? { lastSeen } : {}),
+    };
+  });
 
-  const services: ConsumerServiceEvaluation[] = rawServices.map((s) => ({
-    serviceName: s.serviceName,
-    status: s.status,
-    evalCount: Number(s.evalCount) || 0,
-    ...(s.lastSeen ? { lastSeen: new Date(s.lastSeen).toISOString() } : {}),
-  }));
+  const services: ConsumerServiceEvaluation[] = rawServices.map((s) => {
+    const lastSeen = safeIsoString(s.lastSeen);
+    return {
+      serviceName: s.serviceName,
+      status: s.status,
+      evalCount: Number(s.evalCount) || 0,
+      ...(lastSeen ? { lastSeen } : {}),
+    };
+  });
 
   // Identify earliest firstSeen and latest lastSeen across all recorded variants
   let firstSeen: string | undefined;
@@ -181,12 +200,38 @@ export function mapRowToFlagTelemetrySnapshot(
     }
   }
 
+  // Derive actual window from data span or flag creation age
+  let effectiveWindowDays = windowDays;
+  const activeVariants = variants.filter((v) => Number(v.evalCount) > 0);
+
+  if (activeVariants.length > 0 && firstSeen && lastSeen) {
+    const spanDays = Math.max(
+      0,
+      Math.floor(
+        (new Date(lastSeen).getTime() - new Date(firstSeen).getTime()) /
+          (86400 * 1000),
+      ),
+    );
+    effectiveWindowDays = Math.min(windowDays, spanDays);
+  } else if (activeVariants.length === 0 && row.flag_created_at) {
+    const createdIso = safeIsoString(row.flag_created_at);
+    if (createdIso) {
+      const ageDays = Math.max(
+        0,
+        Math.floor(
+          (Date.now() - new Date(createdIso).getTime()) / (86400 * 1000),
+        ),
+      );
+      effectiveWindowDays = Math.min(windowDays, ageDays);
+    }
+  }
+
   return {
     flagKey: row.flag_key,
     env: row.env,
     ...(row.flag_class ? { flagClass: row.flag_class } : {}),
     hasActiveLease: Boolean(row.has_active_lease),
-    windowDays,
+    windowDays: effectiveWindowDays,
     ...(firstSeen ? { firstSeen } : {}),
     ...(lastSeen ? { lastSeen } : {}),
     variants,
