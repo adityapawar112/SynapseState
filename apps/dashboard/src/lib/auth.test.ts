@@ -6,6 +6,7 @@ import {
   getDevSessionUser,
   generateCsrfToken,
   validateCsrfToken,
+  getSessionSecret,
   type AuthConfig,
 } from "@/lib/auth";
 import type { OidcSessionUser } from "@/lib/types";
@@ -25,21 +26,58 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
     expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
   };
 
+  describe("getSessionSecret", () => {
+    const setNodeEnv = (val: string | undefined) => {
+      (process.env as Record<string, string | undefined>).NODE_ENV = val;
+    };
+
+    it("returns development secret when unset in non-production", () => {
+      const origEnv = process.env.NODE_ENV;
+      const origSecret = process.env.SESSION_SECRET;
+      delete process.env.SESSION_SECRET;
+      delete process.env.NEXTAUTH_SECRET;
+      setNodeEnv("development");
+
+      try {
+        const secret = getSessionSecret();
+        expect(secret).toBe("development-only-session-secret-min-32-chars-long");
+      } finally {
+        setNodeEnv(origEnv);
+        if (origSecret) process.env.SESSION_SECRET = origSecret;
+      }
+    });
+
+    it("throws critical error in production if secret is unset", () => {
+      const origEnv = process.env.NODE_ENV;
+      const origSecret = process.env.SESSION_SECRET;
+      delete process.env.SESSION_SECRET;
+      delete process.env.NEXTAUTH_SECRET;
+      setNodeEnv("production");
+
+      try {
+        expect(() => getSessionSecret()).toThrow(/SESSION_SECRET environment variable must be set in production/);
+      } finally {
+        setNodeEnv(origEnv);
+        if (origSecret) process.env.SESSION_SECRET = origSecret;
+      }
+    });
+  });
+
   describe("createSessionToken & verifySessionToken", () => {
-    it("creates and successfully verifies a signed session token", () => {
-      const token = createSessionToken(sampleUser, testSecret);
+    it("creates and successfully verifies a signed session token", async () => {
+      const token = await createSessionToken(sampleUser, testSecret);
       expect(typeof token).toBe("string");
       expect(token.split(".")).toHaveLength(2); // payload.signature
 
-      const verified = verifySessionToken(token, testSecret);
+      const verified = await verifySessionToken(token, testSecret);
       expect(verified).not.toBeNull();
       expect(verified?.login).toBe("alice-sre");
       expect(verified?.role).toBe("operator");
       expect(verified?.id).toBe("gh-12345");
     });
 
-    it("rejects token with invalid signature / tampered payload", () => {
-      const token = createSessionToken(sampleUser, testSecret);
+    it("rejects token with invalid signature / tampered payload", async () => {
+      const token = await createSessionToken(sampleUser, testSecret);
       const [payload, sig] = token.split(".");
 
       // Tamper with payload (e.g. elevate role to admin)
@@ -48,25 +86,25 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
       const tamperedPayload = Buffer.from(JSON.stringify(decoded)).toString("base64url");
       const tamperedToken = `${tamperedPayload}.${sig}`;
 
-      const result = verifySessionToken(tamperedToken, testSecret);
+      const result = await verifySessionToken(tamperedToken, testSecret);
       expect(result).toBeNull();
     });
 
-    it("rejects expired session tokens", () => {
+    it("rejects expired session tokens", async () => {
       const expiredUser: OidcSessionUser = {
         ...sampleUser,
         expiresAt: new Date(Date.now() - 1000).toISOString(), // expired 1s ago
       };
 
-      const token = createSessionToken(expiredUser, testSecret);
-      const result = verifySessionToken(token, testSecret);
+      const token = await createSessionToken(expiredUser, testSecret);
+      const result = await verifySessionToken(token, testSecret);
       expect(result).toBeNull();
     });
 
-    it("rejects malformed token strings", () => {
-      expect(verifySessionToken("invalid-token", testSecret)).toBeNull();
-      expect(verifySessionToken("", testSecret)).toBeNull();
-      expect(verifySessionToken("a.b.c.d", testSecret)).toBeNull();
+    it("rejects malformed token strings", async () => {
+      expect(await verifySessionToken("invalid-token", testSecret)).toBeNull();
+      expect(await verifySessionToken("", testSecret)).toBeNull();
+      expect(await verifySessionToken("a.b.c.d", testSecret)).toBeNull();
     });
   });
 
@@ -120,14 +158,14 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
   });
 
   describe("CSRF Protection", () => {
-    it("generates and validates matching CSRF token", () => {
+    it("generates and validates matching CSRF token", async () => {
       const sessionId = "session-xyz-123";
-      const csrf = generateCsrfToken(sessionId, testSecret);
+      const csrf = await generateCsrfToken(sessionId, testSecret);
       expect(typeof csrf).toBe("string");
 
-      expect(validateCsrfToken(csrf, sessionId, testSecret)).toBe(true);
-      expect(validateCsrfToken(csrf, "different-session", testSecret)).toBe(false);
-      expect(validateCsrfToken("invalid-csrf", sessionId, testSecret)).toBe(false);
+      expect(await validateCsrfToken(csrf, sessionId, testSecret)).toBe(true);
+      expect(await validateCsrfToken(csrf, "different-session", testSecret)).toBe(false);
+      expect(await validateCsrfToken("invalid-csrf", sessionId, testSecret)).toBe(false);
     });
   });
 });

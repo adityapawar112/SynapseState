@@ -3,7 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import { RoleBadge } from "@/components/RoleBadge";
 import { cookies } from "next/headers";
-import { verifySessionToken, getDevSessionUser } from "@/lib/auth";
+import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -18,13 +18,10 @@ export default async function RootLayout({
 }) {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("synapse_session")?.value;
-  const secret =
-    process.env.SESSION_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    "default-development-session-secret-min-32-chars-long";
+  const secret = getSessionSecret();
 
-  let user = sessionCookie ? verifySessionToken(sessionCookie, secret) : null;
-  if (!user && process.env.NODE_ENV !== "production") {
+  let user = sessionCookie ? await verifySessionToken(sessionCookie, secret) : null;
+  if (!user && process.env.NODE_ENV !== "production" && process.env.SYNAPSE_DEV_AUTH === "true") {
     user = getDevSessionUser("operator");
   }
 

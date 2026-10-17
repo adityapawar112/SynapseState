@@ -19,6 +19,8 @@ export function RevokeModal({
 }: RevokeModalProps) {
   const [reason, setReason] = useState("");
   const [operatorKid, setOperatorKid] = useState(lease.kid || "ops-emergency-key");
+  const [signedEnvelopeJson, setSignedEnvelopeJson] = useState("");
+  const [showEnvelopeInput, setShowEnvelopeInput] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revokedSuccess, setRevokedSuccess] = useState(false);
@@ -36,15 +38,40 @@ export function RevokeModal({
     setError(null);
 
     try {
+      let parsedEnvelope: unknown = undefined;
+      if (signedEnvelopeJson.trim()) {
+        try {
+          parsedEnvelope = JSON.parse(signedEnvelopeJson.trim());
+        } catch {
+          throw new Error("Invalid signed envelope JSON format.");
+        }
+      }
+
+      // Read CSRF token from browser cookie
+      const csrfCookie = typeof document !== "undefined"
+        ? document.cookie
+            .split("; ")
+            .find((row) => row.startsWith("synapse_csrf="))
+            ?.split("=")[1]
+        : undefined;
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (csrfCookie) {
+        headers["x-synapse-csrf"] = decodeURIComponent(csrfCookie);
+      }
+
       const res = await fetch("/api/actions/revoke", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           leaseId: lease.leaseId,
           flagKey: lease.flagKey,
           env: lease.env,
           reason: reason.trim(),
           kid: operatorKid.trim(),
+          envelope: parsedEnvelope,
         }),
       });
 
@@ -207,6 +234,45 @@ export function RevokeModal({
                   fontSize: "0.875rem",
                 }}
               />
+            </div>
+
+            {/* Optional Pre-Signed Envelope Input for Air-Gapped Verification */}
+            <div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                onClick={() => setShowEnvelopeInput(!showEnvelopeInput)}
+              >
+                {showEnvelopeInput ? "Hide Signed Envelope" : "Attach Workstation-Signed Envelope (Prod)"}
+              </button>
+              {showEnvelopeInput && (
+                <div style={{ marginTop: "8px" }}>
+                  <label
+                    htmlFor="revoke-envelope-input"
+                    style={{ display: "block", fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "4px" }}
+                  >
+                    Signed RevocationEnvelope JSON:
+                  </label>
+                  <textarea
+                    id="revoke-envelope-input"
+                    rows={3}
+                    value={signedEnvelopeJson}
+                    onChange={(e) => setSignedEnvelopeJson(e.target.value)}
+                    placeholder='{"payload":{"v":1,"lease_id":"...","reason":"...","revoked_at":"...","kid":"..."},"sig":"..."}'
+                    style={{
+                      width: "100%",
+                      padding: "8px",
+                      borderRadius: "6px",
+                      backgroundColor: "rgba(0, 0, 0, 0.3)",
+                      border: "1px solid var(--border-subtle)",
+                      color: "var(--text-primary)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "0.75rem",
+                    }}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Terminal Command Alternative */}

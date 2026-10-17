@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import type { OidcSessionUser, UserRole } from "@/lib/types";
 
 export interface AuthConfig {
@@ -6,6 +5,23 @@ export interface AuthConfig {
   adminTeams?: string[];
   operatorUsers?: string[];
   operatorTeams?: string[];
+}
+
+/**
+ * Returns the session signing secret.
+ * Throws a fatal configuration error in production if SESSION_SECRET is unset.
+ */
+export function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "CRITICAL SECURITY CONFIGURATION ERROR: SESSION_SECRET environment variable must be set in production"
+      );
+    }
+    return "development-only-session-secret-min-32-chars-long";
+  }
+  return secret;
 }
 
 /**
@@ -29,27 +45,113 @@ export function getAuthConfigFromEnv(): AuthConfig {
 }
 
 /**
- * Signs payload data with HMAC-SHA256.
+ * Encodes a Uint8Array to base64url format without Node.js Buffer (Edge Runtime compatible).
  */
-function signData(data: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(data).digest("base64url");
+export function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 /**
- * Creates a signed compact session token (base64url(payload).signature).
+ * Decodes a base64url string to Uint8Array without Node.js Buffer (Edge Runtime compatible).
  */
-export function createSessionToken(user: OidcSessionUser, secret: string): string {
+export function base64UrlToBytes(base64url: string): Uint8Array {
+  let base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4) {
+    base64 += "=";
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export function stringToBase64Url(str: string): string {
+  return bytesToBase64Url(new TextEncoder().encode(str));
+}
+
+export function base64UrlToString(base64url: string): string {
+  return new TextDecoder().decode(base64UrlToBytes(base64url));
+}
+
+/**
+ * Imports an HMAC key using standard WebCrypto API.
+ */
+async function getHmacKey(secret: string, usages: KeyUsage[]): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  return await globalThis.crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    usages
+  );
+}
+
+/**
+ * Signs string data with HMAC-SHA256 using standard WebCrypto.
+ */
+export async function signData(data: string, secret: string): Promise<string> {
+  const key = await getHmacKey(secret, ["sign"]);
+  const sigBuf = await globalThis.crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(data)
+  );
+  return bytesToBase64Url(new Uint8Array(sigBuf));
+}
+
+/**
+ * Verifies an HMAC-SHA256 signature using standard WebCrypto (timing-safe by design).
+ */
+export async function verifySignature(
+  data: string,
+  signatureBase64Url: string,
+  secret: string
+): Promise<boolean> {
+  try {
+    const key = await getHmacKey(secret, ["verify"]);
+    const sigBytes = base64UrlToBytes(signatureBase64Url);
+    return await globalThis.crypto.subtle.verify(
+      "HMAC",
+      key,
+      sigBytes as unknown as BufferSource,
+      new TextEncoder().encode(data)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Creates a signed compact session token (base64url(payload).signature) using WebCrypto.
+ */
+export async function createSessionToken(
+  user: OidcSessionUser,
+  secret: string = getSessionSecret()
+): Promise<string> {
   const payloadStr = JSON.stringify(user);
-  const encodedPayload = Buffer.from(payloadStr, "utf-8").toString("base64url");
-  const signature = signData(encodedPayload, secret);
+  const encodedPayload = stringToBase64Url(payloadStr);
+  const signature = await signData(encodedPayload, secret);
   return `${encodedPayload}.${signature}`;
 }
 
 /**
- * Verifies a compact session token and checks expiry.
+ * Verifies a compact session token, validates HMAC signature via WebCrypto, and checks expiry.
  * Returns OidcSessionUser if valid, null otherwise.
  */
-export function verifySessionToken(token: string, secret: string): OidcSessionUser | null {
+export async function verifySessionToken(
+  token: string,
+  secret: string = getSessionSecret()
+): Promise<OidcSessionUser | null> {
   if (!token || typeof token !== "string") {
     return null;
   }
@@ -60,20 +162,13 @@ export function verifySessionToken(token: string, secret: string): OidcSessionUs
   }
 
   const [encodedPayload, providedSig] = parts;
-  const expectedSig = signData(encodedPayload, secret);
-
-  const sigBuffer = Buffer.from(providedSig);
-  const expectedBuffer = Buffer.from(expectedSig);
-
-  if (
-    sigBuffer.length !== expectedBuffer.length ||
-    !crypto.timingSafeEqual(sigBuffer, expectedBuffer)
-  ) {
+  const isValid = await verifySignature(encodedPayload, providedSig, secret);
+  if (!isValid) {
     return null;
   }
 
   try {
-    const rawJson = Buffer.from(encodedPayload, "base64url").toString("utf-8");
+    const rawJson = base64UrlToString(encodedPayload);
     const user = JSON.parse(rawJson) as OidcSessionUser;
 
     // Verify expiry timestamp
@@ -134,28 +229,25 @@ export function getDevSessionUser(role: UserRole = "operator"): OidcSessionUser 
 }
 
 /**
- * Generates a CSRF token bound to a session ID using HMAC.
+ * Generates a CSRF token bound to a session identifier using WebCrypto HMAC.
  */
-export function generateCsrfToken(sessionId: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(`csrf:${sessionId}`).digest("hex");
+export async function generateCsrfToken(
+  sessionId: string,
+  secret: string = getSessionSecret()
+): Promise<string> {
+  return signData(`csrf:${sessionId}`, secret);
 }
 
 /**
- * Validates a CSRF token for a given session ID.
+ * Validates a CSRF token for a given session identifier using WebCrypto HMAC.
  */
-export function validateCsrfToken(
+export async function validateCsrfToken(
   csrfToken: string,
   sessionId: string,
-  secret: string
-): boolean {
+  secret: string = getSessionSecret()
+): Promise<boolean> {
   if (!csrfToken || !sessionId || !secret) {
     return false;
   }
-
-  const expected = generateCsrfToken(sessionId, secret);
-  if (csrfToken.length !== expected.length) {
-    return false;
-  }
-
-  return crypto.timingSafeEqual(Buffer.from(csrfToken), Buffer.from(expected));
+  return verifySignature(`csrf:${sessionId}`, csrfToken, secret);
 }

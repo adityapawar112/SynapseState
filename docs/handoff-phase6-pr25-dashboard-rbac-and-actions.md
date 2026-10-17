@@ -53,11 +53,12 @@ The next agent picking up this task should call the following skills:
   - `/audit`: Tamper-evident ledger explorer with real-time SHA-256 hash-chain verification and sequence pagination.
   - `/login`: OIDC portal and development role switcher.
 - **Verification Evidence:**
-  - Dashboard test suite (`pnpm --filter @synapsestate/dashboard test`): **36/36 passed** across 4 test files (`auth.test.ts`, `domain.test.ts`, `api.test.ts`, `middleware.test.ts`).
+  - Dashboard test suite (`pnpm --filter @synapsestate/dashboard test`): **49/49 passed** across 6 test files (`auth.test.ts`, `domain.test.ts`, `api.test.ts`, `middleware.test.ts`, `auth/route.test.ts`, `revoke/route.test.ts`).
   - Monorepo linter (`pnpm run lint`): **0 errors, 0 warnings** across the workspace.
-  - Monorepo build (`pnpm -r run build`): **0 errors** across all 8 workspace projects.
+  - Monorepo build (`pnpm -r run build`): **0 errors** across all workspace projects (Next.js 15.5.28 optimized production build, 12/12 static & dynamic routes).
   - Monorepo typecheck (`pnpm run typecheck`): **0 errors** across all workspace packages and apps.
-  - Full test suite (`pnpm test`): **599 passed** (0 failures).
+  - Full test suite (`pnpm test`): **675 passed** (0 failures).
+  - Live production verification (`next start -p 3105`): Confirmed Edge runtime WebCrypto compliance, privilege escalation blocking on `/api/auth`, CSRF enforcement, and Invariant 2 workstation signature enforcement.
 
 ---
 

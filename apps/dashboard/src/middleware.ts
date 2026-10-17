@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { verifySessionToken, getDevSessionUser } from "@/lib/auth";
+import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/auth";
 import { hasRolePermission } from "@/lib/domain";
 import type { OidcSessionUser } from "@/lib/types";
 
@@ -19,14 +19,14 @@ const PUBLIC_PATH_PREFIXES = [
 ];
 
 /**
- * Pure route access check logic, isolated for automated testing and Next.js middleware execution.
+ * Pure route access check logic, Edge-safe and WebCrypto compliant.
  */
-export function checkRouteAccess(
+export async function checkRouteAccess(
   pathname: string,
   sessionCookie: string | undefined,
   secret: string,
   devAuthEnabled: boolean = false
-): RouteAccessResult {
+): Promise<RouteAccessResult> {
   // 1. Allow public static assets and auth callback routes
   if (PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     return { action: "allow" };
@@ -35,10 +35,10 @@ export function checkRouteAccess(
   // 2. Validate session token if present
   let user: OidcSessionUser | null = null;
   if (sessionCookie) {
-    user = verifySessionToken(sessionCookie, secret);
+    user = await verifySessionToken(sessionCookie, secret);
   }
 
-  // 3. Fallback to dev operator session if dev auth is enabled and no valid cookie
+  // 3. Explicit dev auth bypass only when SYNAPSE_DEV_AUTH is true in non-prod
   if (!user && devAuthEnabled) {
     user = getDevSessionUser("operator");
   }
@@ -62,20 +62,16 @@ export function checkRouteAccess(
 }
 
 /**
- * Next.js Edge Middleware entry point
+ * Next.js Edge Middleware entry point (100% WebCrypto Edge Runtime compatible)
  */
-export function middleware(request: NextRequest) {
-  const secret =
-    process.env.SESSION_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    "default-development-session-secret-min-32-chars-long";
-
+export async function middleware(request: NextRequest) {
+  const secret = getSessionSecret();
   const devAuthEnabled =
-    process.env.NODE_ENV !== "production" ||
+    process.env.NODE_ENV !== "production" &&
     process.env.SYNAPSE_DEV_AUTH === "true";
 
   const cookie = request.cookies.get("synapse_session")?.value;
-  const result = checkRouteAccess(request.nextUrl.pathname, cookie, secret, devAuthEnabled);
+  const result = await checkRouteAccess(request.nextUrl.pathname, cookie, secret, devAuthEnabled);
 
   if (result.action === "allow") {
     const res = NextResponse.next();

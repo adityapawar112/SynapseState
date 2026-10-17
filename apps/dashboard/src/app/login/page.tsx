@@ -1,16 +1,35 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { UserRole } from "@/lib/types";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [selectedRole, setSelectedRole] = useState<UserRole>("operator");
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get("error");
+      if (err === "github_oauth_not_configured") {
+        setErrorMsg(
+          "GitHub OAuth is not configured on this host (GITHUB_CLIENT_ID missing). Use the Development Session Switcher below for local testing."
+        );
+      } else if (err === "invalid_oauth_state") {
+        setErrorMsg("OAuth state mismatch or expired. Please attempt sign-in again.");
+      } else if (err === "oauth_exchange_failed") {
+        setErrorMsg("Failed to exchange GitHub authorization code for session.");
+      }
+    }
+  }, []);
 
   const handleDevRoleLogin = async (role: UserRole) => {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const res = await fetch("/api/auth", {
         method: "POST",
@@ -18,10 +37,18 @@ export default function LoginPage() {
         body: JSON.stringify({ role }),
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (res.ok) {
-        router.push("/");
-        router.refresh();
+        startTransition(() => {
+          router.push("/");
+          router.refresh();
+        });
+      } else {
+        setErrorMsg(data.message || data.error || `Authentication failed (${res.status})`);
       }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Authentication request failed");
     } finally {
       setLoading(false);
     }
@@ -70,17 +97,40 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* GitHub OIDC Single Sign-On Button */}
-        <button
+        {errorMsg && (
+          <div
+            style={{
+              padding: "10px 14px",
+              borderRadius: "6px",
+              backgroundColor: "rgba(244, 63, 94, 0.15)",
+              border: "1px solid rgba(244, 63, 94, 0.35)",
+              color: "#fecdd3",
+              fontSize: "0.8125rem",
+              lineHeight: 1.4,
+            }}
+          >
+            {errorMsg}
+          </div>
+        )}
+
+        {/* GitHub OIDC Single Sign-On Link */}
+        <a
           id="btn-github-oidc-login"
-          type="button"
+          href="/api/auth/github"
           className="btn btn-primary"
-          style={{ width: "100%", padding: "12px", fontSize: "0.9375rem" }}
-          onClick={() => handleDevRoleLogin(selectedRole)}
-          disabled={loading}
+          style={{
+            width: "100%",
+            padding: "12px",
+            fontSize: "0.9375rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            textDecoration: "none",
+            gap: "8px",
+          }}
         >
           <span>Sign In with GitHub OIDC</span>
-        </button>
+        </a>
 
         <div
           style={{
@@ -139,7 +189,7 @@ export default function LoginPage() {
                   {item.title}
                 </span>
                 <span className="btn btn-secondary" style={{ fontSize: "0.6875rem", padding: "2px 8px" }}>
-                  Switch
+                  {loading && selectedRole === item.role ? "Switching..." : "Switch"}
                 </span>
               </div>
               <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "4px" }}>
