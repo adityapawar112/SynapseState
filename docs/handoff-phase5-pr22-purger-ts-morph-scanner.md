@@ -26,31 +26,36 @@ The next agent picking up this task should call the following skills:
 
 ## 2. Executive Summary & Monorepo State (PR 21 Completion)
 
-**PR 21 (`feat/purger-quiescence-engine`)** is complete, verified, and pushed to `origin/feat/purger-quiescence-engine` (`d49eb8d`):
+**PR 21 (`feat/purger-quiescence-engine`)** is complete, peer-reviewed, hardened against all feedback, verified, and pushed to `origin/feat/purger-quiescence-engine` (`33c2c40`):
 
 - **Domain Modeling (`apps/purger/src/qualification/types.ts`):**
   - Canonical domain types: `FlagLifecycleClass`, `ServiceStatus`, `QualificationStatus`, `DisqualificationReason`, `CandidateFlag`, `QualificationResult`, `FlagTelemetrySnapshot`, and `Queryable`.
-  - Disqualification reasons: `EXCLUDED_LIFECYCLE_CLASS`, `MULTI_VARIANT_ACTIVE`, `INSUFFICIENT_WINDOW`, `BLOCKED_BY_SILENT_SERVICE`, `ACTIVE_LEASE_EXISTS`, `UNREGISTERED_FLAG`.
-  - Updated [GLOSSARY.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/GLOSSARY.md) with `Silent Service` and `Winning Variant`.
+  - Disqualification reasons: `EXCLUDED_LIFECYCLE_CLASS`, `MULTI_VARIANT_ACTIVE`, `INSUFFICIENT_WINDOW`, `BLOCKED_BY_SILENT_SERVICE`, `ACTIVE_LEASE_EXISTS`, `UNREGISTERED_FLAG`, `MISSING_DEFAULT_VARIANT`.
+  - Updated [GLOSSARY.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/GLOSSARY.md) with `Silent Service` (>14 days threshold) and `Winning Variant`.
 - **Pure Qualification Engine (`apps/purger/src/qualification/engine.ts`):**
   - Pure function `evaluateCandidateQuiescence(snapshot, options)` adhering to Invariant 6 (zero external I/O or database handles).
-  - Evaluates lifecycle class, active emergency leases, consumer coverage, observation window, and variant invariance.
-  - Determines `winningVariant`: single invariant variant or `defaultVariant` for 0-evaluation flags.
-  - Accumulates multiple disqualification reasons and deduplicates/sorts blocking silent services.
-  - Batch evaluation support: `qualifyFlagTelemetryBatch(snapshots, options)`.
+  - Evaluates lifecycle class, active unexpired emergency leases, consumer coverage, observation window, and variant invariance.
+  - **C1 Span Validation:** Verifies telemetry span spans $\ge \text{minWindowDays}$; flags with short evaluation spans (e.g. 2 days) fail with `INSUFFICIENT_WINDOW`.
+  - **C2 Fail-Closed Winning Variant:** Fails closed on 0-evaluation flags with `MISSING_DEFAULT_VARIANT` when no default is configured, eliminating arbitrary variant guessing.
+  - **I1 Sentinel Omission:** Candidate models omit `firstSeen`/`lastSeen` on 0-evaluation flags rather than emitting deceptive 1970-01-01 epoch strings.
+  - Batch evaluation support: `qualifyFlagTelemetryBatch(snapshots, options)` with verified input immutability.
 - **SQL Rollup Engine (`apps/purger/src/qualification/queries.ts`):**
   - Parameterized SQL query `buildQuiescenceRollupQuery(options)` scanning `flag_usage_daily`, `flags`, `services`, and `leases`.
-  - Parameterized interval date math: `usage_date >= CURRENT_DATE - ($1 || ' days')::INTERVAL`.
+  - Idiomatic interval date math: `usage_date >= CURRENT_DATE - make_interval(days => $1::int)`.
+  - Active lease liveness check: `WHERE state = 'ACTIVE' AND expires_at > NOW()`.
+  - Quoted reserved columns (`f."key"`, `f."class"`, `f."created_at"`).
   - Service status resolution with fallback to `SILENT` for unregistered consumer services.
-  - Subquery JSON aggregation preventing cartesian product duplication between variants and services.
-  - Pure row mapper `mapRowToFlagTelemetrySnapshot(row, windowDays)`.
+  - Subquery JSON aggregation preventing cartesian product duplication between variants and services; redundant outer `GROUP BY` eliminated.
+  - Pure row mapper `mapRowToFlagTelemetrySnapshot(row, windowDays)` with `safeIsoString` error shielding and data-derived effective `windowDays`.
   - Retrieval helper `fetchFlagTelemetrySnapshots(db, options)`.
+- **Package Surface (`apps/purger/src/index.ts`):**
+  - Explicit named exports for types, functions, and query utilities.
 - **Verification Evidence:**
-  - Purger test suite (`pnpm --filter @synapsestate/purger run test`): **26/26 passed** across 3 test files (`engine.test.ts`, `queries.test.ts`, `index.test.ts`).
+  - Purger test suite (`pnpm --filter @synapsestate/purger run test`): **31/31 passed** across 3 test files (`engine.test.ts`, `queries.test.ts`, `index.test.ts`).
   - Monorepo linter (`pnpm run lint`): **0 errors, 0 warnings** across all packages.
   - Monorepo build (`pnpm -r run build`): **0 errors** across all 7 workspace packages.
   - Monorepo typecheck (`pnpm run typecheck`): **0 errors** across all packages.
-  - Monorepo test suite (`pnpm test`): **400+ tests passed** (0 failures).
+  - Monorepo test suite (`pnpm test`): **405+ tests passed** (0 failures).
 
 ---
 
