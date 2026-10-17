@@ -126,12 +126,17 @@ export class ControlApiClient {
 
     interface RawAuditRecord {
       seq: number;
-      ts: string;
-      actor: string;
-      event_type: string;
-      payload: Record<string, unknown>;
-      prev_hash: string;
-      hash: string;
+      ts?: string;
+      timestamp?: string;
+      actor?: string;
+      actorKid?: string;
+      event_type?: string;
+      eventType?: string;
+      payload?: Record<string, unknown>;
+      prev_hash?: string;
+      prevHash?: string;
+      hash?: string;
+      eventHash?: string;
     }
 
     interface RawAuditResponse {
@@ -149,14 +154,14 @@ export class ControlApiClient {
       return { events: [], total: 0, hasMore: false };
     }
 
-    const events: AuditLedgerRecord[] = data.events.map((r) => ({
+    const events: AuditLedgerRecord[] = data.events.map((r: RawAuditRecord) => ({
       seq: r.seq,
-      ts: r.ts,
-      actor: r.actor,
-      eventType: r.event_type,
+      ts: r.ts || r.timestamp || new Date().toISOString(),
+      actor: r.actor || r.actorKid || "unknown",
+      eventType: r.event_type || r.eventType || "AUDIT_RECORD",
       payload: r.payload || {},
-      prevHash: r.prev_hash,
-      hash: r.hash,
+      prevHash: r.prev_hash || r.prevHash || "",
+      hash: r.hash || r.eventHash || "",
     }));
 
     return {

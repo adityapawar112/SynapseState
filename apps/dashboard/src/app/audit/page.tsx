@@ -198,8 +198,9 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
               ) : (
                 auditData.events.map((event) => {
                   let eventBadgeVariant: "sase" | "storage" | "ai" | "default" = "sase";
-                  if (event.eventType.includes("REVOKE")) eventBadgeVariant = "storage";
-                  else if (event.eventType.includes("PROMOTE")) eventBadgeVariant = "ai";
+                  const eventTypeStr = event.eventType ?? "";
+                  if (eventTypeStr.includes("REVOKE")) eventBadgeVariant = "storage";
+                  else if (eventTypeStr.includes("PROMOTE")) eventBadgeVariant = "ai";
 
                   return (
                     <tr
