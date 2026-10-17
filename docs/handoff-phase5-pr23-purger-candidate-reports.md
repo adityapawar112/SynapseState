@@ -26,29 +26,33 @@ The next agent picking up this task should call the following skills:
 
 ## 2. Executive Summary & Monorepo State (PR 22 Completion)
 
-**PR 22 (`feat/purger-ts-morph-scanner`)** is complete, peer-reviewed, hardened, verified, and pushed to `origin/feat/purger-ts-morph-scanner`:
+**PR 22 (`feat/purger-ts-morph-scanner`)** is complete, peer-reviewed, hardened against all feedback, verified, and pushed to `origin/feat/purger-ts-morph-scanner` (`62afcbf`):
 
 - **Domain Modeling (`apps/purger/src/scanner/types.ts`):**
-  - Canonical domain types: `OpenFeatureEvalMethod`, `ScannerRefusalReason`, `SourceLocation`, `EnclosingScope`, `RefusalMarker`, `CallSite`, `ASTFlagReference`, `ConsumerCrossReference`, `CodebaseScanResult`, `ScannerOptions`, `CrossReferenceOptions`.
-  - Defined `OPENFEATURE_EVAL_METHODS` (`getBooleanValue`, `getStringValue`, `getNumberValue`, `getObjectValue` and their respective `*Details` variants).
+  - Canonical domain types: `OpenFeatureEvalMethod`, `ScannerRefusalReason` (including `SCAN_ERROR`), `SourceLocation`, `EnclosingScope`, `RefusalMarker`, `CallSite`, `ASTFlagReference`, `ConsumerCrossReference`, `CodebaseScanResult`, `ScannerOptions`, `CrossReferenceOptions`.
+  - Defined `OPENFEATURE_EVAL_METHODS` (`getBooleanValue`, `getBooleanDetails`, `getStringValue`, `getStringDetails`, `getNumberValue`, `getNumberDetails`, `getObjectValue`, `getObjectDetails`).
   - Updated [GLOSSARY.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/GLOSSARY.md) with `Call Site` and `Undeclared Caller`.
 - **Pure Read-Only AST Scanner (`apps/purger/src/scanner/scanner.ts`):**
   - Read-only AST parser using `ts-morph` adhering strictly to Invariant 6 (zero untrusted code execution; never runs `npm test`, `eval()`, or repository build scripts).
-  - **Refusal by Default on Non-Literal Keys:** Fails closed and tags call sites with `RefusalMarker` (`NON_LITERAL_FLAG_KEY`) on dynamic binary concatenations (`prefix + key`), variable identifiers, ternary expressions, interpolated template literals, function calls, and property accesses.
-  - **Static Literal Extraction:** Correctly identifies literal strings and static template literals without substitutions (`` `static-key` ``).
+  - **Refusal by Default on Non-Literal Keys:** Fails closed and tags call sites with `RefusalMarker` (`NON_LITERAL_FLAG_KEY`) on dynamic binary concatenations (`prefix + key`), variable identifiers, ternary expressions, interpolated template literals, function calls, dynamic element access, and property accesses.
+  - **Static Literal Extraction & Unwrapping:** Correctly identifies literal strings, static template literals without substitutions (`` `static-key` ``), and unwraps parenthesized / `as const` assertions (`('key' as const)`).
+  - **Bracket Notation Dispatch (C2):** Fully supports `client['getBooleanValue']('flag', false)` element access notation while refusing dynamic method element accesses.
   - **Argument Validation:** Fails closed with structured refusal markers on 0-argument calls (`MISSING_ARGUMENTS`) and 1-argument calls (`MISSING_DEFAULT_VALUE`).
-  - **Scope & Context Extraction:** Extracts 1-indexed line/column coordinates, enclosing function name (including arrow functions assigned to variables), and enclosing class name.
+  - **Fail-Closed Error Boundary (C3):** Per-file and per-call `try/catch` wrapping that converts parser or resolver exceptions into `SCAN_ERROR` refusal markers without crashing the scanner.
+  - **Scope & Context Extraction:** Extracts 1-indexed coordinates, enclosing functions, arrow functions in variables, arrow properties in class declarations, constructors, and property accessors (`get`/`set`).
   - **Service Resolution:** `defaultServiceResolver` maps repository file paths (`apps/*`, `packages/*`, `services/*`) using innermost component matching for workspace compatibility, with custom resolver override support.
-  - **Flag Caller Indexing:** Aggregates call sites by flag key, computing caller counts and consumer services.
-  - **Consumer Cross-Referencing (`crossReferenceConsumers`):** Cross-references candidate flags from PR 21 telemetry against AST consumers, accurately flagging undeclared callers (`UNDECLARED_CONSUMER_SERVICE`) and unreferenced services.
+  - **Consumer Cross-Referencing (`crossReferenceConsumers`):**
+    - **C1 Dynamic Evasion Fix:** Detects dynamic/unresolved calls within candidate evaluating services, demoting `isConsistent` to `false` with explicit `NON_LITERAL_FLAG_KEY` refusals.
+    - Accurately flags undeclared callers (`UNDECLARED_CONSUMER_SERVICE`) and configurable unreferenced services (`allowUnreferencedServices`).
+    - Alphabetically sorts consumer services deterministically.
 - **Package Surface (`apps/purger/src/index.ts`):**
-  - Named exports for all scanner types, constants, and functions (`scanSourceFiles`, `scanSourceTexts`, `scanCodebase`, `crossReferenceConsumers`, `defaultServiceResolver`, `OPENFEATURE_EVAL_METHODS`).
+  - Named exports for all scanner types, constants, and functions (`scanSourceFiles`, `scanSourceTexts`, `scanCodebase`, `crossReferenceConsumers`, `defaultServiceResolver`, `normalizeFilePath`, `unwrapExpression`, `OPENFEATURE_EVAL_METHODS`).
 - **Verification Evidence:**
-  - Purger test suite (`pnpm --filter @synapsestate/purger test`): **57/57 passed** across 4 test files (`scanner.test.ts`, `engine.test.ts`, `queries.test.ts`, `index.test.ts`).
+  - Purger test suite (`pnpm --filter @synapsestate/purger test`): **66/66 passed** across 4 test files (`scanner.test.ts`, `engine.test.ts`, `queries.test.ts`, `index.test.ts`).
   - Monorepo linter (`pnpm run lint`): **0 errors, 0 warnings** across entire repository.
   - Monorepo build (`pnpm -r run build`): **0 errors** across all 7 workspace packages.
   - Monorepo typecheck (`pnpm run typecheck`): **0 errors** across all workspace projects, load scripts, and drill tests.
-  - Monorepo test suite (`pnpm test`): **569 passed** (0 failures).
+  - Monorepo test suite (`pnpm test`): **578 passed** (0 failures).
 
 ---
 
