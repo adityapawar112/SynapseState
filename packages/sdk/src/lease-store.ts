@@ -129,10 +129,16 @@ export class LeaseStore {
 
       // 4. Invariant 3 Monotonic Clock Anchoring:
       // If lease already seen in this process incarnation, preserve firstSeenMono
-      // to prevent monotonic TTL extension attacks.
+      // to prevent monotonic TTL extension attacks. Consult both the monotonic
+      // tracking map and any active in-memory lease to survive tracking map pruning.
       const nowMono = performance.now();
+      const existingLeaseForFlag = this.leases.get(envelope.payload.flag_key);
       const firstSeenMonoMs =
-        this.firstSeenMonoByLeaseId.get(envelope.payload.lease_id) ?? nowMono;
+        this.firstSeenMonoByLeaseId.get(envelope.payload.lease_id) ??
+        (existingLeaseForFlag &&
+        existingLeaseForFlag.leaseId === envelope.payload.lease_id
+          ? existingLeaseForFlag.firstSeenMonoMs
+          : nowMono);
 
       const nowWall = Date.now();
       const expiryEval = evaluateLeaseExpiry({
@@ -153,7 +159,7 @@ export class LeaseStore {
       // 5. Conflict Resolution (ARCHITECTURE.md:374-376):
       // When multiple leases exist for the same flag_key, winner is:
       // issued_at DESC, breaking ties with lease_id (ULID) DESC.
-      const existing = this.leases.get(envelope.payload.flag_key);
+      const existing = existingLeaseForFlag;
       if (existing) {
         const newIssuedMs = Date.parse(envelope.payload.issued_at);
         const existingIssuedMs = Date.parse(existing.issuedAt);
@@ -166,6 +172,7 @@ export class LeaseStore {
 
         if (newIssuedMs === existingIssuedMs) {
           if (envelope.payload.lease_id < existing.leaseId) {
+            // Reject lower ULID on identical timestamp
             this.metrics.leasesRejectedCount++;
             return false;
           }
@@ -191,14 +198,23 @@ export class LeaseStore {
         envelope,
       };
 
-      // Bounded tracking: FIFO evict oldest monotonic anchor if capacity reached
+      // Bounded tracking: FIFO evict oldest non-active monotonic anchor if capacity reached
       if (
         this.firstSeenMonoByLeaseId.size >= DEFAULT_MAX_TRACKED_MONOTONIC_LEASES
       ) {
-        const oldestKey = this.firstSeenMonoByLeaseId.keys().next().value;
-        if (oldestKey) {
-          this.firstSeenMonoByLeaseId.delete(oldestKey);
+        const activeLeaseIds = new Set(
+          Array.from(this.leases.values()).map((l) => l.leaseId),
+        );
+        let keyToEvict: string | undefined;
+        for (const k of this.firstSeenMonoByLeaseId.keys()) {
+          if (!activeLeaseIds.has(k)) {
+            keyToEvict = k;
+            break;
+          }
         }
+        this.firstSeenMonoByLeaseId.delete(
+          keyToEvict ?? this.firstSeenMonoByLeaseId.keys().next().value!,
+        );
       }
 
       this.firstSeenMonoByLeaseId.set(

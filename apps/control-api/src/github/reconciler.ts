@@ -156,7 +156,7 @@ This pull request reconciles an emergency override back to the Git baseline conf
 - **Environment:** \`${env}\`
 - **Emergency Lease ID:** \`${lease_id}\`
 - **Authorized Operator:** \`${lease.payload.kid}\`
-- **Incident Reason:** ${lease.payload.reason}
+- **Incident Reason:** \`${lease.payload.reason.replace(/`/g, "")}\`
 - **Issued At:** \`${lease.payload.issued_at}\`
 - **TTL:** \`${lease.payload.ttl_seconds}s\`
 - **Promoted Variant / Value:** \`${JSON.stringify(newDefaultVariant)}\`

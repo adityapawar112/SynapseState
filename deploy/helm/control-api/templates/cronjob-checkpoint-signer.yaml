@@ -52,6 +52,10 @@ spec:
                 - $(S3_REGION)
                 - --s3-prefix
                 - $(S3_PREFIX)
+                {{- if .Values.keyset.existingConfigMap }}
+                - --keyset
+                - "{{ .Values.keyset.mountPath }}/keyset.json"
+                {{- end }}
               securityContext:
                 readOnlyRootFilesystem: {{ .Values.cronjob.securityContext.readOnlyRootFilesystem }}
                 allowPrivilegeEscalation: {{ .Values.cronjob.securityContext.allowPrivilegeEscalation }}
@@ -87,9 +91,19 @@ spec:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
+                {{- if .Values.keyset.existingConfigMap }}
+                - name: keyset-volume
+                  mountPath: {{ .Values.keyset.mountPath }}
+                  readOnly: true
+                {{- end }}
               resources:
                 {{- toYaml .Values.cronjob.resources | nindent 16 }}
           volumes:
             - name: tmp
               emptyDir: {}
+            {{- if .Values.keyset.existingConfigMap }}
+            - name: keyset-volume
+              configMap:
+                name: {{ .Values.keyset.existingConfigMap }}
+            {{- end }}
 {{- end }}

@@ -3,7 +3,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import {
   LeaseEnvelopeSchema,
+  RevocationEnvelopeSchema,
+  KeyRevocationEnvelopeSchema,
   verifyLeaseWithKeyset,
+  verifyRevocationWithKeyset,
+  verifyKeyRevocationWithKeyset,
   isKeyRevoked,
   type Keyset,
   type LeaseEnvelope,
@@ -158,6 +162,68 @@ export class EmergencyScanner {
             continue;
           }
 
+          const payloadObj =
+            typeof parsed === "object" && parsed !== null && "payload" in parsed
+              ? (parsed as { payload?: unknown }).payload
+              : undefined;
+          const hasLeaseId =
+            typeof payloadObj === "object" &&
+            payloadObj !== null &&
+            "lease_id" in payloadObj;
+
+          // 1. If payload has no lease_id, check for Key Revocation Envelope
+          if (!hasLeaseId) {
+            const keyRevResult = KeyRevocationEnvelopeSchema.safeParse(parsed);
+            if (keyRevResult.success) {
+              const envelope = keyRevResult.data;
+              if (!verifyKeyRevocationWithKeyset(envelope, currentKeyset)) {
+                this.logger?.warn?.(
+                  `[SynapseState] Emergency key revocation file "${fileName}" failed keyset verification`,
+                );
+                continue;
+              }
+              let applied = false;
+              if (this.leaseStore) {
+                applied = this.leaseStore.applyKeyRevocation(
+                  envelope,
+                  currentKeyset,
+                );
+              }
+              if (applied) {
+                ingestedCount++;
+                this.processedFileHashes.set(fileName, hash);
+              }
+              continue;
+            }
+          }
+
+          // 2. Check for Lease Revocation Envelope
+          if (hasLeaseId) {
+            const leaseRevResult = RevocationEnvelopeSchema.safeParse(parsed);
+            if (leaseRevResult.success) {
+              const envelope = leaseRevResult.data;
+              if (!verifyRevocationWithKeyset(envelope, currentKeyset)) {
+                this.logger?.warn?.(
+                  `[SynapseState] Emergency lease revocation file "${fileName}" failed keyset verification`,
+                );
+                continue;
+              }
+              let applied = false;
+              if (this.leaseStore) {
+                applied = this.leaseStore.applyRevocation(
+                  envelope,
+                  currentKeyset,
+                );
+              }
+              if (applied) {
+                ingestedCount++;
+                this.processedFileHashes.set(fileName, hash);
+              }
+              continue;
+            }
+          }
+
+          // 3. Check for Emergency Lease Envelope
           const schemaResult = LeaseEnvelopeSchema.safeParse(parsed);
           if (!schemaResult.success) {
             this.logger?.warn?.(

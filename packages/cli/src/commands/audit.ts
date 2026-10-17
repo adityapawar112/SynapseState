@@ -583,16 +583,33 @@ export async function executeAuditCheckpoint(
     }
 
     envelope = signCheckpoint(payload, privateKey);
-  } else if (params.keyFile || params.password || params.passphraseEnv || process.env.SYNAPSE_KEY_PASSWORD) {
-    const filePath = params.keyFile ? path.resolve(params.keyFile) : path.join(process.cwd(), `${kid}.key`);
-    const password =
-      params.password ||
-      (params.passphraseEnv ? process.env[params.passphraseEnv] : undefined) ||
-      process.env.SYNAPSE_KEY_PASSWORD ||
-      "";
+  } else if (
+    params.keyFile ||
+    params.password ||
+    params.passphraseEnv ||
+    process.env.SYNAPSE_KEY_PASSWORD
+  ) {
+    const filePath = params.keyFile
+      ? path.resolve(params.keyFile)
+      : path.join(process.cwd(), `${kid}.key`);
+
+    let password = "";
+    if (params.passphraseEnv && process.env[params.passphraseEnv]) {
+      password = process.env[params.passphraseEnv]!;
+    } else if (params.password) {
+      console.warn(
+        pc.yellow(
+          "[WARN] Supplying passphrase via --password flag can expose secrets in process lists and shell history. Consider using SYNAPSE_KEY_PASSWORD or --passphrase-env.",
+        ),
+      );
+      password = params.password;
+    } else if (process.env.SYNAPSE_KEY_PASSWORD) {
+      password = process.env.SYNAPSE_KEY_PASSWORD;
+    }
+
     if (!password) {
       throw new Error(
-        "Passphrase required for keyfile: provide --password, --passphrase-env, or set SYNAPSE_KEY_PASSWORD",
+        "Passphrase required for keyfile: provide --passphrase-env, set SYNAPSE_KEY_PASSWORD, or use --password",
       );
     }
     const signer = await EncryptedKeyfileSigner.load({ filePath, password });

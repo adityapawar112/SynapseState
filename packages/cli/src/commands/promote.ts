@@ -62,7 +62,7 @@ export async function executePromote(
     res = await fetchFn(url, {
       method: "POST",
       headers,
-      body: params.env ? JSON.stringify({ env: params.env }) : undefined,
+      body: JSON.stringify(params.env ? { env: params.env } : {}),
       signal: controller.signal,
     });
   } catch (err: unknown) {

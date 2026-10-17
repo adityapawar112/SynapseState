@@ -38,16 +38,21 @@ The next agent picking up this task should call the following skills:
   - Automated bash runner (`test/drills/run-drills.sh`) with POSIX `100755` executable bit.
   - Monorepo script `pnpm run test:drills`.
   - `LeaseStore` bounded monotonic tracking (`DEFAULT_MAX_TRACKED_MONOTONIC_LEASES = 2000`) with FIFO pruning and proactive cleanup on eviction/revocation.
-- **Production SRE Postmortem (`docs/postmortems/2026-10-drill-postmortem.md`):**
-  - 90-second compound failure incident timeline with per-row verification vectors.
-  - 5-Whys root cause analysis, Invariants 1–8 verification matrix (all `VERIFIED (PASS)`), Prometheus metric catalog, and actionable follow-ups.
+- **Phase 4 Milestone Code Review Hardening (Approved with Comments):**
+  - **Monotonic Anchor Continuity (`packages/sdk/src/lease-store.ts`):** `addLease` falls back to live in-memory active lease `firstSeenMonoMs` if the tracking map anchor was pruned, and FIFO capacity eviction preserves active lease anchors.
+  - **Fail-Closed Webhook HMAC (`apps/control-api/src/routes/webhooks.ts`):** Rejects with 500 `RAW_BODY_UNAVAILABLE` if raw buffer payload is absent, preventing false-rejection risks from non-canonical JSON re-serialization.
+  - **Promotion Advisory Locking (`apps/control-api/src/routes/leases.ts`):** Uses `pg_try_advisory_xact_lock` inside `withTransaction` during lease promotion, eliminating TOCTOU concurrency races on simultaneous flag promotions.
+  - **Checkpoint Signer Keyset Mount (`deploy/helm/control-api/templates/cronjob-checkpoint-signer.yaml`):** Explicitly mounts Git keyset ConfigMap and wires `--keyset /etc/synapse/keyset/keyset.json` into the CronJob container.
+  - **CLI Passphrase Hygiene (`packages/cli/src/commands/audit.ts`):** Added warning on `--password` CLI argument in `synapse audit checkpoint` to protect against process table exposure, matching `synapse lease create`.
+  - **Air-Gap Revocation Channel (`packages/sdk/src/emergency-scanner.ts`):** Added out-of-band support for `*-revocation.json` and `*-keyrevocation.json` files, closing the air-gapped revocation gap during total control-plane severance.
 - **Verification Evidence:**
-  - Chaos drills (`pnpm run test:drills`): **14/14 passed** across 3 test files in 4.80s.
+  - Chaos drills (`pnpm run test:drills`): **14/14 passed** across 3 test files in 4.53s.
   - Monorepo build (`pnpm -r run build`): 0 errors across all 7 workspace packages.
   - Monorepo linter (`pnpm run lint`): 0 errors.
-  - Full test suite (`pnpm test`): **330+ tests passed** (0 failures) monorepo-wide.
+  - Full test suite (`pnpm test`): **350+ tests passed** (0 failures) monorepo-wide.
 - **Recent Git Commits:**
   - `31754d6`: `fix(test): address PR 20 peer review feedback on drills, lease store bounds, and postmortem`
+  - `ce31c3e`: `docs: replace Phase 4 PR 20 handoff with Phase 5 PR 21 Purger quiescence engine`
   - `937160d`: `feat(test): chaos drills and formal disaster recovery postmortem (PR 20)`
   - `e20ef1c`: `Merge pull request #19 from adityapawar112/feat/audit-checkpoint-verifier`
 
