@@ -34,3 +34,30 @@ export {
   mapRowToFlagTelemetrySnapshot,
   fetchFlagTelemetrySnapshots,
 } from "./qualification/queries.js";
+
+// Explicit re-exports for read-only AST scanner domain types and utilities
+export type {
+  OpenFeatureEvalMethod,
+  ScannerRefusalReason,
+  SourceLocation,
+  EnclosingScope,
+  RefusalMarker,
+  CallSite,
+  ASTFlagReference,
+  ConsumerCrossReference,
+  CodebaseScanResult,
+  ScannerOptions,
+  CrossReferenceOptions,
+} from "./scanner/types.js";
+
+export { OPENFEATURE_EVAL_METHODS } from "./scanner/types.js";
+
+export {
+  defaultServiceResolver,
+  scanSourceFiles,
+  scanSourceTexts,
+  scanCodebase,
+  crossReferenceConsumers,
+} from "./scanner/scanner.js";
+
+

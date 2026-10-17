@@ -6,6 +6,12 @@ import {
   buildQuiescenceRollupQuery,
   mapRowToFlagTelemetrySnapshot,
   fetchFlagTelemetrySnapshots,
+  scanSourceFiles,
+  scanSourceTexts,
+  scanCodebase,
+  crossReferenceConsumers,
+  defaultServiceResolver,
+  OPENFEATURE_EVAL_METHODS,
 } from "./index.js";
 
 describe("Purger Package Exports", () => {
@@ -21,4 +27,15 @@ describe("Purger Package Exports", () => {
     expect(mapRowToFlagTelemetrySnapshot).toBeTypeOf("function");
     expect(fetchFlagTelemetrySnapshots).toBeTypeOf("function");
   });
+
+  it("exports scanner domain utilities, functions, and method constants", () => {
+    expect(scanSourceFiles).toBeTypeOf("function");
+    expect(scanSourceTexts).toBeTypeOf("function");
+    expect(scanCodebase).toBeTypeOf("function");
+    expect(crossReferenceConsumers).toBeTypeOf("function");
+    expect(defaultServiceResolver).toBeTypeOf("function");
+    expect(Array.isArray(OPENFEATURE_EVAL_METHODS)).toBe(true);
+    expect(OPENFEATURE_EVAL_METHODS).toContain("getBooleanValue");
+  });
 });
+

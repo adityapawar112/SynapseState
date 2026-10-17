@@ -14,6 +14,10 @@ An asynchronous in-process single-writer background loop that consumes staged au
 
 A short-lived, cryptographically signed emergency override issued by a single on-call operator to force a specific flag variant across a cluster during an active production incident.
 
+### Call Site
+
+A specific syntactic location in application source code where an OpenFeature client evaluates a feature flag.
+
 ### Change Attribution
 
 The process of correlating operational incidents with recent feature flag modifications to identify likely causal changes and suggest mitigation actions.
@@ -89,6 +93,10 @@ A verification prerequisite for stale flag detection requiring that every servic
 ### Telemetry Hook
 
 An OpenFeature evaluation hook that aggregates flag evaluation outcomes `(flag_key, variant, reason)` in memory without capturing or exporting contextual attributes or user identifiers.
+
+### Undeclared Caller
+
+An application service detected during AST scanning that evaluates a feature flag in source code despite having zero recorded evaluations in telemetry, blocking automated retirement.
 
 ### Winning Variant
 
