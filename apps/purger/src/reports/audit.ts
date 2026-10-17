@@ -13,8 +13,18 @@
 import { evaluateCandidateQuiescence } from "../qualification/engine.js";
 import { crossReferenceConsumers, scanCodebase } from "../scanner/scanner.js";
 import type { CodebaseScanResult } from "../scanner/types.js";
-import { createCandidateReport, formatCandidateReportCli, formatCandidateReportMarkdown } from "./candidate.js";
-import { createRefusalReportFromCrossReference, createRefusalReportFromQualification, formatRefusalReportCli, formatRefusalReportMarkdown } from "./refusal.js";
+import {
+  createCandidateReport,
+  formatCandidateReportCli,
+  formatCandidateReportMarkdown,
+  CLI_SEPARATOR,
+} from "./candidate.js";
+import {
+  createRefusalReportFromCrossReference,
+  createRefusalReportFromQualification,
+  formatRefusalReportCli,
+  formatRefusalReportMarkdown,
+} from "./refusal.js";
 import type { CandidateReport, PurgerAuditOptions, PurgerAuditResult, RefusalReport } from "./types.js";
 
 /**
@@ -42,7 +52,7 @@ export function runPurgerAudit(options: PurgerAuditOptions): PurgerAuditResult {
     qualificationOptions,
     scanResult: providedScanResult,
     scannerOptions,
-    allowUnreferencedServices,
+    allowUnreferencedServices = false, // Invariant: fail-closed against unreferenced telemetry services
     now,
   } = options;
 
@@ -85,21 +95,50 @@ export function runPurgerAudit(options: PurgerAuditOptions): PurgerAuditResult {
       });
 
       const crossRef = crossRefs[0];
-      if (crossRef && crossRef.isConsistent) {
+
+      // Invariant: a flag qualifies IF AND ONLY IF cross-reference is consistent AND has >= 1 discovered AST call site
+      if (crossRef && crossRef.isConsistent && crossRef.callSites.length > 0) {
         const candidateReport = createCandidateReport({
           candidate: qualResult.candidate,
           crossReference: crossRef,
           now: timestamp,
         });
         candidates.push(candidateReport);
-      } else if (crossRef) {
+      } else {
         const refusalReport = createRefusalReportFromCrossReference({
-          crossReference: crossRef,
+          crossReference: crossRef ?? {
+            flagKey: qualResult.candidate.flagKey,
+            isConsistent: false,
+            evaluatingServices: qualResult.candidate.evaluatingServices,
+            astConsumerServices: [],
+            undeclaredServices: [],
+            unreferencedServices: qualResult.candidate.evaluatingServices,
+            callSites: [],
+            refusals: [],
+          },
           env: qualResult.env,
           now: timestamp,
         });
         refusals.push(refusalReport);
       }
+    } else {
+      // Defensive: status is QUALIFIED but candidate object is missing
+      refusals.push({
+        flagKey: snapshot.flagKey,
+        env: snapshot.env,
+        refusalOrigin: "QUALIFICATION",
+        isBlocked: true,
+        reasons: [
+          {
+            code: "CONSISTENCY_MISMATCH",
+            title: "Missing Candidate Metadata",
+            message: `Flag '${snapshot.flagKey}' marked qualified without CandidateFlag metadata.`,
+            remediation: "Review qualification engine rules and telemetry snapshot.",
+          },
+        ],
+        summary: `Flag '${snapshot.flagKey}' refused due to missing candidate metadata.`,
+        generatedAt: timestamp,
+      });
     }
   }
 
@@ -169,9 +208,9 @@ export function formatPurgerAuditMarkdown(audit: PurgerAuditResult): string {
 export function formatPurgerAuditCli(audit: PurgerAuditResult): string {
   const lines: string[] = [];
 
-  lines.push(`================================================================================`);
+  lines.push(CLI_SEPARATOR);
   lines.push(`SYNAPSESTATE PURGER AUDIT [${audit.generatedAt}]`);
-  lines.push(`================================================================================`);
+  lines.push(CLI_SEPARATOR);
   lines.push(`Evaluated: ${audit.summary.totalEvaluated} | Qualified: ${audit.summary.totalQualified} | Refused: ${audit.summary.totalRefused} | Call Sites: ${audit.summary.totalCallSitesFound}`);
   lines.push("");
 

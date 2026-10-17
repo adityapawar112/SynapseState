@@ -120,6 +120,7 @@ describe("Purger Candidate Reports (PR 23)", () => {
 
       // Verify GritQL query pattern
       expect(report.toolConfigs.gritql.engine).toBe("grit(0.1)");
+      expect(report.toolConfigs.gritql.language).toBe("typescript");
       expect(report.toolConfigs.gritql.flagKey).toBe("checkout-v2-enabled");
       expect(report.toolConfigs.gritql.winningVariant).toBe("true");
       expect(report.toolConfigs.gritql.pattern).toContain("checkout-v2-enabled");
@@ -272,6 +273,21 @@ describe("Purger Candidate Reports (PR 23)", () => {
       expect(report.reasons).toHaveLength(2);
       expect(report.reasons[0].code).toBe("MULTI_VARIANT_ACTIVE");
       expect(report.reasons[1].code).toBe("INSUFFICIENT_WINDOW");
+    });
+
+    it("chains remediation commands for multiple silent services with && operator", () => {
+      const qualResult: QualificationResult = {
+        flagKey: "multi-silent-flag",
+        env: "production",
+        status: "DISQUALIFIED",
+        reasons: ["BLOCKED_BY_SILENT_SERVICE"],
+        blockingServices: ["analytics-worker", "batch-billing"],
+      };
+
+      const report = createRefusalReportFromQualification({ qualificationResult: qualResult });
+      expect(report.reasons[0].remediation).toBe(
+        "synapse service retire --service analytics-worker && synapse service retire --service batch-billing"
+      );
     });
   });
 
@@ -724,6 +740,188 @@ describe("Purger Candidate Reports (PR 23)", () => {
       expect(report.reasons[0].code).toBe("UNREGISTERED_FLAG");
       expect(report.reasons[1].code).toBe("MISSING_DEFAULT_VARIANT");
       expect(report.reasons[2].code).toBe("EXCLUDED_LIFECYCLE_CLASS");
+    });
+
+    it("fails closed when scan is missing or yields 0 call sites for candidate flag (C1)", () => {
+      const qualifiedSnapshot: FlagTelemetrySnapshot = {
+        flagKey: "zero-call-sites-flag",
+        env: "production",
+        flagClass: "release",
+        hasActiveLease: false,
+        windowDays: 40,
+        firstSeen: "2026-09-01T00:00:00.000Z",
+        lastSeen: "2026-10-12T00:00:00.000Z",
+        variants: [{ variant: "true", evalCount: 5_000 }],
+        services: [{ serviceName: "order-service", status: "ACTIVE", evalCount: 5_000 }],
+      };
+
+      // No scanResult or scannerOptions provided
+      const audit = runPurgerAudit({
+        snapshots: [qualifiedSnapshot],
+      });
+
+      expect(audit.summary.totalQualified).toBe(0);
+      expect(audit.summary.totalRefused).toBe(1);
+      expect(audit.candidates).toHaveLength(0);
+      expect(audit.refusals).toHaveLength(1);
+      expect(audit.refusals[0].flagKey).toBe("zero-call-sites-flag");
+      expect(audit.refusals[0].reasons[0].code).toBe("CONSISTENCY_MISMATCH");
+    });
+
+    it("fails closed on unreferenced telemetry service when allowUnreferencedServices is false by default (C1)", () => {
+      const qualifiedSnapshot: FlagTelemetrySnapshot = {
+        flagKey: "unref-flag",
+        env: "production",
+        flagClass: "release",
+        hasActiveLease: false,
+        windowDays: 40,
+        firstSeen: "2026-09-01T00:00:00.000Z",
+        lastSeen: "2026-10-12T00:00:00.000Z",
+        variants: [{ variant: "true", evalCount: 5_000 }],
+        services: [{ serviceName: "billing-service", status: "ACTIVE", evalCount: 5_000 }],
+      };
+
+      // Scanner finds call in order-service, but telemetry only knows billing-service
+      const scanResult: CodebaseScanResult = {
+        totalFilesScanned: 1,
+        totalCallSites: 1,
+        callSites: [],
+        flagReferences: {
+          "unref-flag": {
+            flagKey: "unref-flag",
+            totalCallSites: 0,
+            callSites: [],
+            consumerServices: [],
+            hasRefusals: false,
+            refusals: [],
+          },
+        },
+        unresolvedCallSites: [],
+        unresolvedCallSitesByService: {},
+        unresolvedServices: [],
+        refusals: [],
+      };
+
+      const audit = runPurgerAudit({
+        snapshots: [qualifiedSnapshot],
+        scanResult,
+        // allowUnreferencedServices defaults to false
+      });
+
+      expect(audit.summary.totalQualified).toBe(0);
+      expect(audit.summary.totalRefused).toBe(1);
+      expect(audit.refusals[0].reasons[0].code).toBe("CONSISTENCY_MISMATCH");
+    });
+
+    it("generates type-aware default methods for string, number, and object flags without call sites (C2)", () => {
+      const stringCandidate: CandidateFlag = {
+        flagKey: "str-flag",
+        env: "production",
+        winningVariant: "premium",
+        totalEvaluations: 100,
+        evaluatingServices: ["ui"],
+        windowDays: 40,
+      };
+
+      const stringReport = createCandidateReport({
+        candidate: stringCandidate,
+        crossReference: {
+          flagKey: "str-flag",
+          isConsistent: true,
+          evaluatingServices: ["ui"],
+          astConsumerServices: ["ui"],
+          undeclaredServices: [],
+          unreferencedServices: [],
+          callSites: [],
+          refusals: [],
+        },
+      });
+
+      expect(stringReport.toolConfigs.piranha.methodNames).toEqual([
+        "getStringDetails",
+        "getStringValue",
+      ]);
+      expect(stringReport.toolConfigs.gritql.targetMethods).toEqual([
+        "getStringDetails",
+        "getStringValue",
+      ]);
+
+      const numCandidate: CandidateFlag = {
+        flagKey: "num-flag",
+        env: "production",
+        winningVariant: "100",
+        totalEvaluations: 100,
+        evaluatingServices: ["ui"],
+        windowDays: 40,
+      };
+
+      const numReport = createCandidateReport({
+        candidate: numCandidate,
+        crossReference: {
+          flagKey: "num-flag",
+          isConsistent: true,
+          evaluatingServices: ["ui"],
+          astConsumerServices: ["ui"],
+          undeclaredServices: [],
+          unreferencedServices: [],
+          callSites: [],
+          refusals: [],
+        },
+      });
+
+      expect(numReport.toolConfigs.piranha.methodNames).toEqual([
+        "getNumberDetails",
+        "getNumberValue",
+      ]);
+    });
+
+    it("escapes single quotes and backslashes in GritQL patterns for string variants (C2)", () => {
+      const stringCandidate: CandidateFlag = {
+        flagKey: "quote-flag",
+        env: "production",
+        winningVariant: "it's an 'autumn' special\\discount",
+        totalEvaluations: 100,
+        evaluatingServices: ["ui"],
+        windowDays: 40,
+      };
+
+      const report = createCandidateReport({
+        candidate: stringCandidate,
+        crossReference: {
+          flagKey: "quote-flag",
+          isConsistent: true,
+          evaluatingServices: ["ui"],
+          astConsumerServices: ["ui"],
+          undeclaredServices: [],
+          unreferencedServices: [],
+          callSites: [],
+          refusals: [],
+        },
+      });
+
+      expect(report.toolConfigs.gritql.pattern).toContain(
+        "it\\'s an \\'autumn\\' special\\\\discount"
+      );
+    });
+
+    it("strictly verifies numeric strings and validates JSON for object variants (I2)", async () => {
+      const { inferVariantType } = await import("./candidate.js");
+
+      // Strict numbers
+      expect(inferVariantType("123")).toBe("number");
+      expect(inferVariantType("-42.5")).toBe("number");
+      expect(inferVariantType("0")).toBe("number");
+
+      // Non-strict numbers treated as strings
+      expect(inferVariantType("0x10")).toBe("string");
+      expect(inferVariantType("1e3")).toBe("string");
+      expect(inferVariantType("Infinity")).toBe("string");
+      expect(inferVariantType("NaN")).toBe("string");
+
+      // Valid JSON objects vs invalid JSON
+      expect(inferVariantType('{"valid": true}')).toBe("object");
+      expect(inferVariantType('[1, 2, 3]')).toBe("object");
+      expect(inferVariantType('{invalid: json}')).toBe("string");
     });
   });
 });

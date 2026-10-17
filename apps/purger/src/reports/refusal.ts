@@ -16,6 +16,11 @@ import type { ConsumerCrossReference, RefusalMarker } from "../scanner/types.js"
 import type { RefusalItem, RefusalOrigin, RefusalReport } from "./types.js";
 
 /**
+ * Standard CLI line separator for clean terminal rendering.
+ */
+export const CLI_SEPARATOR = "=".repeat(80);
+
+/**
  * Options for generating a refusal report from qualification results.
  */
 export interface CreateQualificationRefusalOptions {
@@ -35,14 +40,14 @@ export function mapDisqualificationReasonToItem(
     case "BLOCKED_BY_SILENT_SERVICE": {
       const services = blockingServices && blockingServices.length > 0 ? blockingServices : ["unknown-service"];
       const serviceListStr = services.map((s) => `'${s}'`).join(", ");
-      const firstService = services[0];
+      const remediationCmd = services.map((s) => `synapse service retire --service ${s}`).join(" && ");
 
       return {
         code: "BLOCKED_BY_SILENT_SERVICE",
         title: "Blocked by Silent Consumer Service",
         blockingServices: services,
         message: `Evaluating consumer service(s) ${serviceListStr} have stopped reporting evaluation telemetry (>14 days silent). Purging is blocked to prevent breaking silent workloads.`,
-        remediation: `synapse service retire --service ${firstService}`,
+        remediation: remediationCmd,
       };
     }
 
@@ -237,7 +242,7 @@ export function createRefusalReportFromCrossReference(
   }
 
   // Map undeclared consumer services (if not already covered by refusal markers)
-  if (crossReference.undeclaredServices.length > 0) {
+  if (crossReference.undeclaredServices && crossReference.undeclaredServices.length > 0) {
     const hasUndeclaredMarker = items.some((i) => i.code === "UNDECLARED_CONSUMER_SERVICE");
     if (!hasUndeclaredMarker) {
       const serviceList = crossReference.undeclaredServices.join(", ");
@@ -249,6 +254,28 @@ export function createRefusalReportFromCrossReference(
         remediation: `Ensure OpenFeature TelemetryHook is active in service(s) [${serviceList}] or retire orphan call sites before automated cleanup.`,
       });
     }
+  }
+
+  // Map unreferenced consumer services (telemetry active, but 0 AST callers found)
+  if (crossReference.unreferencedServices && crossReference.unreferencedServices.length > 0) {
+    const unrefList = crossReference.unreferencedServices.join(", ");
+    items.push({
+      code: "CONSISTENCY_MISMATCH",
+      title: "Unreferenced Telemetry Consumer Service",
+      blockingServices: crossReference.unreferencedServices,
+      message: `Telemetry recorded evaluations for flag '${crossReference.flagKey}' in service(s) [${unrefList}], but zero AST call sites were found in source code.`,
+      remediation: `Include source code repositories for service(s) [${unrefList}] in codebase scanner or enable allowUnreferencedServices.`,
+    });
+  }
+
+  // Fail-closed when no call sites exist in AST
+  if (crossReference.callSites.length === 0 && items.length === 0) {
+    items.push({
+      code: "CONSISTENCY_MISMATCH",
+      title: "No AST Call Sites Discovered",
+      message: `Static AST scanning detected zero call sites for candidate flag '${crossReference.flagKey}'. A flag cannot be retired without positive AST evidence.`,
+      remediation: `Verify application source code paths and ensure target repositories are configured in scanner options.`,
+    });
   }
 
   // Fallback if marked inconsistent without explicit reasons
@@ -349,9 +376,9 @@ export function formatRefusalReportMarkdown(report: RefusalReport): string {
 export function formatRefusalReportCli(report: RefusalReport): string {
   const lines: string[] = [];
 
-  lines.push(`================================================================================`);
+  lines.push(CLI_SEPARATOR);
   lines.push(`REFUSAL: ${report.flagKey} [${report.env}] (Origin: ${report.refusalOrigin})`);
-  lines.push(`================================================================================`);
+  lines.push(CLI_SEPARATOR);
   lines.push(report.summary);
   lines.push("");
 

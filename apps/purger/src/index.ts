@@ -79,6 +79,8 @@ export type {
 } from "./reports/types.js";
 
 export {
+  CLI_SEPARATOR,
+  getDefaultMethodsForVariantType,
   inferVariantType,
   formatScopeDescription,
   formatCallSiteReportRow,

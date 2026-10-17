@@ -22,22 +22,65 @@ import type {
 } from "./types.js";
 
 /**
- * Infers the literal data type of a winning variant string.
+ * Standard CLI line separator for clean terminal rendering.
  */
-export function inferVariantType(variant: string): VariantDataType {
+export const CLI_SEPARATOR = "=".repeat(80);
+
+/**
+ * Returns default OpenFeature evaluation methods based on variant data type.
+ */
+export function getDefaultMethodsForVariantType(variantType: VariantDataType): OpenFeatureEvalMethod[] {
+  switch (variantType) {
+    case "boolean":
+      return ["getBooleanDetails", "getBooleanValue"];
+    case "string":
+      return ["getStringDetails", "getStringValue"];
+    case "number":
+      return ["getNumberDetails", "getNumberValue"];
+    case "object":
+      return ["getObjectDetails", "getObjectValue"];
+  }
+}
+
+/**
+ * Infers the literal data type of a winning variant string.
+ * Uses discovered AST method names as primary ground truth when available.
+ */
+export function inferVariantType(variant: string, methods?: OpenFeatureEvalMethod[]): VariantDataType {
+  if (methods && methods.length > 0) {
+    const hasBool = methods.some((m) => m.startsWith("getBoolean"));
+    const hasNum = methods.some((m) => m.startsWith("getNumber"));
+    const hasObj = methods.some((m) => m.startsWith("getObject"));
+    const hasStr = methods.some((m) => m.startsWith("getString"));
+
+    if (hasBool && !hasNum && !hasObj && !hasStr) return "boolean";
+    if (hasNum && !hasBool && !hasObj && !hasStr) return "number";
+    if (hasObj && !hasBool && !hasNum && !hasStr) return "object";
+    if (hasStr && !hasBool && !hasNum && !hasObj) return "string";
+  }
+
   const trimmed = variant.trim();
   if (trimmed === "true" || trimmed === "false") {
     return "boolean";
   }
-  if (!isNaN(Number(trimmed)) && trimmed !== "") {
+
+  // Strict numeric regex: integer or standard floating point decimal
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
     return "number";
   }
+
   if (
     (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
     (trimmed.startsWith("[") && trimmed.endsWith("]"))
   ) {
-    return "object";
+    try {
+      JSON.parse(trimmed);
+      return "object";
+    } catch {
+      return "string";
+    }
   }
+
   return "string";
 }
 
@@ -53,6 +96,9 @@ export function formatScopeDescription(scope: CallSite["scope"]): string {
   }
   if (scope.className) {
     return `${scope.className} (anonymous)`;
+  }
+  if (scope.kind === "SourceFile") {
+    return "top-level (file)";
   }
   return `anonymous (${scope.kind})`;
 }
@@ -88,7 +134,6 @@ export function buildPiranhaConfig(
   variantType: VariantDataType,
   methods: OpenFeatureEvalMethod[]
 ): PiranhaConfig {
-  const piranhaType = variantType === "unknown" ? "string" : variantType;
   const treatedComplement =
     variantType === "boolean"
       ? winningVariant.trim() === "true"
@@ -98,12 +143,12 @@ export function buildPiranhaConfig(
 
   const methodNames = methods.length > 0
     ? Array.from(new Set(methods)).sort()
-    : ["getBooleanValue", "getBooleanDetails"];
+    : getDefaultMethodsForVariantType(variantType);
 
   return {
     language: "typescript",
     flagName: flagKey,
-    flagType: piranhaType,
+    flagType: variantType,
     treated: winningVariant,
     ...(treatedComplement !== undefined ? { treatedComplement } : {}),
     methodNames,
@@ -121,21 +166,25 @@ export function buildGritQLPattern(
 ): GritQLPattern {
   const methodList = methods.length > 0
     ? Array.from(new Set(methods)).sort()
-    : ["getBooleanValue", "getBooleanDetails", "getStringValue", "getStringDetails"];
+    : getDefaultMethodsForVariantType(variantType);
 
   const methodOrClause = methodList.map((m) => `\`${m}\``).join(", ");
-  const replacement = variantType === "string" ? `'${winningVariant}'` : winningVariant;
+  const escapedFlagKey = flagKey.replace(/"/g, '\\"');
+  const escapedReplacement =
+    variantType === "string"
+      ? `'${winningVariant.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+      : winningVariant;
 
   const pattern = `engine grit(0.1)
 language js
 
-\`$client.$method("${flagKey}", $default)\` where {
+\`$client.$method("${escapedFlagKey}", $default)\` where {
   $method <: or { ${methodOrClause} }
-} => ${replacement}`;
+} => ${escapedReplacement}`;
 
   return {
     engine: "grit(0.1)",
-    language: "js",
+    language: "typescript",
     flagKey,
     winningVariant,
     pattern,
@@ -163,9 +212,9 @@ export function createCandidateReport(options: CreateCandidateReportOptions): Ca
       : now.toISOString()
     : new Date().toISOString();
 
-  const variantType = inferVariantType(candidate.winningVariant);
-  const callSiteRows = crossReference.callSites.map(formatCallSiteReportRow);
   const detectedMethods = crossReference.callSites.map((c) => c.methodName);
+  const variantType = inferVariantType(candidate.winningVariant, detectedMethods);
+  const callSiteRows = crossReference.callSites.map(formatCallSiteReportRow);
 
   const piranha = buildPiranhaConfig(
     candidate.flagKey,
@@ -189,7 +238,7 @@ export function createCandidateReport(options: CreateCandidateReportOptions): Ca
     totalEvaluations: candidate.totalEvaluations,
     evaluatingServices: [...candidate.evaluatingServices].sort(),
     windowDays: candidate.windowDays,
-    ...(candidate.firstSeen || candidate.lastSeen
+    ...(candidate.firstSeen && candidate.lastSeen
       ? {
           observationSpan: {
             firstSeen: candidate.firstSeen,
@@ -270,9 +319,9 @@ export function formatCandidateReportMarkdown(report: CandidateReport): string {
 export function formatCandidateReportCli(report: CandidateReport): string {
   const lines: string[] = [];
 
-  lines.push(`================================================================================`);
+  lines.push(CLI_SEPARATOR);
   lines.push(`CANDIDATE: ${report.flagKey} [${report.env}]`);
-  lines.push(`================================================================================`);
+  lines.push(CLI_SEPARATOR);
   lines.push(`Winning Variant: ${report.winningVariant} (${report.winningVariantType})`);
   lines.push(`Evaluations:     ${report.totalEvaluations.toLocaleString()} across ${report.windowDays} days`);
   lines.push(`Services:        ${report.evaluatingServices.join(", ")}`);

@@ -24,7 +24,7 @@ import type {
 /**
  * Supported variant literal data types.
  */
-export type VariantDataType = "boolean" | "string" | "number" | "object" | "unknown";
+export type VariantDataType = "boolean" | "string" | "number" | "object";
 
 /**
  * Call site summary row specifically formatted for report tables and diff generation.
@@ -60,7 +60,7 @@ export interface PiranhaConfig {
  */
 export interface GritQLPattern {
   engine: "grit(0.1)";
-  language: "js" | "typescript";
+  language: "typescript";
   flagKey: string;
   winningVariant: string;
   pattern: string;
@@ -100,7 +100,7 @@ export type RefusalOrigin = "QUALIFICATION" | "SCANNER" | "CROSS_REFERENCE";
  * Detailed refusal reason item with actionable remediation.
  */
 export interface RefusalItem {
-  code: DisqualificationReason | ScannerRefusalReason | "CONSISTENCY_MISMATCH" | "UNRESOLVED_CALL_SITE";
+  code: DisqualificationReason | ScannerRefusalReason | "CONSISTENCY_MISMATCH";
   title: string;
   message: string;
   blockingServices?: string[];

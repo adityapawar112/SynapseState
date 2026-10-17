@@ -14,6 +14,8 @@ export type {
 } from "./types.js";
 
 export {
+  CLI_SEPARATOR,
+  getDefaultMethodsForVariantType,
   inferVariantType,
   formatScopeDescription,
   formatCallSiteReportRow,
