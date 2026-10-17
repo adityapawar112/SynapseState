@@ -225,19 +225,19 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
                 {flag.isQuiescent && flag.winningVariant && (
                   <div
                     style={{
-                      padding: "4px 10px",
-                      borderRadius: "var(--radius-xs)",
-                      backgroundColor: "rgba(0, 189, 125, 0.08)",
-                      border: "1px solid rgba(0, 189, 125, 0.25)",
+                      padding: "4px 12px",
+                      borderRadius: "var(--radius-full)",
+                      backgroundColor: "var(--color-ai)",
+                      color: "#ffffff",
                       fontSize: "12px",
                       display: "inline-flex",
                       alignItems: "center",
-                      gap: "5px",
+                      gap: "6px",
                     }}
                   >
-                    <LuCircleCheck size={13} color="var(--color-ai)" />
-                    <span style={{ color: "var(--color-muted)" }}>Dominant Variant: </span>
-                    <strong style={{ color: "var(--color-ai)", fontFamily: "var(--font-mono)" }}>
+                    <LuCircleCheck size={13} color="#ffffff" />
+                    <span style={{ color: "#ffffff" }}>Dominant Variant: </span>
+                    <strong style={{ color: "#ffffff", fontFamily: "var(--font-mono)" }}>
                       {flag.winningVariant}
                     </strong>
                   </div>

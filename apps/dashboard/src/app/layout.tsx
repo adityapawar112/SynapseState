@@ -188,13 +188,14 @@ export default async function RootLayout({
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: "11px",
-                  color: "var(--color-ai)",
-                  backgroundColor: "rgba(0, 189, 125, 0.1)",
-                  border: "1px solid rgba(0, 189, 125, 0.25)",
-                  padding: "3px 8px",
+                  fontWeight: 600,
+                  color: "#ffffff",
+                  backgroundColor: "var(--color-ai)",
+                  padding: "4px 10px",
                   borderRadius: "var(--radius-full)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
+                  border: "none",
                 }}
               >
                 Mesh Online

@@ -298,14 +298,14 @@ export function RevokeModal({
             </div>
 
             {error && (
-              <div style={{ color: "var(--color-under-attack)", fontSize: "13px", padding: "8px 12px", borderRadius: "var(--radius-xs)", backgroundColor: "#fff1f2", border: "1px solid #fecdd3" }}>
+              <div style={{ color: "#ffffff", fontSize: "13px", padding: "10px 14px", borderRadius: "var(--radius-xs)", backgroundColor: "var(--color-under-attack)" }}>
                 {error}
               </div>
             )}
 
             {!canRevoke && (
-              <div style={{ color: "var(--color-kumo-brand-dark)", fontSize: "13px", padding: "8px 12px", borderRadius: "var(--radius-xs)", backgroundColor: "rgba(255, 94, 31, 0.08)", border: "1px solid rgba(255, 94, 31, 0.25)", display: "flex", alignItems: "center", gap: "8px" }}>
-                <LuTriangleAlert size={15} style={{ flexShrink: 0 }} />
+              <div style={{ color: "#ffffff", fontSize: "13px", padding: "10px 14px", borderRadius: "var(--radius-xs)", backgroundColor: "var(--color-kumo-brand)", display: "flex", alignItems: "center", gap: "8px" }}>
+                <LuTriangleAlert size={16} color="#ffffff" style={{ flexShrink: 0 }} />
                 <span>
                   Your current role (<strong>{userRole}</strong>) is read-only. Only <strong>operator</strong> or <strong>admin</strong> can execute revocations.
                 </span>

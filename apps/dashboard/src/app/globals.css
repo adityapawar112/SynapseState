@@ -392,70 +392,62 @@ a {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 3px 8px;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
-  border: 1px solid transparent;
+  border: none;
+  color: #ffffff;
 }
 
 .badge-active {
-  background-color: rgba(0, 189, 125, 0.12);
-  color: #00875a;
-  border-color: rgba(0, 189, 125, 0.3);
+  background-color: var(--color-ai);
+  color: #ffffff;
 }
 
 .badge-near-expiry {
-  background-color: rgba(255, 94, 31, 0.12);
-  color: var(--color-kumo-brand-dark);
-  border-color: rgba(255, 94, 31, 0.4);
+  background-color: var(--color-kumo-brand);
+  color: #ffffff;
   animation: pulse 2s infinite ease-in-out;
 }
 
 .badge-expired {
-  background-color: #f5f5f5;
-  color: var(--color-muted);
-  border-color: var(--color-hairline);
+  background-color: var(--color-muted);
+  color: #ffffff;
 }
 
 .badge-revoked {
-  background-color: rgba(181, 41, 50, 0.1);
-  color: var(--color-under-attack);
-  border-color: rgba(181, 41, 50, 0.25);
+  background-color: var(--color-under-attack);
+  color: #ffffff;
 }
 
 .badge-promoted {
-  background-color: rgba(238, 13, 219, 0.1);
-  color: #c00cae;
-  border-color: rgba(238, 13, 219, 0.25);
+  background-color: var(--color-storage);
+  color: #ffffff;
 }
 
 .badge-compute {
-  background-color: rgba(10, 149, 255, 0.1);
-  color: var(--color-compute);
-  border-color: rgba(10, 149, 255, 0.25);
+  background-color: var(--color-compute);
+  color: #ffffff;
 }
 
 .badge-storage {
-  background-color: rgba(238, 13, 219, 0.1);
-  color: var(--color-storage);
-  border-color: rgba(238, 13, 219, 0.25);
+  background-color: var(--color-storage);
+  color: #ffffff;
 }
 
 .badge-ai {
-  background-color: rgba(0, 189, 125, 0.1);
-  color: var(--color-ai);
-  border-color: rgba(0, 189, 125, 0.25);
+  background-color: var(--color-ai);
+  color: #ffffff;
 }
 
 .badge-sase {
-  background-color: rgba(13, 148, 136, 0.1);
-  color: var(--color-sase);
-  border-color: rgba(13, 148, 136, 0.25);
+  background-color: var(--color-sase);
+  color: #ffffff;
 }
 
 @keyframes pulse {
@@ -539,14 +531,15 @@ html.dark .modal-overlay {
 }
 
 html.dark .badge-expired {
-  background-color: #27272a;
-  color: #a1a1aa;
-  border-color: #3f3f46;
+  background-color: var(--color-muted);
+  color: #ffffff;
+  border: none;
 }
 
 html.dark .notice-danger {
-  background-color: rgba(244, 63, 94, 0.12) !important;
-  border-color: rgba(244, 63, 94, 0.3) !important;
-  color: #fca5a5 !important;
+  background-color: var(--color-under-attack) !important;
+  border: none !important;
+  color: #ffffff !important;
 }
+
 

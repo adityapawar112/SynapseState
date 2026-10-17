@@ -9,26 +9,23 @@ interface RoleBadgeProps {
 export function RoleBadge({ role, showPermissions = false }: RoleBadgeProps) {
   const roleStyles: Record<
     UserRole,
-    { bg: string; color: string; border: string; label: string; desc: string }
+    { bg: string; color: string; label: string; desc: string }
   > = {
     viewer: {
-      bg: "rgba(10, 149, 255, 0.08)",
-      color: "var(--color-compute)",
-      border: "rgba(10, 149, 255, 0.25)",
+      bg: "var(--color-compute)",
+      color: "#ffffff",
       label: "Viewer",
       desc: "Read-only access to state, logs, and telemetry",
     },
     operator: {
-      bg: "rgba(255, 94, 31, 0.08)",
-      color: "var(--color-kumo-brand)",
-      border: "rgba(255, 94, 31, 0.3)",
+      bg: "var(--color-kumo-brand)",
+      color: "#ffffff",
       label: "Operator",
       desc: "Authorized to revoke emergency leases and promote to Git",
     },
     admin: {
-      bg: "rgba(13, 148, 136, 0.08)",
-      color: "var(--color-sase)",
-      border: "rgba(13, 148, 136, 0.25)",
+      bg: "var(--color-sase)",
+      color: "#ffffff",
       label: "Admin",
       desc: "Full administrative access and service lifecycle controls",
     },
@@ -48,12 +45,12 @@ export function RoleBadge({ role, showPermissions = false }: RoleBadgeProps) {
           borderRadius: "var(--radius-full)",
           fontFamily: "var(--font-mono)",
           fontSize: "11px",
-          fontWeight: 500,
+          fontWeight: 600,
           letterSpacing: "0.05em",
           textTransform: "uppercase",
           backgroundColor: current.bg,
           color: current.color,
-          border: `1px solid ${current.border}`,
+          border: "none",
         }}
         title={current.desc}
       >
@@ -62,7 +59,7 @@ export function RoleBadge({ role, showPermissions = false }: RoleBadgeProps) {
             width: "6px",
             height: "6px",
             borderRadius: "50%",
-            backgroundColor: current.color,
+            backgroundColor: "#ffffff",
           }}
         />
         {current.label}

@@ -115,9 +115,8 @@ export default function LoginPage() {
             style={{
               padding: "12px 14px",
               borderRadius: "var(--radius-xs)",
-              backgroundColor: "#fff1f2",
-              border: "1px solid #fecdd3",
-              color: "var(--color-under-attack)",
+              backgroundColor: "var(--color-under-attack)",
+              color: "#ffffff",
               fontSize: "13px",
               lineHeight: 1.4,
               display: "flex",
@@ -125,7 +124,7 @@ export default function LoginPage() {
               gap: "8px",
             }}
           >
-            <LuCircleAlert size={16} style={{ flexShrink: 0 }} />
+            <LuCircleAlert size={16} color="#ffffff" style={{ flexShrink: 0 }} />
             <span>{errorMsg}</span>
           </div>
         )}

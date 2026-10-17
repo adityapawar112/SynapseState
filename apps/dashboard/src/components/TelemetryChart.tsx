@@ -105,10 +105,10 @@ export function TelemetryChart({
                   style={{
                     fontFamily: "var(--font-mono)",
                     fontSize: "10px",
-                    padding: "1px 6px",
+                    padding: "2px 8px",
                     borderRadius: "var(--radius-full)",
-                    backgroundColor: "rgba(0, 189, 125, 0.12)",
-                    color: "#00875a",
+                    backgroundColor: "var(--color-ai)",
+                    color: "#ffffff",
                     fontWeight: 600,
                     letterSpacing: "0.05em",
                   }}

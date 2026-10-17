@@ -71,11 +71,9 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
             padding: "8px 16px",
             borderRadius: "var(--radius-full)",
             backgroundColor: chainVerification.valid
-              ? "rgba(0, 189, 125, 0.08)"
-              : "#fee2e2",
-            border: chainVerification.valid
-              ? "1px solid rgba(0, 189, 125, 0.3)"
-              : "1px solid #fecdd3",
+              ? "var(--color-ai)"
+              : "var(--color-under-attack)",
+            color: "#ffffff",
             display: "flex",
             alignItems: "center",
             gap: "10px",
@@ -83,9 +81,9 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
         >
           <span style={{ display: "inline-flex", alignItems: "center" }}>
             {chainVerification.valid ? (
-              <LuShieldCheck size={20} color="var(--color-ai)" />
+              <LuShieldCheck size={20} color="#ffffff" />
             ) : (
-              <LuTriangleAlert size={20} color="var(--color-under-attack)" />
+              <LuTriangleAlert size={20} color="#ffffff" />
             )}
           </span>
           <div>
@@ -93,12 +91,12 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
               className="mono-caption"
               style={{
                 fontWeight: 600,
-                color: chainVerification.valid ? "var(--color-ai)" : "var(--color-under-attack)",
+                color: "#ffffff",
               }}
             >
               {chainVerification.valid ? "Hash Chain Verified" : "Tampering Detected"}
             </div>
-            <div style={{ fontSize: "12px", color: "var(--color-muted)" }}>
+            <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.9)" }}>
               {chainVerification.valid
                 ? "Cryptographic SHA-256 continuity unbroken"
                 : `Sequence discontinuity at seq #${chainVerification.brokenAtSeq}`}
