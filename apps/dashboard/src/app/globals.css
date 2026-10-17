@@ -56,6 +56,57 @@
   --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
 }
 
+/* ============================================================================
+   Dark Mode Palette (High-Voltage Carbon & Obsidian)
+   ============================================================================ */
+
+html.dark,
+:root[data-theme="dark"] {
+  /* Brand Voltage Tier (Uncompromised punch on dark background) */
+  --color-kumo-brand: #ff5e1f;
+  --color-kumo-brand-hover: #ff7038;
+  --color-kumo-brand-soft: #ff9650;
+  --color-kumo-brand-dark: #d63c01;
+  --color-emergency-red: #ff3358;
+  --color-under-attack: #fb7185;
+
+  /* Surface Tier (Deep obsidian floor with warm zinc-charcoal card surfaces) */
+  --color-cream: #141416;
+  --color-canvas: #1b1b1e;
+  --color-bg-base: #0d0d0f;
+
+  /* Typography / Ink Tier (Crisp readable off-white, never blinding) */
+  --color-ink: #f4f4f6;
+  --color-ink-soft: #d2d2d6;
+  --color-muted: #8e8e98;
+  --color-nav-muted: #a4a4af;
+
+  /* Hairline Border Tier (Subtle dark boundary) */
+  --color-hairline: #2a2a2e;
+
+  /* Product Domain Tiers */
+  --color-compute: #38bdf8;
+  --color-storage: #f472b6;
+  --color-ai: #34d399;
+  --color-sase: #2dd4bf;
+  --color-selection-bg: #ff5e1f;
+
+  /* Shadcn mappings */
+  --background: var(--color-bg-base);
+  --foreground: var(--color-ink);
+  --card: var(--color-canvas);
+  --card-foreground: var(--color-ink);
+  --primary: var(--color-kumo-brand);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-canvas);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-cream);
+  --muted-foreground: var(--color-muted);
+  --border: var(--color-hairline);
+  --input: var(--color-hairline);
+  --ring: var(--color-kumo-brand);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -71,6 +122,11 @@ body {
   flex-direction: column;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark body {
+  background-color: var(--color-bg-base);
 }
 
 ::selection {
@@ -453,3 +509,44 @@ a {
   z-index: 1000;
   padding: 16px;
 }
+
+/* ============================================================================
+   Dark Mode Component Specifics
+   ============================================================================ */
+
+html.dark .code-inline {
+  background-color: #161619;
+  color: #e4e4e7;
+  border-color: var(--color-hairline);
+}
+
+html.dark .card-hairline:hover {
+  border-color: #3b3b42;
+}
+
+html.dark .btn-secondary:hover {
+  border-color: #3b3b42;
+  background-color: var(--color-cream);
+}
+
+html.dark .category-tab:hover {
+  border-color: #3b3b42;
+  background-color: var(--color-cream);
+}
+
+html.dark .modal-overlay {
+  background-color: rgba(0, 0, 0, 0.75);
+}
+
+html.dark .badge-expired {
+  background-color: #27272a;
+  color: #a1a1aa;
+  border-color: #3f3f46;
+}
+
+html.dark .notice-danger {
+  background-color: rgba(244, 63, 94, 0.12) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+  color: #fca5a5 !important;
+}
+

@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
 import { Card } from "@/components/ui/card";
+import { LuClipboardList } from "react-icons/lu";
 
 interface LeasesPageProps {
   searchParams?: Promise<{ env?: string; filter?: string }>;
@@ -140,7 +141,9 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
             gap: "12px",
           }}
         >
-          <div style={{ fontSize: "32px" }}>📋</div>
+          <div style={{ display: "flex", justifyContent: "center", color: "var(--color-muted)" }}>
+            <LuClipboardList size={38} />
+          </div>
           <h3 style={{ fontSize: "18px", fontWeight: 500, color: "var(--color-ink)" }}>
             No Leases Found Matching Filter
           </h3>

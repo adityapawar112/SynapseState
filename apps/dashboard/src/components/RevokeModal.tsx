@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { ActiveLeaseView, UserRole } from "@/lib/types";
 import { hasRolePermission } from "@/lib/domain";
+import { LuX, LuCircleCheck, LuTriangleAlert } from "react-icons/lu";
 
 interface RevokeModalProps {
   lease: ActiveLeaseView;
@@ -139,11 +140,11 @@ export function RevokeModal({
             id="revoke-modal-close-btn"
             type="button"
             className="btn btn-secondary"
-            style={{ padding: "4px 8px", fontSize: "14px", height: "32px", width: "32px" }}
+            style={{ padding: "0", fontSize: "14px", height: "32px", width: "32px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
             onClick={onClose}
             aria-label="Close modal"
           >
-            ✕
+            <LuX size={15} />
           </button>
         </div>
 
@@ -166,7 +167,9 @@ export function RevokeModal({
 
         {revokedSuccess ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "14px", textAlign: "center", padding: "16px 0" }}>
-            <div style={{ fontSize: "2rem" }}>✅</div>
+            <div style={{ display: "flex", justifyContent: "center", color: "var(--color-ai)" }}>
+              <LuCircleCheck size={42} />
+            </div>
             <h3 style={{ fontSize: "18px", color: "var(--color-ai)", fontWeight: 500 }}>
               Lease Revoked Successfully
             </h3>
@@ -301,8 +304,11 @@ export function RevokeModal({
             )}
 
             {!canRevoke && (
-              <div style={{ color: "var(--color-kumo-brand-dark)", fontSize: "13px", padding: "8px 12px", borderRadius: "var(--radius-xs)", backgroundColor: "rgba(255, 94, 31, 0.08)", border: "1px solid rgba(255, 94, 31, 0.25)" }}>
-                ⚠️ Your current role (<strong>{userRole}</strong>) is read-only. Only <strong>operator</strong> or <strong>admin</strong> can execute revocations.
+              <div style={{ color: "var(--color-kumo-brand-dark)", fontSize: "13px", padding: "8px 12px", borderRadius: "var(--radius-xs)", backgroundColor: "rgba(255, 94, 31, 0.08)", border: "1px solid rgba(255, 94, 31, 0.25)", display: "flex", alignItems: "center", gap: "8px" }}>
+                <LuTriangleAlert size={15} style={{ flexShrink: 0 }} />
+                <span>
+                  Your current role (<strong>{userRole}</strong>) is read-only. Only <strong>operator</strong> or <strong>admin</strong> can execute revocations.
+                </span>
               </div>
             )}
 

@@ -4,6 +4,7 @@ import { controlApiClient } from "@/lib/api";
 import { TelemetryChart } from "@/components/TelemetryChart";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LuFlag, LuFlame, LuSparkles, LuCircleCheck } from "react-icons/lu";
 
 interface FlagsPageProps {
   searchParams?: Promise<{ env?: string; search?: string }>;
@@ -93,7 +94,10 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
         }}
       >
         <div className="stat-card" style={{ padding: "18px 20px" }}>
-          <div className="stat-label">Observed Flags</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="stat-label">Observed Flags</div>
+            <LuFlag size={16} color="var(--color-compute)" />
+          </div>
           <div className="stat-value" style={{ fontSize: "28px" }}>
             {inventory.length}
           </div>
@@ -101,7 +105,10 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
         </div>
 
         <div className="stat-card" style={{ padding: "18px 20px" }}>
-          <div className="stat-label">Active Overrides</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="stat-label">Active Overrides</div>
+            <LuFlame size={16} color="var(--color-storage)" />
+          </div>
           <div
             className="stat-value"
             style={{
@@ -115,7 +122,10 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
         </div>
 
         <div className="stat-card" style={{ padding: "18px 20px" }}>
-          <div className="stat-label">Stale Purger Candidates</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="stat-label">Stale Purger Candidates</div>
+            <LuSparkles size={16} color="var(--color-ai)" />
+          </div>
           <div
             className="stat-value"
             style={{
@@ -183,12 +193,16 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
                     </h3>
 
                     {flag.activeLease && (
-                      <Badge variant="storage">Emergency Lease Active</Badge>
+                      <Badge variant="storage" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <LuFlame size={11} />
+                        <span>Emergency Lease Active</span>
+                      </Badge>
                     )}
 
                     {flag.isCandidateForPurge && (
-                      <Badge variant="ai" title="Qualified for synapse-purger AST cleanup PR">
-                        Purger Candidate
+                      <Badge variant="ai" title="Qualified for synapse-purger AST cleanup PR" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <LuSparkles size={11} />
+                        <span>Purger Candidate</span>
                       </Badge>
                     )}
                   </div>
@@ -216,8 +230,12 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
                       backgroundColor: "rgba(0, 189, 125, 0.08)",
                       border: "1px solid rgba(0, 189, 125, 0.25)",
                       fontSize: "12px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
                     }}
                   >
+                    <LuCircleCheck size={13} color="var(--color-ai)" />
                     <span style={{ color: "var(--color-muted)" }}>Dominant Variant: </span>
                     <strong style={{ color: "var(--color-ai)", fontFamily: "var(--font-mono)" }}>
                       {flag.winningVariant}

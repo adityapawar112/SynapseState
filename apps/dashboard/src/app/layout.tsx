@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { RoleBadge } from "@/components/RoleBadge";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { LuZap, LuShieldCheck, LuArrowUpRight } from "react-icons/lu";
 import { cookies } from "next/headers";
 import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
@@ -28,7 +30,14 @@ export default async function RootLayout({
   const role: UserRole = user?.role || "viewer";
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('synapse_theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');document.documentElement.setAttribute('data-theme','dark');}else{document.documentElement.classList.remove('dark');document.documentElement.setAttribute('data-theme','light');}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body>
         {/* Safety Boundary Banner */}
         <div
@@ -73,9 +82,13 @@ export default async function RootLayout({
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
               }}
             >
-              Incident Response ↗
+              <span>Incident Response</span>
+              <LuArrowUpRight size={13} />
             </Link>
           </div>
         </div>
@@ -131,7 +144,7 @@ export default async function RootLayout({
                     justifyContent: "center",
                   }}
                 >
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-cream)" }}>⚡</span>
+                  <LuZap size={15} color="var(--color-cream)" />
                 </div>
                 <span>SynapseState</span>
               </Link>
@@ -168,7 +181,9 @@ export default async function RootLayout({
             </div>
 
             {/* User Session & Status Affordances */}
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <ThemeToggle />
+
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -259,7 +274,8 @@ export default async function RootLayout({
               <span style={{ margin: "0 8px" }}>•</span>
               <span>Incident-Safety & Lifecycle Governance for OpenFeature</span>
               <span style={{ margin: "0 8px" }}>•</span>
-              <span style={{ color: "var(--color-ai)", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+              <span style={{ color: "var(--color-ai)", fontFamily: "var(--font-mono)", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <LuShieldCheck size={13} />
                 ZERO-CONTEXT TELEMETRY VERIFIED
               </span>
             </div>

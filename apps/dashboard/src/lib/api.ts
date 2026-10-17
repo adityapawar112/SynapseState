@@ -188,11 +188,12 @@ export class ControlApiClient {
       };
     }
 
+    const raw = data as unknown as Record<string, unknown>;
     return {
-      checkpointSeq: data.checkpoint_seq,
-      checkpointHash: data.checkpoint_hash,
-      sealedCount: data.sealed_count,
-      timestamp: data.timestamp,
+      checkpointSeq: Number(data.checkpoint_seq ?? raw.checkpointSeq ?? 0),
+      checkpointHash: String(data.checkpoint_hash ?? raw.checkpointHash ?? "genesis"),
+      sealedCount: Number(data.sealed_count ?? raw.sealedCount ?? 0),
+      timestamp: data.timestamp ?? (raw.timestamp as string | null) ?? null,
     };
   }
 

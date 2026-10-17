@@ -7,6 +7,17 @@ import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/a
 import type { UserRole } from "@/lib/types";
 import { Card, CardOrange } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  LuArrowRight,
+  LuShieldCheck,
+  LuShield,
+  LuKeyRound,
+  LuFlag,
+  LuActivity,
+  LuFileCheck2,
+  LuClock,
+  LuTerminal,
+} from "react-icons/lu";
 
 interface PageProps {
   searchParams?: Promise<{ env?: string }>;
@@ -107,7 +118,7 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
               }}
             >
               <span>Inspect Active Overrides</span>
-              <span style={{ fontSize: "14px" }}>→</span>
+              <LuArrowRight size={16} />
             </Link>
 
             <Link
@@ -217,7 +228,10 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
         >
           {/* Card 1: Active Leases (Storage Pink Accent) */}
           <div className="stat-card" id="stat-active-leases">
-            <div className="stat-label">Active Break-Glass Leases</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="stat-label">Active Break-Glass Leases</div>
+              <LuKeyRound size={16} color="var(--color-storage)" />
+            </div>
             <div
               className="stat-value"
               style={{
@@ -238,7 +252,10 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
 
           {/* Card 2: Managed Flags (Compute Blue Accent) */}
           <div className="stat-card" id="stat-managed-flags">
-            <div className="stat-label">Observed Flags ({currentEnv})</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="stat-label">Observed Flags ({currentEnv})</div>
+              <LuFlag size={16} color="var(--color-compute)" />
+            </div>
             <div className="stat-value" style={{ color: "var(--color-compute)" }}>
               {overview.totalFlagsCount}
             </div>
@@ -247,7 +264,10 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
 
           {/* Card 3: 24h Evaluations */}
           <div className="stat-card" id="stat-evaluations-volume">
-            <div className="stat-label">Evaluations (24h Window)</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="stat-label">Evaluations (24h Window)</div>
+              <LuActivity size={16} color="var(--color-ink)" />
+            </div>
             <div className="stat-value" style={{ color: "var(--color-ink)" }}>
               {overview.totalEvaluations24h.toLocaleString()}
             </div>
@@ -256,7 +276,10 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
 
           {/* Card 4: Audit Ledger (SASE Teal Accent) */}
           <div className="stat-card" id="stat-audit-checkpoint">
-            <div className="stat-label">Sealed Audit Events</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="stat-label">Sealed Audit Events</div>
+              <LuFileCheck2 size={16} color="var(--color-sase)" />
+            </div>
             <div className="stat-value" style={{ color: "var(--color-sase)" }}>
               {overview.sealedAuditCount}
             </div>
@@ -290,9 +313,10 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
             <Link
               href={`/leases?env=${currentEnv}`}
               className="btn btn-secondary"
-              style={{ fontSize: "13px", height: "32px", padding: "4px 12px" }}
+              style={{ fontSize: "13px", height: "32px", padding: "4px 12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
             >
-              View All Leases →
+              <span>View All Leases</span>
+              <LuArrowRight size={13} />
             </Link>
           </div>
 
@@ -307,7 +331,9 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
                 gap: "12px",
               }}
             >
-              <div style={{ fontSize: "28px" }}>🛡️</div>
+              <div style={{ display: "flex", justifyContent: "center", color: "var(--color-ai)" }}>
+                <LuShieldCheck size={36} />
+              </div>
               <h3 style={{ fontSize: "16px", fontWeight: 500, color: "var(--color-ink)" }}>
                 No Active Break-Glass Leases in {currentEnv.toUpperCase()}
               </h3>
@@ -352,7 +378,8 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
         >
           {/* Left: Air-Gapped Trust Root Card */}
           <Card style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "14px" }}>
-            <span className="mono-caption" style={{ color: "var(--color-sase)" }}>
+            <span className="mono-caption" style={{ color: "var(--color-sase)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <LuShield size={14} />
               SAFETY INVARIANT 2
             </span>
             <h3 style={{ fontSize: "22px", fontWeight: 500, letterSpacing: "-0.5px" }}>
@@ -372,7 +399,8 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
 
           {/* Right: Voltage Emphasis Split Panel Card */}
           <CardOrange style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "14px" }}>
-            <span className="mono-caption" style={{ color: "rgba(255, 251, 245, 0.85)" }}>
+            <span className="mono-caption" style={{ color: "rgba(255, 251, 245, 0.85)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <LuClock size={14} />
               SAFETY INVARIANT 3
             </span>
             <h3 style={{ fontSize: "22px", fontWeight: 500, color: "var(--color-cream)", letterSpacing: "-0.5px" }}>
@@ -404,7 +432,8 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
           }}
         >
           <div>
-            <span className="mono-caption" style={{ color: "var(--color-compute)" }}>
+            <span className="mono-caption" style={{ color: "var(--color-compute)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <LuTerminal size={14} />
               SRE WORKSTATION RUNBOOK
             </span>
             <h3

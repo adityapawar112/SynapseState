@@ -4,6 +4,8 @@ import React, { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { UserRole } from "@/lib/types";
 import { Card } from "@/components/ui/card";
+import { LuZap, LuShieldAlert, LuShieldCheck, LuEye, LuCircleAlert } from "react-icons/lu";
+import { FaGithub } from "react-icons/fa";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -90,7 +92,7 @@ export default function LoginPage() {
               boxShadow: "0 2px 8px rgba(255, 94, 31, 0.3)",
             }}
           >
-            <span style={{ fontSize: "24px", fontWeight: 700, color: "var(--color-cream)" }}>⚡</span>
+            <LuZap size={24} color="var(--color-cream)" />
           </div>
           <h1
             style={{
@@ -118,9 +120,13 @@ export default function LoginPage() {
               color: "var(--color-under-attack)",
               fontSize: "13px",
               lineHeight: 1.4,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
             }}
           >
-            {errorMsg}
+            <LuCircleAlert size={16} style={{ flexShrink: 0 }} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
@@ -136,9 +142,10 @@ export default function LoginPage() {
             alignItems: "center",
             justifyContent: "center",
             textDecoration: "none",
-            gap: "8px",
+            gap: "10px",
           }}
         >
+          <FaGithub size={18} />
           <span>Sign In with GitHub OIDC</span>
         </a>
 
@@ -165,18 +172,21 @@ export default function LoginPage() {
               title: "Operator Role (Recommended)",
               desc: "Can inspect leases, trigger revocations, and view incident attribution.",
               color: "var(--color-kumo-brand)",
+              icon: <LuShieldAlert size={16} color="var(--color-kumo-brand)" />,
             },
             {
               role: "admin" as UserRole,
               title: "Admin Role",
               desc: "Full administrative controls and service retirement capabilities.",
               color: "var(--color-sase)",
+              icon: <LuShieldCheck size={16} color="var(--color-sase)" />,
             },
             {
               role: "viewer" as UserRole,
               title: "Viewer Role",
               desc: "Read-only access. Blocked from revoking or mutating leases.",
               color: "var(--color-compute)",
+              icon: <LuEye size={16} color="var(--color-compute)" />,
             },
           ].map((item) => (
             <div
@@ -203,17 +213,10 @@ export default function LoginPage() {
                     color: item.color,
                     display: "flex",
                     alignItems: "center",
-                    gap: "6px",
+                    gap: "8px",
                   }}
                 >
-                  <span
-                    style={{
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "50%",
-                      backgroundColor: item.color,
-                    }}
-                  />
+                  {item.icon}
                   {item.title}
                 </span>
                 <span

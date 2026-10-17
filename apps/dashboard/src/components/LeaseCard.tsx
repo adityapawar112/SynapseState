@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import type { ActiveLeaseView, UserRole } from "@/lib/types";
 import { RevokeModal } from "@/components/RevokeModal";
 import { Badge } from "@/components/ui/badge";
+import { LuExternalLink, LuBan, LuClock } from "react-icons/lu";
 
 interface LeaseCardProps {
   lease: ActiveLeaseView;
@@ -112,8 +113,9 @@ export function LeaseCard({
 
           {/* Real-time countdown clock */}
           <div style={{ textAlign: "right" }}>
-            <div className="mono-caption" style={{ color: "var(--color-muted)", marginBottom: "4px" }}>
-              Remaining TTL
+            <div className="mono-caption" style={{ color: "var(--color-muted)", marginBottom: "4px", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
+              <LuClock size={12} />
+              <span>Remaining TTL</span>
             </div>
             <div
               id={`lease-countdown-${lease.leaseId}`}
@@ -196,9 +198,10 @@ export function LeaseCard({
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-secondary"
-                style={{ fontSize: "12px", height: "32px", padding: "4px 10px" }}
+                style={{ fontSize: "12px", height: "32px", padding: "4px 10px", display: "inline-flex", alignItems: "center", gap: "5px" }}
               >
-                View Promotion PR ↗
+                <span>View Promotion PR</span>
+                <LuExternalLink size={12} />
               </a>
             )}
 
@@ -207,10 +210,11 @@ export function LeaseCard({
                 id={`revoke-btn-${lease.leaseId}`}
                 type="button"
                 className="btn btn-danger"
-                style={{ fontSize: "12px", height: "32px", padding: "4px 12px" }}
+                style={{ fontSize: "12px", height: "32px", padding: "4px 12px", display: "inline-flex", alignItems: "center", gap: "5px" }}
                 onClick={() => setShowRevokeModal(true)}
               >
-                Revoke Override
+                <LuBan size={12} />
+                <span>Revoke Override</span>
               </button>
             )}
           </div>

@@ -4,6 +4,7 @@ import { controlApiClient } from "@/lib/api";
 import { verifyAuditLedgerChain } from "@/lib/domain";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LuShieldCheck, LuTriangleAlert, LuHash, LuFileCheck2, LuClock } from "react-icons/lu";
 
 interface AuditPageProps {
   searchParams?: Promise<{ from_seq?: string; limit?: string }>;
@@ -80,7 +81,13 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
             gap: "10px",
           }}
         >
-          <span style={{ fontSize: "16px" }}>{chainVerification.valid ? "🛡️" : "⚠️"}</span>
+          <span style={{ display: "inline-flex", alignItems: "center" }}>
+            {chainVerification.valid ? (
+              <LuShieldCheck size={20} color="var(--color-ai)" />
+            ) : (
+              <LuTriangleAlert size={20} color="var(--color-under-attack)" />
+            )}
+          </span>
           <div>
             <div
               className="mono-caption"
@@ -110,20 +117,22 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
         }}
       >
         <div>
-          <div className="mono-caption" style={{ color: "var(--color-muted)" }}>
+          <div className="mono-caption" style={{ color: "var(--color-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
+            <LuHash size={13} />
             Checkpoint Sequence
           </div>
           <div style={{ fontSize: "24px", fontWeight: 500, fontFamily: "var(--font-mono)", color: "var(--color-ink)", marginTop: "4px" }}>
-            #{latestCheckpoint.checkpointSeq}
+            #{latestCheckpoint?.checkpointSeq ?? 0}
           </div>
         </div>
 
         <div>
-          <div className="mono-caption" style={{ color: "var(--color-muted)" }}>
+          <div className="mono-caption" style={{ color: "var(--color-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
+            <LuFileCheck2 size={13} color="var(--color-sase)" />
             Sealed Records Count
           </div>
           <div style={{ fontSize: "24px", fontWeight: 500, color: "var(--color-sase)", marginTop: "4px" }}>
-            {latestCheckpoint.sealedCount.toLocaleString()}{" "}
+            {(latestCheckpoint?.sealedCount ?? 0).toLocaleString()}{" "}
             <span style={{ fontSize: "14px", color: "var(--color-muted)" }}>events</span>
           </div>
         </div>
@@ -142,18 +151,19 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
               whiteSpace: "nowrap",
               marginTop: "6px",
             }}
-            title={latestCheckpoint.checkpointHash}
+            title={latestCheckpoint?.checkpointHash || "genesis"}
           >
-            {latestCheckpoint.checkpointHash}
+            {latestCheckpoint?.checkpointHash || "genesis"}
           </div>
         </div>
 
         <div>
-          <div className="mono-caption" style={{ color: "var(--color-muted)" }}>
+          <div className="mono-caption" style={{ color: "var(--color-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
+            <LuClock size={13} />
             Checkpoint Timestamp
           </div>
           <div style={{ fontSize: "14px", color: "var(--color-ink)", marginTop: "6px" }}>
-            {latestCheckpoint.timestamp
+            {latestCheckpoint?.timestamp
               ? new Date(latestCheckpoint.timestamp).toLocaleString()
               : "Genesis initial"}
           </div>
