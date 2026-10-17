@@ -3,6 +3,7 @@
 import React, { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { UserRole } from "@/lib/types";
+import { Card } from "@/components/ui/card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,18 +61,19 @@ export default function LoginPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        minHeight: "70vh",
+        minHeight: "75vh",
+        padding: "24px",
       }}
     >
-      <div
-        className="glass-panel"
+      <Card
         style={{
           width: "100%",
           maxWidth: "480px",
-          padding: "32px",
+          padding: "40px 32px",
           display: "flex",
           flexDirection: "column",
-          gap: "24px",
+          gap: "28px",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.03)",
         }}
       >
         <div style={{ textAlign: "center" }}>
@@ -79,20 +81,29 @@ export default function LoginPage() {
             style={{
               width: "48px",
               height: "48px",
-              borderRadius: "12px",
-              background: "linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)",
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: "var(--color-kumo-brand)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              margin: "0 auto 12px auto",
-              boxShadow: "0 0 20px rgba(56, 189, 248, 0.4)",
-              fontSize: "24px",
+              margin: "0 auto 16px auto",
+              boxShadow: "0 2px 8px rgba(255, 94, 31, 0.3)",
             }}
           >
-            ⚡
+            <span style={{ fontSize: "24px", fontWeight: 700, color: "var(--color-cream)" }}>⚡</span>
           </div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 800 }}>SynapseState Portal</h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginTop: "4px" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "26px",
+              fontWeight: 500,
+              letterSpacing: "-0.6px",
+              color: "var(--color-ink)",
+            }}
+          >
+            SynapseState Portal
+          </h1>
+          <p style={{ color: "var(--color-muted)", fontSize: "14px", marginTop: "4px" }}>
             Authenticate with GitHub OIDC or switch dev session roles
           </p>
         </div>
@@ -100,12 +111,12 @@ export default function LoginPage() {
         {errorMsg && (
           <div
             style={{
-              padding: "10px 14px",
-              borderRadius: "6px",
-              backgroundColor: "rgba(244, 63, 94, 0.15)",
-              border: "1px solid rgba(244, 63, 94, 0.35)",
-              color: "#fecdd3",
-              fontSize: "0.8125rem",
+              padding: "12px 14px",
+              borderRadius: "var(--radius-xs)",
+              backgroundColor: "#fff1f2",
+              border: "1px solid #fecdd3",
+              color: "var(--color-under-attack)",
+              fontSize: "13px",
               lineHeight: 1.4,
             }}
           >
@@ -117,11 +128,10 @@ export default function LoginPage() {
         <a
           id="btn-github-oidc-login"
           href="/api/auth/github"
-          className="btn btn-primary"
+          className="btn-pill-brand"
           style={{
             width: "100%",
-            padding: "12px",
-            fontSize: "0.9375rem",
+            fontSize: "15px",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -137,35 +147,36 @@ export default function LoginPage() {
             display: "flex",
             alignItems: "center",
             gap: "12px",
-            color: "var(--text-muted)",
-            fontSize: "0.75rem",
+            color: "var(--color-muted)",
           }}
         >
-          <div style={{ flex: 1, height: "1px", backgroundColor: "var(--border-subtle)" }} />
-          <span>DEVELOPMENT SESSION SWITCHER</span>
-          <div style={{ flex: 1, height: "1px", backgroundColor: "var(--border-subtle)" }} />
+          <div style={{ flex: 1, height: "1px", backgroundColor: "var(--color-hairline)" }} />
+          <span className="mono-caption" style={{ fontSize: "11px" }}>
+            DEVELOPMENT SESSION SWITCHER
+          </span>
+          <div style={{ flex: 1, height: "1px", backgroundColor: "var(--color-hairline)" }} />
         </div>
 
         {/* Role Switcher Cards */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {[
             {
               role: "operator" as UserRole,
               title: "Operator Role (Recommended)",
               desc: "Can inspect leases, trigger revocations, and view incident attribution.",
-              color: "var(--accent-amber)",
+              color: "var(--color-kumo-brand)",
             },
             {
               role: "admin" as UserRole,
               title: "Admin Role",
               desc: "Full administrative controls and service retirement capabilities.",
-              color: "var(--accent-purple)",
+              color: "var(--color-sase)",
             },
             {
               role: "viewer" as UserRole,
               title: "Viewer Role",
               desc: "Read-only access. Blocked from revoking or mutating leases.",
-              color: "var(--accent-cyan)",
+              color: "var(--color-compute)",
             },
           ].map((item) => (
             <div
@@ -176,29 +187,49 @@ export default function LoginPage() {
                 handleDevRoleLogin(item.role);
               }}
               style={{
-                padding: "14px",
-                borderRadius: "8px",
-                backgroundColor: "rgba(0, 0, 0, 0.25)",
-                border: "1px solid var(--border-subtle)",
+                padding: "16px",
+                borderRadius: "var(--radius-md)",
+                backgroundColor: "var(--color-cream)",
+                border: "1px solid var(--color-hairline)",
                 cursor: "pointer",
-                transition: "all 0.15s ease",
+                transition: "border-color 0.15s ease",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: item.color }}>
+                <span
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    color: item.color,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      backgroundColor: item.color,
+                    }}
+                  />
                   {item.title}
                 </span>
-                <span className="btn btn-secondary" style={{ fontSize: "0.6875rem", padding: "2px 8px" }}>
+                <span
+                  className="btn btn-secondary"
+                  style={{ fontSize: "12px", height: "26px", padding: "2px 8px" }}
+                >
                   {loading && selectedRole === item.role ? "Switching..." : "Switch"}
                 </span>
               </div>
-              <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "4px" }}>
+              <p style={{ fontSize: "12.5px", color: "var(--color-muted)", marginTop: "4px", lineHeight: 1.4 }}>
                 {item.desc}
               </p>
             </div>
           ))}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

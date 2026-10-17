@@ -5,6 +5,7 @@ import { LeaseCard } from "@/components/LeaseCard";
 import { cookies } from "next/headers";
 import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
+import { Card } from "@/components/ui/card";
 
 interface LeasesPageProps {
   searchParams?: Promise<{ env?: string; filter?: string }>;
@@ -36,7 +37,16 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
   });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <div
+      style={{
+        maxWidth: "1280px",
+        margin: "0 auto",
+        padding: "40px 24px 64px 24px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "32px",
+      }}
+    >
       {/* Header & Controls */}
       <div
         style={{
@@ -48,26 +58,28 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
         }}
       >
         <div>
-          <h1 style={{ fontSize: "1.75rem", fontWeight: 800, letterSpacing: "-0.02em" }}>
+          <span className="mono-caption" style={{ color: "var(--color-storage)" }}>
+            IN-PROCESS OVERRIDES
+          </span>
+          <h1
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "36px",
+              fontWeight: 500,
+              letterSpacing: "-0.8px",
+              color: "var(--color-ink)",
+              marginTop: "2px",
+            }}
+          >
             Break-Glass Leases
           </h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginTop: "4px" }}>
+          <p style={{ color: "var(--color-muted)", fontSize: "15px", marginTop: "4px" }}>
             Real-time emergency overrides enforcing dual-clock auto-expiry bounds.
           </p>
         </div>
 
-        {/* Environment Selector */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            padding: "4px",
-            borderRadius: "8px",
-            backgroundColor: "rgba(0, 0, 0, 0.3)",
-            border: "1px solid var(--border-subtle)",
-            gap: "4px",
-          }}
-        >
+        {/* Environment Selector Tabs */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           {["prod", "staging", "dev"].map((env) => {
             const isActive = env === currentEnv;
             return (
@@ -75,15 +87,8 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
                 key={env}
                 href={`/leases?env=${env}&filter=${filter}`}
                 id={`lease-env-select-${env}`}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: "6px",
-                  fontSize: "0.8125rem",
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  backgroundColor: isActive ? "#0284c7" : "transparent",
-                  color: isActive ? "#ffffff" : "var(--text-secondary)",
-                }}
+                className={`category-tab ${isActive ? "category-tab-active" : ""}`}
+                style={{ textTransform: "uppercase", fontSize: "12px", fontFamily: "var(--font-mono)" }}
               >
                 {env}
               </Link>
@@ -92,8 +97,16 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px" }}>
+      {/* Filter Tabs (Category-Tab Pills) */}
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          borderBottom: "1px solid var(--color-hairline)",
+          paddingBottom: "16px",
+          flexWrap: "wrap",
+        }}
+      >
         {[
           { id: "all", label: `All Leases (${allLeases.length})` },
           { id: "active", label: "Active" },
@@ -106,14 +119,8 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
               key={tab.id}
               href={`/leases?env=${currentEnv}&filter=${tab.id}`}
               id={`lease-filter-tab-${tab.id}`}
-              style={{
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                padding: "6px 12px",
-                borderRadius: "6px",
-                backgroundColor: isActive ? "rgba(255, 255, 255, 0.08)" : "transparent",
-                color: isActive ? "var(--text-primary)" : "var(--text-muted)",
-              }}
+              className={`category-tab ${isActive ? "category-tab-active" : ""}`}
+              style={{ fontSize: "13px" }}
             >
               {tab.label}
             </Link>
@@ -123,10 +130,9 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
 
       {/* Leases Grid */}
       {filteredLeases.length === 0 ? (
-        <div
-          className="glass-panel"
+        <Card
           style={{
-            padding: "48px 24px",
+            padding: "56px 24px",
             textAlign: "center",
             display: "flex",
             flexDirection: "column",
@@ -134,19 +140,19 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
             gap: "12px",
           }}
         >
-          <div style={{ fontSize: "2.5rem" }}>📋</div>
-          <h3 style={{ fontSize: "1.125rem", fontWeight: 600 }}>
+          <div style={{ fontSize: "32px" }}>📋</div>
+          <h3 style={{ fontSize: "18px", fontWeight: 500, color: "var(--color-ink)" }}>
             No Leases Found Matching Filter
           </h3>
-          <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", maxWidth: "480px" }}>
+          <p style={{ fontSize: "14px", color: "var(--color-muted)", maxWidth: "480px" }}>
             No emergency overrides in {currentEnv.toUpperCase()} matching status &quot;{filter}&quot;.
           </p>
-        </div>
+        </Card>
       ) : (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
             gap: "16px",
           }}
         >

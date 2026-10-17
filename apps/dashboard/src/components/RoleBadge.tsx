@@ -7,25 +7,28 @@ interface RoleBadgeProps {
 }
 
 export function RoleBadge({ role, showPermissions = false }: RoleBadgeProps) {
-  const roleStyles: Record<UserRole, { bg: string; color: string; border: string; label: string; desc: string }> = {
+  const roleStyles: Record<
+    UserRole,
+    { bg: string; color: string; border: string; label: string; desc: string }
+  > = {
     viewer: {
-      bg: "rgba(56, 189, 248, 0.12)",
-      color: "#38bdf8",
-      border: "rgba(56, 189, 248, 0.3)",
+      bg: "rgba(10, 149, 255, 0.08)",
+      color: "var(--color-compute)",
+      border: "rgba(10, 149, 255, 0.25)",
       label: "Viewer",
       desc: "Read-only access to state, logs, and telemetry",
     },
     operator: {
-      bg: "rgba(245, 158, 11, 0.12)",
-      color: "#fbbf24",
-      border: "rgba(245, 158, 11, 0.3)",
+      bg: "rgba(255, 94, 31, 0.08)",
+      color: "var(--color-kumo-brand)",
+      border: "rgba(255, 94, 31, 0.3)",
       label: "Operator",
       desc: "Authorized to revoke emergency leases and promote to Git",
     },
     admin: {
-      bg: "rgba(168, 85, 247, 0.12)",
-      color: "#c084fc",
-      border: "rgba(168, 85, 247, 0.3)",
+      bg: "rgba(13, 148, 136, 0.08)",
+      color: "var(--color-sase)",
+      border: "rgba(13, 148, 136, 0.25)",
       label: "Admin",
       desc: "Full administrative access and service lifecycle controls",
     },
@@ -40,11 +43,12 @@ export function RoleBadge({ role, showPermissions = false }: RoleBadgeProps) {
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: "4px",
+          gap: "6px",
           padding: "3px 10px",
-          borderRadius: "9999px",
-          fontSize: "0.75rem",
-          fontWeight: 600,
+          borderRadius: "var(--radius-full)",
+          fontFamily: "var(--font-mono)",
+          fontSize: "11px",
+          fontWeight: 500,
           letterSpacing: "0.05em",
           textTransform: "uppercase",
           backgroundColor: current.bg,
@@ -64,7 +68,7 @@ export function RoleBadge({ role, showPermissions = false }: RoleBadgeProps) {
         {current.label}
       </span>
       {showPermissions && (
-        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+        <span style={{ fontSize: "12px", color: "var(--color-muted)", fontFamily: "var(--font-sans)" }}>
           ({current.desc})
         </span>
       )}

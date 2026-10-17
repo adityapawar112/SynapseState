@@ -34,50 +34,79 @@ export default async function RootLayout({
         <div
           id="safety-boundary-banner"
           style={{
-            backgroundColor: "rgba(2, 132, 199, 0.15)",
-            borderBottom: "1px solid rgba(56, 189, 248, 0.25)",
-            padding: "8px 16px",
-            fontSize: "0.75rem",
-            color: "#bae6fd",
-            textAlign: "center",
+            backgroundColor: "var(--color-cream)",
+            borderBottom: "1px solid var(--color-hairline)",
+            padding: "8px 24px",
+            fontSize: "12px",
+            color: "var(--color-ink-soft)",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
             gap: "8px",
           }}
         >
-          <span>🔒</span>
-          <span>
-            <strong>Safety Invariant:</strong> Read-mostly operations dashboard. Emergency break-glass
-            leases are cryptographically signed on operator workstations. Control API and web tier
-            never store private signing keys.
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: "var(--color-kumo-brand)",
+                display: "inline-block",
+              }}
+            />
+            <span>
+              <strong>Safety Invariant:</strong> Read-mostly operations dashboard. Emergency break-glass
+              leases are cryptographically signed on operator workstations. Control API and web tier never store private signing keys.
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <Link
+              href="/leases"
+              id="under-attack-link"
+              style={{
+                color: "var(--color-under-attack)",
+                fontSize: "12px",
+                fontFamily: "var(--font-mono)",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Incident Response ↗
+            </Link>
+          </div>
         </div>
 
-        {/* Global Navigation Header */}
+        {/* Global Navigation Header (Clean White 64px Hairline Nav) */}
         <header
           style={{
-            borderBottom: "1px solid var(--border-subtle)",
-            backgroundColor: "rgba(9, 13, 22, 0.8)",
-            backdropFilter: "blur(12px)",
+            borderBottom: "1px solid var(--color-hairline)",
+            backgroundColor: "var(--color-canvas)",
             position: "sticky",
             top: 0,
             zIndex: 100,
+            height: "64px",
+            display: "flex",
+            alignItems: "center",
           }}
         >
           <div
             style={{
-              maxWidth: "1400px",
+              maxWidth: "1280px",
+              width: "100%",
               margin: "0 auto",
-              padding: "12px 24px",
+              padding: "0 24px",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: "20px",
+              gap: "24px",
             }}
           >
-            {/* Logo & Brand */}
-            <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+            {/* Logo & Navigation Tabs */}
+            <div style={{ display: "flex", alignItems: "center", gap: "32px" }}>
               <Link
                 href="/"
                 id="nav-logo-link"
@@ -85,25 +114,24 @@ export default async function RootLayout({
                   display: "flex",
                   alignItems: "center",
                   gap: "10px",
-                  fontSize: "1.125rem",
-                  fontWeight: 800,
-                  letterSpacing: "-0.025em",
-                  color: "var(--text-primary)",
+                  fontSize: "18px",
+                  fontWeight: 600,
+                  letterSpacing: "-0.4px",
+                  color: "var(--color-ink)",
                 }}
               >
                 <div
                   style={{
                     width: "28px",
                     height: "28px",
-                    borderRadius: "8px",
-                    background: "linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)",
+                    borderRadius: "var(--radius-sm)",
+                    backgroundColor: "var(--color-kumo-brand)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    boxShadow: "0 0 12px rgba(56, 189, 248, 0.4)",
                   }}
                 >
-                  <span style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>⚡</span>
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-cream)" }}>⚡</span>
                 </div>
                 <span>SynapseState</span>
               </Link>
@@ -113,63 +141,66 @@ export default async function RootLayout({
                 id="main-nav-tabs"
                 style={{ display: "flex", alignItems: "center", gap: "4px" }}
               >
-                <Link
-                  href="/"
-                  id="nav-tab-overview"
-                  className="btn btn-secondary"
-                  style={{ border: "none", padding: "6px 12px" }}
-                >
-                  Overview
-                </Link>
-                <Link
-                  href="/leases"
-                  id="nav-tab-leases"
-                  className="btn btn-secondary"
-                  style={{ border: "none", padding: "6px 12px" }}
-                >
-                  Active Leases
-                </Link>
-                <Link
-                  href="/flags"
-                  id="nav-tab-flags"
-                  className="btn btn-secondary"
-                  style={{ border: "none", padding: "6px 12px" }}
-                >
-                  Flag Inventory
-                </Link>
-                <Link
-                  href="/audit"
-                  id="nav-tab-audit"
-                  className="btn btn-secondary"
-                  style={{ border: "none", padding: "6px 12px" }}
-                >
-                  Audit Ledger
-                </Link>
+                {[
+                  { id: "nav-tab-overview", href: "/", label: "Overview" },
+                  { id: "nav-tab-leases", href: "/leases", label: "Active Leases" },
+                  { id: "nav-tab-flags", href: "/flags", label: "Flag Inventory" },
+                  { id: "nav-tab-audit", href: "/audit", label: "Audit Ledger" },
+                ].map((item) => (
+                  <Link
+                    key={item.href}
+                    id={item.id}
+                    href={item.href}
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                      color: "var(--color-nav-muted)",
+                      padding: "6px 12px",
+                      borderRadius: "var(--radius-md)",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
               </nav>
             </div>
 
-            {/* User Session & Status */}
-            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-              <span className="badge badge-healthy" title="Control API cluster operational">
-                API Healthy
+            {/* User Session & Status Affordances */}
+            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "11px",
+                  color: "var(--color-ai)",
+                  backgroundColor: "rgba(0, 189, 125, 0.1)",
+                  border: "1px solid rgba(0, 189, 125, 0.25)",
+                  padding: "3px 8px",
+                  borderRadius: "var(--radius-full)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Mesh Online
               </span>
 
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "10px",
+                  gap: "8px",
                   padding: "4px 10px",
-                  borderRadius: "8px",
-                  backgroundColor: "rgba(255, 255, 255, 0.03)",
-                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-full)",
+                  backgroundColor: "var(--color-cream)",
+                  border: "1px solid var(--color-hairline)",
                 }}
               >
                 <RoleBadge role={role} />
                 <span
                   style={{
-                    fontSize: "0.8125rem",
-                    color: "var(--text-secondary)",
+                    fontSize: "12px",
+                    color: "var(--color-ink-soft)",
                     fontFamily: "var(--font-mono)",
                   }}
                 >
@@ -179,9 +210,9 @@ export default async function RootLayout({
                   href="/login"
                   id="switch-role-link"
                   style={{
-                    fontSize: "0.75rem",
-                    color: "var(--accent-cyan)",
-                    textDecoration: "underline",
+                    fontSize: "12px",
+                    color: "var(--color-kumo-brand)",
+                    fontWeight: 500,
                     marginLeft: "4px",
                   }}
                 >
@@ -196,44 +227,48 @@ export default async function RootLayout({
         <main
           style={{
             flex: 1,
-            maxWidth: "1400px",
             width: "100%",
-            margin: "0 auto",
-            padding: "24px",
           }}
         >
           {children}
         </main>
 
-        {/* Global Footer */}
+        {/* Global Footer (Hairline Top Border & Monospace Captions) */}
         <footer
           style={{
-            borderTop: "1px solid var(--border-subtle)",
-            padding: "20px 24px",
-            backgroundColor: "var(--bg-primary)",
-            fontSize: "0.8125rem",
-            color: "var(--text-muted)",
+            borderTop: "1px solid var(--color-hairline)",
+            backgroundColor: "var(--color-canvas)",
+            padding: "24px",
+            fontSize: "13px",
+            color: "var(--color-muted)",
           }}
         >
           <div
             style={{
-              maxWidth: "1400px",
+              maxWidth: "1280px",
               margin: "0 auto",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
               flexWrap: "wrap",
-              gap: "12px",
+              gap: "16px",
             }}
           >
             <div>
-              <span>SynapseState v0.1.0 • Incident-Safety Layer for OpenFeature</span>
+              <span style={{ fontWeight: 500, color: "var(--color-ink)" }}>SynapseState</span>
               <span style={{ margin: "0 8px" }}>•</span>
-              <span style={{ color: "#34d399" }}>Zero-Context Telemetry Verified</span>
+              <span>Incident-Safety & Lifecycle Governance for OpenFeature</span>
+              <span style={{ margin: "0 8px" }}>•</span>
+              <span style={{ color: "var(--color-ai)", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+                ZERO-CONTEXT TELEMETRY VERIFIED
+              </span>
             </div>
-            <div style={{ display: "flex", gap: "16px" }}>
-              <span>SLO: Lease Propagation ≤10s</span>
-              <span>SLO: Expiry Correctness = 0 past TTL</span>
+            <div
+              className="mono-caption"
+              style={{ display: "flex", gap: "20px", color: "var(--color-muted)" }}
+            >
+              <span>PROPAGATION ≤ 10S</span>
+              <span>EXPIRY DEADLINE = 0 PAST TTL</span>
             </div>
           </div>
         </footer>

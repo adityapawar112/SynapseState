@@ -7,13 +7,13 @@ interface TelemetryChartProps {
   winningVariant?: string;
 }
 
-const VARIANT_COLORS = [
-  "#38bdf8", // Sky blue
-  "#10b981", // Emerald green
-  "#a855f7", // Purple
-  "#f59e0b", // Amber
-  "#f43f5e", // Rose
-  "#64748b", // Slate
+const DOMAIN_VARIANT_COLORS = [
+  "var(--color-kumo-brand)", // Voltage Orange
+  "var(--color-compute)",    // Compute Blue
+  "var(--color-ai)",         // AI Green
+  "var(--color-storage)",    // Storage Pink
+  "var(--color-sase)",       // SASE Teal
+  "var(--color-ink-soft)",   // Charcoal
 ];
 
 export function TelemetryChart({
@@ -23,7 +23,7 @@ export function TelemetryChart({
 }: TelemetryChartProps) {
   if (variants.length === 0 || totalEvaluations === 0) {
     return (
-      <div style={{ padding: "12px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
+      <div style={{ padding: "12px 0", color: "var(--color-muted)", fontSize: "13px", fontFamily: "var(--font-sans)" }}>
         No telemetry evaluations recorded in window
       </div>
     );
@@ -35,15 +35,15 @@ export function TelemetryChart({
       <div
         style={{
           display: "flex",
-          height: "10px",
+          height: "8px",
           width: "100%",
-          borderRadius: "9999px",
+          borderRadius: "var(--radius-full)",
           overflow: "hidden",
-          backgroundColor: "rgba(255, 255, 255, 0.05)",
+          backgroundColor: "var(--color-hairline)",
         }}
       >
         {variants.map((v, idx) => {
-          const color = VARIANT_COLORS[idx % VARIANT_COLORS.length];
+          const color = DOMAIN_VARIANT_COLORS[idx % DOMAIN_VARIANT_COLORS.length];
           return (
             <div
               key={v.variant}
@@ -64,11 +64,11 @@ export function TelemetryChart({
           display: "flex",
           flexWrap: "wrap",
           gap: "12px",
-          fontSize: "0.8125rem",
+          fontSize: "13px",
         }}
       >
         {variants.map((v, idx) => {
-          const color = VARIANT_COLORS[idx % VARIANT_COLORS.length];
+          const color = DOMAIN_VARIANT_COLORS[idx % DOMAIN_VARIANT_COLORS.length];
           const isWinning = winningVariant === v.variant;
 
           return (
@@ -91,27 +91,29 @@ export function TelemetryChart({
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontWeight: isWinning ? 700 : 500,
-                  color: isWinning ? "var(--text-primary)" : "var(--text-secondary)",
+                  fontWeight: isWinning ? 600 : 400,
+                  color: isWinning ? "var(--color-ink)" : "var(--color-ink-soft)",
                 }}
               >
                 {v.variant}
               </span>
-              <span style={{ color: "var(--text-muted)" }}>
+              <span style={{ color: "var(--color-muted)", fontSize: "12px" }}>
                 {v.percentage}% ({v.count.toLocaleString()})
               </span>
               {isWinning && (
                 <span
                   style={{
-                    fontSize: "0.6875rem",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "10px",
                     padding: "1px 6px",
-                    borderRadius: "4px",
-                    backgroundColor: "rgba(16, 185, 129, 0.2)",
-                    color: "#34d399",
+                    borderRadius: "var(--radius-full)",
+                    backgroundColor: "rgba(0, 189, 125, 0.12)",
+                    color: "#00875a",
                     fontWeight: 600,
+                    letterSpacing: "0.05em",
                   }}
                 >
-                  WINNING
+                  STABLE
                 </span>
               )}
             </div>

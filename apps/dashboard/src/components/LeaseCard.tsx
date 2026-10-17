@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import type { ActiveLeaseView, UserRole } from "@/lib/types";
 import { RevokeModal } from "@/components/RevokeModal";
+import { Badge } from "@/components/ui/badge";
 
 interface LeaseCardProps {
   lease: ActiveLeaseView;
@@ -33,7 +34,6 @@ export function LeaseCard({
   const [remainingSeconds, setRemainingSeconds] = useState(lease.remainingSeconds);
   const [showRevokeModal, setShowRevokeModal] = useState(false);
 
-  // Monotonic local ticker
   useEffect(() => {
     setRemainingSeconds(lease.remainingSeconds);
     if (lease.remainingSeconds <= 0) return;
@@ -48,56 +48,62 @@ export function LeaseCard({
   const isExpired = remainingSeconds <= 0;
   const isNearExpiry = !isExpired && remainingSeconds <= 300;
 
-  let badgeClass = "badge-active";
+  let badgeVariant:
+    | "active"
+    | "nearExpiry"
+    | "expired"
+    | "revoked"
+    | "promoted" = "active";
   let statusText = "Active";
 
   if (lease.status === "REVOKED") {
-    badgeClass = "badge-revoked";
+    badgeVariant = "revoked";
     statusText = "Revoked";
   } else if (lease.status === "PROMOTED") {
-    badgeClass = "badge-promoted";
+    badgeVariant = "promoted";
     statusText = "Promoted to Git";
   } else if (isExpired) {
-    badgeClass = "badge-expired";
+    badgeVariant = "expired";
     statusText = "Expired";
   } else if (isNearExpiry) {
-    badgeClass = "badge-near-expiry";
+    badgeVariant = "nearExpiry";
     statusText = "Near Expiry";
   }
+
+  const borderLeftColor = isNearExpiry
+    ? "var(--color-kumo-brand)"
+    : !isExpired
+    ? "var(--color-storage)"
+    : "var(--color-hairline)";
 
   return (
     <>
       <div
         id={`lease-card-${lease.leaseId}`}
-        className="glass-panel"
+        className="card-hairline"
         style={{
-          padding: "20px",
           display: "flex",
           flexDirection: "column",
-          gap: "14px",
-          borderLeft: isNearExpiry
-            ? "4px solid var(--accent-amber)"
-            : !isExpired
-            ? "4px solid var(--accent-emerald)"
-            : "4px solid var(--text-muted)",
+          gap: "16px",
+          borderLeft: `4px solid ${borderLeftColor}`,
         }}
       >
-        {/* Header row: Flag Key & Status Badge */}
+        {/* Header row: Status & Ticker */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span className={`badge ${badgeClass}`}>{statusText}</span>
-              <span className="code-inline" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+              <Badge variant={badgeVariant}>{statusText}</Badge>
+              <span className="code-inline" style={{ fontSize: "11px" }}>
                 {lease.env}
               </span>
             </div>
             <h3
               style={{
-                fontSize: "1.125rem",
-                fontWeight: 700,
-                marginTop: "6px",
                 fontFamily: "var(--font-mono)",
-                color: "var(--text-primary)",
+                fontSize: "16px",
+                fontWeight: 600,
+                marginTop: "8px",
+                color: "var(--color-ink)",
               }}
             >
               {lease.flagKey}
@@ -106,27 +112,20 @@ export function LeaseCard({
 
           {/* Real-time countdown clock */}
           <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontSize: "0.75rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                color: "var(--text-muted)",
-              }}
-            >
+            <div className="mono-caption" style={{ color: "var(--color-muted)", marginBottom: "4px" }}>
               Remaining TTL
             </div>
             <div
               id={`lease-countdown-${lease.leaseId}`}
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: "1.25rem",
-                fontWeight: 700,
+                fontSize: "20px",
+                fontWeight: 600,
                 color: isNearExpiry
-                  ? "var(--accent-amber)"
+                  ? "var(--color-kumo-brand)"
                   : !isExpired
-                  ? "var(--accent-emerald)"
-                  : "var(--text-muted)",
+                  ? "var(--color-storage)"
+                  : "var(--color-muted)",
               }}
             >
               {formatDuration(remainingSeconds)}
@@ -137,31 +136,33 @@ export function LeaseCard({
         {/* Forced Value & Reason */}
         <div
           style={{
-            padding: "10px 12px",
-            borderRadius: "6px",
-            backgroundColor: "rgba(0, 0, 0, 0.25)",
-            border: "1px solid var(--border-subtle)",
+            padding: "12px 14px",
+            borderRadius: "var(--radius-xs)",
+            backgroundColor: "var(--color-cream)",
+            border: "1px solid var(--color-hairline)",
             display: "flex",
             flexDirection: "column",
             gap: "6px",
           }}
         >
           <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Forced Variant:</span>
+            <span className="mono-caption" style={{ color: "var(--color-muted)" }}>
+              Forced Variant:
+            </span>
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontWeight: 700,
-                color: "var(--accent-cyan)",
-                fontSize: "0.9375rem",
+                fontWeight: 600,
+                color: "var(--color-storage)",
+                fontSize: "14px",
               }}
             >
               {JSON.stringify(lease.value)}
             </span>
           </div>
 
-          <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-            <span style={{ color: "var(--text-muted)" }}>Reason: </span>
+          <div style={{ fontSize: "13px", color: "var(--color-ink-soft)", lineHeight: 1.4 }}>
+            <span style={{ color: "var(--color-muted)", fontWeight: 500 }}>Reason: </span>
             {lease.reason}
           </div>
         </div>
@@ -173,18 +174,18 @@ export function LeaseCard({
             flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
-            fontSize: "0.75rem",
-            color: "var(--text-muted)",
+            fontSize: "12px",
+            color: "var(--color-muted)",
             gap: "8px",
-            paddingTop: "6px",
-            borderTop: "1px solid var(--border-subtle)",
+            paddingTop: "10px",
+            borderTop: "1px solid var(--color-hairline)",
           }}
         >
-          <div>
-            <span>Actor KID: </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span className="mono-caption">KID:</span>
             <span className="code-inline">{lease.kid}</span>
-            <span style={{ margin: "0 6px" }}>•</span>
-            <span>Lease: </span>
+            <span style={{ margin: "0 4px" }}>•</span>
+            <span className="mono-caption">Lease:</span>
             <span className="code-inline">{lease.leaseId.slice(0, 10)}…</span>
           </div>
 
@@ -195,7 +196,7 @@ export function LeaseCard({
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-secondary"
-                style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                style={{ fontSize: "12px", height: "32px", padding: "4px 10px" }}
               >
                 View Promotion PR ↗
               </a>
@@ -206,7 +207,7 @@ export function LeaseCard({
                 id={`revoke-btn-${lease.leaseId}`}
                 type="button"
                 className="btn btn-danger"
-                style={{ fontSize: "0.75rem", padding: "4px 10px" }}
+                style={{ fontSize: "12px", height: "32px", padding: "4px 12px" }}
                 onClick={() => setShowRevokeModal(true)}
               >
                 Revoke Override

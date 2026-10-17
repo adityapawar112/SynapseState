@@ -47,7 +47,6 @@ export function RevokeModal({
         }
       }
 
-      // Read CSRF token from browser cookie
       const csrfCookie = typeof document !== "undefined"
         ? document.cookie
             .split("; ")
@@ -105,29 +104,42 @@ export function RevokeModal({
       }}
     >
       <div
-        className="glass-panel"
+        className="card-hairline"
         style={{
           width: "100%",
           maxWidth: "540px",
-          padding: "24px",
+          backgroundColor: "var(--color-canvas)",
+          padding: "32px",
           display: "flex",
           flexDirection: "column",
-          gap: "16px",
-          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
+          gap: "20px",
+          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2
-            id="revoke-modal-title"
-            style={{ fontSize: "1.25rem", fontWeight: 700, color: "#f87171" }}
-          >
-            Revoke Emergency Break-Glass Lease
-          </h2>
+          <div>
+            <span className="mono-caption" style={{ color: "var(--color-under-attack)" }}>
+              EMERGENCY ACTION
+            </span>
+            <h2
+              id="revoke-modal-title"
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "20px",
+                fontWeight: 500,
+                color: "var(--color-ink)",
+                letterSpacing: "-0.4px",
+                marginTop: "2px",
+              }}
+            >
+              Revoke Emergency Break-Glass Lease
+            </h2>
+          </div>
           <button
             id="revoke-modal-close-btn"
             type="button"
             className="btn btn-secondary"
-            style={{ padding: "4px 8px", fontSize: "1rem" }}
+            style={{ padding: "4px 8px", fontSize: "14px", height: "32px", width: "32px" }}
             onClick={onClose}
             aria-label="Close modal"
           >
@@ -138,13 +150,13 @@ export function RevokeModal({
         {/* Safety Boundary Notice */}
         <div
           style={{
-            padding: "12px",
-            borderRadius: "8px",
-            backgroundColor: "rgba(244, 63, 94, 0.1)",
-            border: "1px solid rgba(244, 63, 94, 0.25)",
-            fontSize: "0.8125rem",
-            color: "#fecdd3",
-            lineHeight: 1.4,
+            padding: "12px 14px",
+            borderRadius: "var(--radius-xs)",
+            backgroundColor: "#fff1f2",
+            border: "1px solid #fecdd3",
+            fontSize: "13px",
+            color: "var(--color-under-attack)",
+            lineHeight: 1.45,
           }}
         >
           <strong>Safety Invariant Notice:</strong> Revoking this lease immediately restores
@@ -153,18 +165,18 @@ export function RevokeModal({
         </div>
 
         {revokedSuccess ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px", textAlign: "center", padding: "16px 0" }}>
-            <div style={{ fontSize: "2.5rem" }}>✅</div>
-            <h3 style={{ fontSize: "1.125rem", color: "#34d399", fontWeight: 600 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px", textAlign: "center", padding: "16px 0" }}>
+            <div style={{ fontSize: "2rem" }}>✅</div>
+            <h3 style={{ fontSize: "18px", color: "var(--color-ai)", fontWeight: 500 }}>
               Lease Revoked Successfully
             </h3>
-            <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+            <p style={{ fontSize: "14px", color: "var(--color-muted)", lineHeight: 1.5 }}>
               The revocation has been committed to the audit ledger and broadcast to all long-polling SDKs.
             </p>
             <button
               id="revoke-modal-done-btn"
               type="button"
-              className="btn btn-primary"
+              className="btn btn-pill-brand"
               style={{ alignSelf: "center", marginTop: "8px" }}
               onClick={onClose}
             >
@@ -172,22 +184,23 @@ export function RevokeModal({
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div>
-              <label style={{ display: "block", fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "4px" }}>
+              <label className="mono-caption" style={{ display: "block", color: "var(--color-muted)", marginBottom: "4px" }}>
                 Target Flag & Lease ID
               </label>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem", color: "var(--text-primary)" }}>
-                <strong>{lease.flagKey}</strong> ({lease.leaseId})
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "14px", color: "var(--color-ink)" }}>
+                <strong>{lease.flagKey}</strong> <span style={{ color: "var(--color-muted)" }}>({lease.leaseId})</span>
               </div>
             </div>
 
             <div>
               <label
                 htmlFor="revoke-reason-input"
-                style={{ display: "block", fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "4px" }}
+                className="mono-caption"
+                style={{ display: "block", color: "var(--color-muted)", marginBottom: "4px" }}
               >
-                Revocation Reason (Required for Audit Ledger)
+                Revocation Reason (Audit Log Entry)
               </label>
               <textarea
                 id="revoke-reason-input"
@@ -198,14 +211,15 @@ export function RevokeModal({
                 placeholder="e.g. Incident #4492 resolved: Payment gateway rollback verified"
                 style={{
                   width: "100%",
-                  padding: "10px",
-                  borderRadius: "6px",
-                  backgroundColor: "rgba(0, 0, 0, 0.3)",
-                  border: "1px solid var(--border-subtle)",
-                  color: "var(--text-primary)",
+                  padding: "10px 12px",
+                  borderRadius: "var(--radius-xs)",
+                  backgroundColor: "var(--color-canvas)",
+                  border: "1px solid var(--color-hairline)",
+                  color: "var(--color-ink)",
                   fontFamily: "var(--font-sans)",
-                  fontSize: "0.875rem",
+                  fontSize: "14px",
                   resize: "vertical",
+                  outline: "none",
                 }}
               />
             </div>
@@ -213,7 +227,8 @@ export function RevokeModal({
             <div>
               <label
                 htmlFor="revoke-kid-input"
-                style={{ display: "block", fontSize: "0.8125rem", color: "var(--text-secondary)", marginBottom: "4px" }}
+                className="mono-caption"
+                style={{ display: "block", color: "var(--color-muted)", marginBottom: "4px" }}
               >
                 Operator Key ID (KID)
               </label>
@@ -221,18 +236,10 @@ export function RevokeModal({
                 id="revoke-kid-input"
                 type="text"
                 required
+                className="text-input"
+                style={{ width: "100%", fontFamily: "var(--font-mono)" }}
                 value={operatorKid}
                 onChange={(e) => setOperatorKid(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  backgroundColor: "rgba(0, 0, 0, 0.3)",
-                  border: "1px solid var(--border-subtle)",
-                  color: "var(--text-primary)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.875rem",
-                }}
               />
             </div>
 
@@ -241,7 +248,7 @@ export function RevokeModal({
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ fontSize: "0.75rem", padding: "4px 8px" }}
+                style={{ fontSize: "12px", height: "30px", padding: "2px 8px" }}
                 onClick={() => setShowEnvelopeInput(!showEnvelopeInput)}
               >
                 {showEnvelopeInput ? "Hide Signed Envelope" : "Attach Workstation-Signed Envelope (Prod)"}
@@ -250,7 +257,8 @@ export function RevokeModal({
                 <div style={{ marginTop: "8px" }}>
                   <label
                     htmlFor="revoke-envelope-input"
-                    style={{ display: "block", fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "4px" }}
+                    className="mono-caption"
+                    style={{ display: "block", color: "var(--color-muted)", marginBottom: "4px" }}
                   >
                     Signed RevocationEnvelope JSON:
                   </label>
@@ -262,13 +270,14 @@ export function RevokeModal({
                     placeholder='{"payload":{"v":1,"lease_id":"...","reason":"...","revoked_at":"...","kid":"..."},"sig":"..."}'
                     style={{
                       width: "100%",
-                      padding: "8px",
-                      borderRadius: "6px",
-                      backgroundColor: "rgba(0, 0, 0, 0.3)",
-                      border: "1px solid var(--border-subtle)",
-                      color: "var(--text-primary)",
+                      padding: "8px 10px",
+                      borderRadius: "var(--radius-xs)",
+                      backgroundColor: "var(--color-canvas)",
+                      border: "1px solid var(--color-hairline)",
+                      color: "var(--color-ink)",
                       fontFamily: "var(--font-mono)",
-                      fontSize: "0.75rem",
+                      fontSize: "12px",
+                      outline: "none",
                     }}
                   />
                 </div>
@@ -277,27 +286,27 @@ export function RevokeModal({
 
             {/* Terminal Command Alternative */}
             <div>
-              <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+              <label className="mono-caption" style={{ display: "block", color: "var(--color-muted)", marginBottom: "4px" }}>
                 Workstation CLI Command (Air-Gapped Signed Alternative):
               </label>
-              <code className="code-inline" style={{ display: "block", padding: "8px", overflowX: "auto" }}>
+              <code className="code-inline" style={{ display: "block", padding: "8px 10px", overflowX: "auto" }}>
                 {cliCommand}
               </code>
             </div>
 
             {error && (
-              <div style={{ color: "#f87171", fontSize: "0.8125rem", padding: "8px", borderRadius: "4px", backgroundColor: "rgba(248, 113, 113, 0.1)" }}>
+              <div style={{ color: "var(--color-under-attack)", fontSize: "13px", padding: "8px 12px", borderRadius: "var(--radius-xs)", backgroundColor: "#fff1f2", border: "1px solid #fecdd3" }}>
                 {error}
               </div>
             )}
 
             {!canRevoke && (
-              <div style={{ color: "#fbbf24", fontSize: "0.8125rem" }}>
+              <div style={{ color: "var(--color-kumo-brand-dark)", fontSize: "13px", padding: "8px 12px", borderRadius: "var(--radius-xs)", backgroundColor: "rgba(255, 94, 31, 0.08)", border: "1px solid rgba(255, 94, 31, 0.25)" }}>
                 ⚠️ Your current role (<strong>{userRole}</strong>) is read-only. Only <strong>operator</strong> or <strong>admin</strong> can execute revocations.
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
               <button
                 id="revoke-modal-cancel-btn"
                 type="button"

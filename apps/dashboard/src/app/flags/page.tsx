@@ -2,6 +2,8 @@ import React from "react";
 import Link from "next/link";
 import { controlApiClient } from "@/lib/api";
 import { TelemetryChart } from "@/components/TelemetryChart";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 interface FlagsPageProps {
   searchParams?: Promise<{ env?: string; search?: string }>;
@@ -22,7 +24,16 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
   const activeOverridesCount = inventory.filter((f) => Boolean(f.activeLease)).length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <div
+      style={{
+        maxWidth: "1280px",
+        margin: "0 auto",
+        padding: "40px 24px 64px 24px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "32px",
+      }}
+    >
       {/* Page Title & Environment Selector */}
       <div
         style={{
@@ -34,25 +45,28 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
         }}
       >
         <div>
-          <h1 style={{ fontSize: "1.75rem", fontWeight: 800, letterSpacing: "-0.02em" }}>
+          <span className="mono-caption" style={{ color: "var(--color-compute)" }}>
+            IN-MEMORY TELEMETRY
+          </span>
+          <h1
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "36px",
+              fontWeight: 500,
+              letterSpacing: "-0.8px",
+              color: "var(--color-ink)",
+              marginTop: "2px",
+            }}
+          >
             Flag Inventory & Telemetry
           </h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginTop: "4px" }}>
-            In-memory aggregated zero-context evaluations, variant stability, and stale purger candidates.
+          <p style={{ color: "var(--color-muted)", fontSize: "15px", marginTop: "4px" }}>
+            In-process aggregated zero-context evaluations, variant stability, and stale purger candidates.
           </p>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            padding: "4px",
-            borderRadius: "8px",
-            backgroundColor: "rgba(0, 0, 0, 0.3)",
-            border: "1px solid var(--border-subtle)",
-            gap: "4px",
-          }}
-        >
+        {/* Environment Selector Pills */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           {["prod", "staging", "dev"].map((env) => {
             const isActive = env === currentEnv;
             return (
@@ -60,15 +74,8 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
                 key={env}
                 href={`/flags?env=${env}`}
                 id={`flag-env-select-${env}`}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: "6px",
-                  fontSize: "0.8125rem",
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  backgroundColor: isActive ? "#0284c7" : "transparent",
-                  color: isActive ? "#ffffff" : "var(--text-secondary)",
-                }}
+                className={`category-tab ${isActive ? "category-tab-active" : ""}`}
+                style={{ textTransform: "uppercase", fontSize: "12px", fontFamily: "var(--font-mono)" }}
               >
                 {env}
               </Link>
@@ -77,78 +84,78 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
         </div>
       </div>
 
-      {/* Summary Stat Pills */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-        <div
-          className="glass-panel"
-          style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: "10px" }}
-        >
-          <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>Total Flags:</span>
-          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--text-primary)" }}>
+      {/* Summary Stat Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: "16px",
+        }}
+      >
+        <div className="stat-card" style={{ padding: "18px 20px" }}>
+          <div className="stat-label">Observed Flags</div>
+          <div className="stat-value" style={{ fontSize: "28px" }}>
             {inventory.length}
-          </span>
+          </div>
+          <div className="stat-hint">Active OpenFeature flag keys</div>
         </div>
 
-        <div
-          className="glass-panel"
-          style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: "10px" }}
-        >
-          <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>Active Overrides:</span>
-          <span
+        <div className="stat-card" style={{ padding: "18px 20px" }}>
+          <div className="stat-label">Active Overrides</div>
+          <div
+            className="stat-value"
             style={{
-              fontSize: "1.125rem",
-              fontWeight: 700,
-              color: activeOverridesCount > 0 ? "var(--accent-amber)" : "var(--accent-emerald)",
+              fontSize: "28px",
+              color: activeOverridesCount > 0 ? "var(--color-storage)" : "var(--color-ink)",
             }}
           >
             {activeOverridesCount}
-          </span>
+          </div>
+          <div className="stat-hint">In-process break-glass leases</div>
         </div>
 
-        <div
-          className="glass-panel"
-          style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: "10px" }}
-        >
-          <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>
-            Stale Purger Candidates:
-          </span>
-          <span
+        <div className="stat-card" style={{ padding: "18px 20px" }}>
+          <div className="stat-label">Stale Purger Candidates</div>
+          <div
+            className="stat-value"
             style={{
-              fontSize: "1.125rem",
-              fontWeight: 700,
-              color: purgeCandidatesCount > 0 ? "var(--accent-emerald)" : "var(--text-muted)",
+              fontSize: "28px",
+              color: purgeCandidatesCount > 0 ? "var(--color-ai)" : "var(--color-muted)",
             }}
           >
             {purgeCandidatesCount}
-          </span>
+          </div>
+          <div className="stat-hint">&gt;99% variant quiescence verified</div>
         </div>
       </div>
 
       {/* Flag Inventory List */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         {filteredFlags.length === 0 ? (
-          <div
-            className="glass-panel"
-            style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-secondary)" }}
+          <Card
+            style={{
+              padding: "48px 24px",
+              textAlign: "center",
+              color: "var(--color-muted)",
+              fontSize: "14px",
+            }}
           >
             No flags found matching query in {currentEnv.toUpperCase()}.
-          </div>
+          </Card>
         ) : (
           filteredFlags.map((flag) => (
-            <div
+            <Card
               key={flag.flagKey}
               id={`flag-row-${flag.flagKey}`}
-              className="glass-panel"
               style={{
-                padding: "20px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "14px",
+                gap: "16px",
                 borderLeft: flag.activeLease
-                  ? "4px solid var(--accent-amber)"
+                  ? "4px solid var(--color-storage)"
                   : flag.isCandidateForPurge
-                  ? "4px solid var(--accent-emerald)"
-                  : "4px solid var(--border-subtle)",
+                  ? "4px solid var(--color-ai)"
+                  : "1px solid var(--color-hairline)",
               }}
             >
               {/* Row Header */}
@@ -158,45 +165,46 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
                   justifyContent: "space-between",
                   alignItems: "flex-start",
                   flexWrap: "wrap",
-                  gap: "10px",
+                  gap: "12px",
                 }}
               >
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                     <h3
                       style={{
-                        fontSize: "1.0625rem",
-                        fontWeight: 700,
+                        fontSize: "16px",
+                        fontWeight: 600,
                         fontFamily: "var(--font-mono)",
-                        color: "var(--text-primary)",
+                        color: "var(--color-ink)",
+                        margin: 0,
                       }}
                     >
                       {flag.flagKey}
                     </h3>
 
                     {flag.activeLease && (
-                      <span className="badge badge-near-expiry">Emergency Lease Active</span>
+                      <Badge variant="storage">Emergency Lease Active</Badge>
                     )}
 
                     {flag.isCandidateForPurge && (
-                      <span className="badge badge-active" title="Qualified for synapse-purger AST cleanup PR">
+                      <Badge variant="ai" title="Qualified for synapse-purger AST cleanup PR">
                         Purger Candidate
-                      </span>
+                      </Badge>
                     )}
                   </div>
 
                   <div
                     style={{
-                      fontSize: "0.8125rem",
-                      color: "var(--text-muted)",
+                      fontSize: "13px",
+                      color: "var(--color-muted)",
                       marginTop: "4px",
                     }}
                   >
-                    Total Volume:{" "}
-                    <strong style={{ color: "var(--text-secondary)" }}>
+                    Volume:{" "}
+                    <strong style={{ color: "var(--color-ink)" }}>
                       {flag.totalEvaluations.toLocaleString()}
                     </strong>{" "}
-                    evaluations recorded
+                    in-memory zero-context evaluations recorded
                   </div>
                 </div>
 
@@ -204,14 +212,14 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
                   <div
                     style={{
                       padding: "4px 10px",
-                      borderRadius: "6px",
-                      backgroundColor: "rgba(16, 185, 129, 0.1)",
-                      border: "1px solid rgba(16, 185, 129, 0.25)",
-                      fontSize: "0.75rem",
+                      borderRadius: "var(--radius-xs)",
+                      backgroundColor: "rgba(0, 189, 125, 0.08)",
+                      border: "1px solid rgba(0, 189, 125, 0.25)",
+                      fontSize: "12px",
                     }}
                   >
-                    <span style={{ color: "var(--text-muted)" }}>Winning Variant: </span>
-                    <strong style={{ color: "#34d399", fontFamily: "var(--font-mono)" }}>
+                    <span style={{ color: "var(--color-muted)" }}>Dominant Variant: </span>
+                    <strong style={{ color: "var(--color-ai)", fontFamily: "var(--font-mono)" }}>
                       {flag.winningVariant}
                     </strong>
                   </div>
@@ -224,7 +232,7 @@ export default async function FlagsPage({ searchParams }: FlagsPageProps) {
                 totalEvaluations={flag.totalEvaluations}
                 winningVariant={flag.winningVariant}
               />
-            </div>
+            </Card>
           ))
         )}
       </div>
