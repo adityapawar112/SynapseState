@@ -323,7 +323,7 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
       const checkoutRef = result.flagReferences["checkout.v2"];
       expect(checkoutRef).toBeDefined();
       expect(checkoutRef?.totalCallSites).toBe(2);
-      expect(checkoutRef?.consumerServices).toEqual(["web", "api"]);
+      expect(checkoutRef?.consumerServices).toEqual(["api", "web"]);
       expect(checkoutRef?.hasRefusals).toBe(false);
 
       const otherRef = result.flagReferences["other.flag"];
@@ -429,7 +429,7 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
       expect(ref.isConsistent).toBe(true);
     });
 
-    it("marks cross-reference inconsistent if AST references have non-literal refusals", () => {
+    it("marks cross-reference inconsistent if candidate evaluating service has unresolved dynamic calls (C1)", () => {
       const file = `
         const k = 'checkout.v2';
         client.getBooleanValue(k, false);
@@ -439,6 +439,9 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
         { filePath: "apps/web-frontend/src/a.ts", content: file },
       ]);
 
+      expect(scanResult.unresolvedServices).toEqual(["web-frontend"]);
+      expect(scanResult.unresolvedCallSitesByService["web-frontend"]).toHaveLength(1);
+
       const crossRef = crossReferenceConsumers({
         candidates: [candidate],
         scanResult,
@@ -446,12 +449,194 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
 
       expect(crossRef).toHaveLength(1);
       const ref = crossRef[0]!;
-      // Because 'k' was non-literal, 'checkout.v2' was not recognized in AST
-      expect(ref.callSites).toHaveLength(0);
-      expect(ref.unreferencedServices).toEqual([
-        "web-frontend",
-        "checkout-api",
+      expect(ref.isConsistent).toBe(false);
+      expect(ref.refusals).toHaveLength(1);
+      expect(ref.refusals[0]?.reason).toBe("NON_LITERAL_FLAG_KEY");
+      expect(ref.refusals[0]?.message).toContain("web-frontend");
+    });
+  });
+
+  describe("Element Access Notation & Dynamic Dispatch (C2)", () => {
+    it("detects bracket notation with string literal eval method", () => {
+      const source = `
+        const enabled = client['getBooleanValue']('bracket.flag', false);
+        const details = client["getStringDetails"]('str.bracket', 'fallback');
+      `;
+
+      const result = scanSourceTexts([
+        { filePath: "apps/order-api/src/index.ts", content: source },
       ]);
+
+      expect(result.totalCallSites).toBe(2);
+      expect(result.callSites[0]?.flagKey).toBe("bracket.flag");
+      expect(result.callSites[0]?.methodName).toBe("getBooleanValue");
+      expect(result.callSites[1]?.flagKey).toBe("str.bracket");
+      expect(result.callSites[1]?.methodName).toBe("getStringDetails");
+    });
+
+    it("refuses dynamic element access method expression", () => {
+      const source = `
+        const method = 'getBooleanValue';
+        const enabled = client[method]('dynamic.method.flag', false);
+      `;
+
+      const result = scanSourceTexts([
+        { filePath: "apps/order-api/src/index.ts", content: source },
+      ]);
+
+      // Either refused or recognized as dynamic refusal
+      expect(result.refusals.some((r) => r.reason === "NON_LITERAL_FLAG_KEY")).toBe(true);
+    });
+  });
+
+  describe("Fail-Closed Error Boundary (C3)", () => {
+    it("catches throwing serviceResolver and records SCAN_ERROR refusal without aborting", () => {
+      const source = `client.getBooleanValue('safe.flag', false);`;
+      const result = scanSourceTexts(
+        [{ filePath: "apps/buggy/src/index.ts", content: source }],
+        {
+          serviceResolver: () => {
+            throw new Error("Disk read failure in resolver");
+          },
+        },
+      );
+
+      expect(result.refusals.some((r) => r.reason === "SCAN_ERROR")).toBe(true);
+      expect(result.totalFilesScanned).toBe(1);
+    });
+  });
+
+  describe("Bare Identifier Filtering (I1)", () => {
+    it("ignores bare function getBooleanValue calls by default", () => {
+      const source = `
+        import { getBooleanValue } from './utils';
+        const val = getBooleanValue('local.helper', false);
+      `;
+
+      const result = scanSourceTexts([
+        { filePath: "apps/helper-svc/src/index.ts", content: source },
+      ]);
+
+      expect(result.totalCallSites).toBe(0);
+    });
+
+    it("detects bare function calls when allowBareIdentifiers is enabled", () => {
+      const source = `
+        const val = getBooleanValue('local.helper', false);
+      `;
+
+      const result = scanSourceTexts(
+        [{ filePath: "apps/helper-svc/src/index.ts", content: source }],
+        { allowBareIdentifiers: true },
+      );
+
+      expect(result.totalCallSites).toBe(1);
+      expect(result.callSites[0]?.flagKey).toBe("local.helper");
+    });
+  });
+
+  describe("Unreferenced Services Safety (I2)", () => {
+    const candidate: CandidateFlag = {
+      flagKey: "feature.x",
+      env: "production",
+      winningVariant: "true",
+      totalEvaluations: 5000,
+      evaluatingServices: ["svc-a", "svc-b"],
+      windowDays: 35,
+    };
+
+    it("marks consistent when allowUnreferencedServices is true (default)", () => {
+      const source = `client.getBooleanValue('feature.x', false);`;
+      const scanResult = scanSourceTexts([
+        { filePath: "apps/svc-a/src/index.ts", content: source },
+      ]);
+
+      const crossRef = crossReferenceConsumers({
+        candidates: [candidate],
+        scanResult,
+        allowUnreferencedServices: true,
+      });
+
+      expect(crossRef[0]?.isConsistent).toBe(true);
+      expect(crossRef[0]?.unreferencedServices).toEqual(["svc-b"]);
+    });
+
+    it("marks inconsistent when allowUnreferencedServices is false and unreferenced services exist", () => {
+      const source = `client.getBooleanValue('feature.x', false);`;
+      const scanResult = scanSourceTexts([
+        { filePath: "apps/svc-a/src/index.ts", content: source },
+      ]);
+
+      const crossRef = crossReferenceConsumers({
+        candidates: [candidate],
+        scanResult,
+        allowUnreferencedServices: false,
+      });
+
+      expect(crossRef[0]?.isConsistent).toBe(false);
+      expect(crossRef[0]?.unreferencedServices).toEqual(["svc-b"]);
+    });
+  });
+
+  describe("Advanced Class Scope Extraction (I4)", () => {
+    it("extracts property declarations, constructors, and accessors", () => {
+      const source = `
+        export class UserService {
+          private isV2 = client.getBooleanValue('user.v2', false);
+
+          constructor() {
+            client.getBooleanValue('user.ctor', false);
+          }
+
+          get isEnabled() {
+            return client.getBooleanValue('user.getter', false);
+          }
+
+          set isEnabled(val: boolean) {
+            client.getBooleanValue('user.setter', false);
+          }
+
+          onCheckout = () => {
+            return client.getBooleanValue('user.prop-arrow', false);
+          };
+        }
+      `;
+
+      const result = scanSourceTexts([
+        { filePath: "apps/user-svc/src/service.ts", content: source },
+      ]);
+
+      expect(result.totalCallSites).toBe(5);
+
+      const ctorCall = result.callSites.find((c) => c.flagKey === "user.ctor");
+      expect(ctorCall?.scope.functionName).toBe("constructor");
+      expect(ctorCall?.scope.className).toBe("UserService");
+
+      const getterCall = result.callSites.find((c) => c.flagKey === "user.getter");
+      expect(getterCall?.scope.functionName).toBe("isEnabled");
+      expect(getterCall?.scope.kind).toBe("GetAccessor");
+
+      const propArrow = result.callSites.find((c) => c.flagKey === "user.prop-arrow");
+      expect(propArrow?.scope.functionName).toBe("onCheckout");
+    });
+  });
+
+  describe("Literal Unwrapping (M1)", () => {
+    it("unwraps parenthesized expression and as const type assertions", () => {
+      const source = `
+        const val1 = client.getBooleanValue(('wrapped.flag'), false);
+        const val2 = client.getBooleanValue('as.const.flag' as const, false);
+      `;
+
+      const result = scanSourceTexts([
+        { filePath: "apps/wrap-svc/src/index.ts", content: source },
+      ]);
+
+      expect(result.totalCallSites).toBe(2);
+      expect(result.callSites[0]?.flagKey).toBe("wrapped.flag");
+      expect(result.callSites[0]?.isLiteralKey).toBe(true);
+      expect(result.callSites[1]?.flagKey).toBe("as.const.flag");
+      expect(result.callSites[1]?.isLiteralKey).toBe(true);
     });
   });
 
@@ -486,4 +671,5 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
     });
   });
 });
+
 

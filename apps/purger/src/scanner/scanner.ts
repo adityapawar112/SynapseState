@@ -37,13 +37,30 @@ const EVAL_METHODS_SET = new Set<string>(OPENFEATURE_EVAL_METHODS);
 export { OPENFEATURE_EVAL_METHODS };
 
 /**
+ * Normalizes file paths across operating systems and ts-morph in-memory virtual file systems.
+ * Strips leading slash only for virtual roots (/apps/, /packages/, /services/, /src/).
+ */
+export function normalizeFilePath(rawPath: string): string {
+  let normalized = rawPath.replace(/\\/g, "/");
+  if (
+    normalized.startsWith("/") &&
+    /^\/(?:apps|packages|services|src)\//.test(normalized)
+  ) {
+    normalized = normalized.slice(1);
+  }
+  return normalized;
+}
+
+/**
  * Default service resolver mapping repository file paths to service/package names
  * based on standard monorepo folder conventions (apps/*, packages/*, services/*).
  * Uses the innermost component if nested in monorepo workspaces.
  */
 export function defaultServiceResolver(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, "/");
-  const matches = [...normalized.matchAll(/(?:^|\/)(?:apps|packages|services)\/([^/]+)/g)];
+  const normalized = normalizeFilePath(filePath);
+  const matches = [
+    ...normalized.matchAll(/(?:^|\/)(?:apps|packages|services)\/([^/]+)/g),
+  ];
   if (matches.length > 0) {
     const lastMatch = matches[matches.length - 1];
     if (lastMatch && lastMatch[1]) {
@@ -54,37 +71,68 @@ export function defaultServiceResolver(filePath: string): string {
 }
 
 /**
- * Determines whether a call expression invokes a standard OpenFeature evaluation method.
+ * Unwraps parenthesized expressions and type assertions (`as const`, `<type>`).
  */
-function getEvaluationMethodName(
+export function unwrapExpression(node: Node): Node {
+  let current = node;
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isTypeAssertion(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+interface MethodDispatchInspection {
+  methodName?: OpenFeatureEvalMethod;
+  isDynamicElementAccess?: boolean;
+}
+
+/**
+ * Determines whether a call expression invokes a standard OpenFeature evaluation method,
+ * handling property access (`client.getBooleanValue`), element access (`client['getBooleanValue']`),
+ * dynamic element access (`client[method]`), and optional bare identifiers.
+ */
+function inspectEvaluationMethod(
   callExpr: CallExpression,
-): OpenFeatureEvalMethod | undefined {
+  allowBareIdentifiers = false,
+): MethodDispatchInspection {
   const expr = callExpr.getExpression();
 
   if (Node.isPropertyAccessExpression(expr)) {
     const name = expr.getName();
     if (EVAL_METHODS_SET.has(name)) {
-      return name as OpenFeatureEvalMethod;
+      return { methodName: name as OpenFeatureEvalMethod };
+    }
+  } else if (Node.isElementAccessExpression(expr)) {
+    const argExpr = expr.getArgumentExpression();
+    if (argExpr) {
+      const unwrapped = unwrapExpression(argExpr);
+      if (
+        Node.isStringLiteral(unwrapped) ||
+        Node.isNoSubstitutionTemplateLiteral(unwrapped)
+      ) {
+        const val = unwrapped.getLiteralValue();
+        if (EVAL_METHODS_SET.has(val)) {
+          return { methodName: val as OpenFeatureEvalMethod };
+        }
+      } else {
+        // Dynamic element access: client[dynamicExpr](...)
+        return { isDynamicElementAccess: true };
+      }
     }
   } else if (Node.isIdentifier(expr)) {
-    const name = expr.getText();
-    if (EVAL_METHODS_SET.has(name)) {
-      return name as OpenFeatureEvalMethod;
+    if (allowBareIdentifiers) {
+      const name = expr.getText();
+      if (EVAL_METHODS_SET.has(name)) {
+        return { methodName: name as OpenFeatureEvalMethod };
+      }
     }
   }
 
-  return undefined;
-}
-
-/**
- * Normalizes file paths across operating systems and ts-morph in-memory virtual file systems.
- */
-function normalizeFilePath(rawPath: string): string {
-  let normalized = rawPath.replace(/\\/g, "/");
-  if (normalized.startsWith("/")) {
-    normalized = normalized.replace(/^\/+/, "");
-  }
-  return normalized;
+  return {};
 }
 
 /**
@@ -112,6 +160,8 @@ function extractSourceLocation(
 
 /**
  * Traverses AST ancestors to determine enclosing function and class scope.
+ * Supports FunctionDeclaration, MethodDeclaration, PropertyDeclaration (arrow property),
+ * ConstructorDeclaration, GetAccessor, SetAccessor, and ArrowFunction variable bindings.
  */
 function extractEnclosingScope(callExpr: CallExpression): EnclosingScope {
   let current: Node | undefined = callExpr.getParent();
@@ -130,7 +180,25 @@ function extractEnclosingScope(callExpr: CallExpression): EnclosingScope {
         functionName = current.getName();
         kind = "MethodDeclaration";
       }
-    } else if (Node.isArrowFunction(current) || Node.isFunctionExpression(current)) {
+    } else if (Node.isConstructorDeclaration(current)) {
+      if (!functionName) {
+        functionName = "constructor";
+        kind = "ConstructorDeclaration";
+      }
+    } else if (Node.isGetAccessorDeclaration(current)) {
+      if (!functionName) {
+        functionName = current.getName();
+        kind = "GetAccessor";
+      }
+    } else if (Node.isSetAccessorDeclaration(current)) {
+      if (!functionName) {
+        functionName = current.getName();
+        kind = "SetAccessor";
+      }
+    } else if (
+      Node.isArrowFunction(current) ||
+      Node.isFunctionExpression(current)
+    ) {
       if (!functionName) {
         const parent = current.getParent();
         if (Node.isVariableDeclaration(parent)) {
@@ -138,12 +206,18 @@ function extractEnclosingScope(callExpr: CallExpression): EnclosingScope {
           kind = "ArrowFunction";
         } else if (Node.isPropertyAssignment(parent)) {
           functionName = parent.getName();
-          kind = "FunctionExpression";
+          kind = "PropertyAssignment";
+        } else if (Node.isPropertyDeclaration(parent)) {
+          functionName = parent.getName();
+          kind = "PropertyDeclaration";
         } else {
           kind = "AnonymousFunction";
         }
       }
-    } else if (Node.isClassDeclaration(current) || Node.isClassExpression(current)) {
+    } else if (
+      Node.isClassDeclaration(current) ||
+      Node.isClassExpression(current)
+    ) {
       if (!className) {
         className = current.getName();
       }
@@ -167,12 +241,32 @@ function parseCallSite(
   methodName: OpenFeatureEvalMethod,
   sourceFile: SourceFile,
   serviceResolver: (filePath: string) => string | undefined,
+  isDynamicMethodDispatch = false,
 ): CallSite {
   const location = extractSourceLocation(callExpr, sourceFile);
   const scope = extractEnclosingScope(callExpr);
   const fullCallText = callExpr.getText();
   const serviceName = serviceResolver(sourceFile.getFilePath());
   const args = callExpr.getArguments();
+
+  if (isDynamicMethodDispatch) {
+    const refusal: RefusalMarker = {
+      reason: "NON_LITERAL_FLAG_KEY",
+      message: `Dynamic method element access violates safety invariants; purger refuses dynamic resolution`,
+      nodeText: callExpr.getExpression().getText(),
+      location,
+    };
+    return {
+      flagKey: null,
+      isLiteralKey: false,
+      methodName,
+      location,
+      scope,
+      fullCallText,
+      serviceName,
+      refusal,
+    };
+  }
 
   // Guard 1: Missing arguments (0 arguments)
   if (args.length === 0) {
@@ -195,17 +289,18 @@ function parseCallSite(
   }
 
   const firstArg = args[0]!;
+  const unwrappedFirstArg = unwrapExpression(firstArg);
   let flagKey: string | null = null;
   let isLiteralKey = false;
   let refusal: RefusalMarker | undefined;
 
   // Check if first argument is a literal string key
-  if (Node.isStringLiteral(firstArg)) {
-    flagKey = firstArg.getLiteralValue();
+  if (Node.isStringLiteral(unwrappedFirstArg)) {
+    flagKey = unwrappedFirstArg.getLiteralValue();
     isLiteralKey = true;
-  } else if (Node.isNoSubstitutionTemplateLiteral(firstArg)) {
+  } else if (Node.isNoSubstitutionTemplateLiteral(unwrappedFirstArg)) {
     // Template literal with no expressions (e.g. `flag-key`) is a constant literal
-    flagKey = firstArg.getLiteralValue();
+    flagKey = unwrappedFirstArg.getLiteralValue();
     isLiteralKey = true;
   } else {
     // Non-literal key: variable, ternary, interpolation, function call, property access
@@ -246,72 +341,121 @@ function parseCallSite(
 
 /**
  * Scans a list of ts-morph SourceFiles and extracts all OpenFeature call sites,
- * indexes caller references by flag key, and reports dynamic refusals.
+ * indexes caller references by flag key, indexes unresolved calls by service,
+ * and traps any unexpected errors within a fail-closed boundary.
  */
 export function scanSourceFiles(
   sourceFiles: SourceFile[],
   options?: ScannerOptions,
 ): CodebaseScanResult {
   const serviceResolver = options?.serviceResolver ?? defaultServiceResolver;
+  const allowBare = options?.allowBareIdentifiers ?? false;
+
   const allCallSites: CallSite[] = [];
   const flagReferences: Record<string, ASTFlagReference> = {};
   const unresolvedCallSites: CallSite[] = [];
+  const unresolvedCallSitesByService: Record<string, CallSite[]> = {};
+  const unresolvedServicesSet = new Set<string>();
   const allRefusals: RefusalMarker[] = [];
 
   for (const sourceFile of sourceFiles) {
-    const callExpressions = sourceFile.getDescendantsOfKind(
-      SyntaxKind.CallExpression,
-    );
-
-    for (const callExpr of callExpressions) {
-      const methodName = getEvaluationMethodName(callExpr);
-      if (!methodName) {
-        continue;
-      }
-
-      const callSite = parseCallSite(
-        callExpr,
-        methodName,
-        sourceFile,
-        serviceResolver,
+    try {
+      const callExpressions = sourceFile.getDescendantsOfKind(
+        SyntaxKind.CallExpression,
       );
-      allCallSites.push(callSite);
 
-      if (callSite.refusal) {
-        allRefusals.push(callSite.refusal);
-      }
+      for (const callExpr of callExpressions) {
+        try {
+          const inspection = inspectEvaluationMethod(callExpr, allowBare);
+          if (!inspection.methodName && !inspection.isDynamicElementAccess) {
+            continue;
+          }
 
-      if (callSite.flagKey === null) {
-        unresolvedCallSites.push(callSite);
-      } else {
-        let flagRef = flagReferences[callSite.flagKey];
-        if (!flagRef) {
-          flagRef = {
-            flagKey: callSite.flagKey,
-            totalCallSites: 0,
-            callSites: [],
-            consumerServices: [],
-            hasRefusals: false,
-            refusals: [],
+          const targetMethod = inspection.methodName ?? "getBooleanValue";
+          const callSite = parseCallSite(
+            callExpr,
+            targetMethod,
+            sourceFile,
+            serviceResolver,
+            Boolean(inspection.isDynamicElementAccess),
+          );
+          allCallSites.push(callSite);
+
+          if (callSite.refusal) {
+            allRefusals.push(callSite.refusal);
+          }
+
+          if (callSite.flagKey === null) {
+            unresolvedCallSites.push(callSite);
+            if (callSite.serviceName) {
+              if (!unresolvedCallSitesByService[callSite.serviceName]) {
+                unresolvedCallSitesByService[callSite.serviceName] = [];
+              }
+              unresolvedCallSitesByService[callSite.serviceName].push(callSite);
+              unresolvedServicesSet.add(callSite.serviceName);
+            }
+          } else {
+            let flagRef = flagReferences[callSite.flagKey];
+            if (!flagRef) {
+              flagRef = {
+                flagKey: callSite.flagKey,
+                totalCallSites: 0,
+                callSites: [],
+                consumerServices: [],
+                hasRefusals: false,
+                refusals: [],
+              };
+              flagReferences[callSite.flagKey] = flagRef;
+            }
+
+            flagRef.totalCallSites += 1;
+            flagRef.callSites.push(callSite);
+
+            if (
+              callSite.serviceName &&
+              !flagRef.consumerServices.includes(callSite.serviceName)
+            ) {
+              flagRef.consumerServices.push(callSite.serviceName);
+              flagRef.consumerServices.sort();
+            }
+
+            if (callSite.refusal) {
+              flagRef.hasRefusals = true;
+              flagRef.refusals.push(callSite.refusal);
+            }
+          }
+        } catch (callErr) {
+          // Fail-closed error boundary for individual call expressions
+          const location = extractSourceLocation(callExpr, sourceFile);
+          const refusal: RefusalMarker = {
+            reason: "SCAN_ERROR",
+            message: `AST scanning error on call expression: ${
+              callErr instanceof Error ? callErr.message : String(callErr)
+            }`,
+            nodeText: callExpr.getText(),
+            location,
           };
-          flagReferences[callSite.flagKey] = flagRef;
-        }
-
-        flagRef.totalCallSites += 1;
-        flagRef.callSites.push(callSite);
-
-        if (
-          callSite.serviceName &&
-          !flagRef.consumerServices.includes(callSite.serviceName)
-        ) {
-          flagRef.consumerServices.push(callSite.serviceName);
-        }
-
-        if (callSite.refusal) {
-          flagRef.hasRefusals = true;
-          flagRef.refusals.push(callSite.refusal);
+          allRefusals.push(refusal);
         }
       }
+    } catch (fileErr) {
+      // Fail-closed error boundary for entire source file
+      const location: SourceLocation = {
+        filePath: normalizeFilePath(sourceFile.getFilePath()),
+        startLine: 1,
+        startColumn: 1,
+        endLine: 1,
+        endColumn: 1,
+      };
+      const refusal: RefusalMarker = {
+        reason: "SCAN_ERROR",
+        message: `AST scanning error in file: ${
+          fileErr instanceof Error ? fileErr.message : String(fileErr)
+        }`,
+        nodeText: sourceFile.getFilePath(),
+        location,
+      };
+      allRefusals.push(refusal);
     }
   }
 
@@ -321,6 +465,8 @@ export function scanSourceFiles(
     callSites: allCallSites,
     flagReferences,
     unresolvedCallSites,
+    unresolvedCallSitesByService,
+    unresolvedServices: Array.from(unresolvedServicesSet).sort(),
     refusals: allRefusals,
   };
 }
@@ -374,14 +520,15 @@ export function scanCodebase(options?: ScannerOptions): CodebaseScanResult {
  * Cross-references candidate flags against codebase scan results to verify that
  * static AST consumers align with runtime evaluating services recorded in telemetry.
  *
- * Invariant Violation Check:
- * If an AST call site is discovered in a service that recorded 0 evaluations in telemetry
- * (an Undeclared Caller), this emits an explicit refusal/warning marker and marks the flag inconsistent.
+ * Invariant Violation Checks:
+ * 1. Undeclared Caller: AST call sites found in a service with 0 telemetry evaluations -> `UNDECLARED_CONSUMER_SERVICE`.
+ * 2. Unresolved Dynamic Evasion (C1): Candidate evaluating service contains dynamic/non-literal calls -> `NON_LITERAL_FLAG_KEY`.
+ * 3. Unreferenced Service (I2): Telemetry service has no AST callers -> blocked if `allowUnreferencedServices: false`.
  */
 export function crossReferenceConsumers(
   options: CrossReferenceOptions,
 ): ConsumerCrossReference[] {
-  const { candidates, scanResult } = options;
+  const { candidates, scanResult, allowUnreferencedServices = true } = options;
   const results: ConsumerCrossReference[] = [];
 
   for (const candidate of candidates) {
@@ -389,19 +536,37 @@ export function crossReferenceConsumers(
     const evaluatingServices = candidate.evaluatingServices ?? [];
     const flagRef = scanResult.flagReferences[flagKey];
 
-    const astConsumerServices = flagRef ? [...flagRef.consumerServices] : [];
+    const astConsumerServices = flagRef
+      ? [...flagRef.consumerServices].sort()
+      : [];
     const callSites = flagRef ? [...flagRef.callSites] : [];
     const refusals: RefusalMarker[] = flagRef ? [...flagRef.refusals] : [];
 
+    // C1: Check if any service that evaluated this candidate flag contains unresolved dynamic calls
+    for (const evaluatingService of evaluatingServices) {
+      const unresolvedInService =
+        scanResult.unresolvedCallSitesByService?.[evaluatingService];
+      if (unresolvedInService && unresolvedInService.length > 0) {
+        for (const unresolvedCall of unresolvedInService) {
+          refusals.push({
+            reason: "NON_LITERAL_FLAG_KEY",
+            message: `Candidate flag '${flagKey}' has dynamic or non-literal evaluations in evaluating service '${evaluatingService}'; purger refuses dynamic resolution`,
+            nodeText: unresolvedCall.fullCallText,
+            location: unresolvedCall.location,
+          });
+        }
+      }
+    }
+
     // Find undeclared services: in AST but not in telemetry evaluatingServices
-    const undeclaredServices = astConsumerServices.filter(
-      (svc) => !evaluatingServices.includes(svc),
-    );
+    const undeclaredServices = astConsumerServices
+      .filter((svc) => !evaluatingServices.includes(svc))
+      .sort();
 
     // Find unreferenced services: in telemetry evaluatingServices but no AST callers found
-    const unreferencedServices = evaluatingServices.filter(
-      (svc) => !astConsumerServices.includes(svc),
-    );
+    const unreferencedServices = evaluatingServices
+      .filter((svc) => !astConsumerServices.includes(svc))
+      .sort();
 
     for (const undeclared of undeclaredServices) {
       const matchSite = callSites.find((cs) => cs.serviceName === undeclared);
@@ -421,7 +586,12 @@ export function crossReferenceConsumers(
       });
     }
 
-    const isConsistent = undeclaredServices.length === 0 && refusals.length === 0;
+    const unreferencedBlocker =
+      !allowUnreferencedServices && unreferencedServices.length > 0;
+    const isConsistent =
+      undeclaredServices.length === 0 &&
+      refusals.length === 0 &&
+      !unreferencedBlocker;
 
     results.push({
       flagKey,

@@ -54,10 +54,13 @@ export { OPENFEATURE_EVAL_METHODS } from "./scanner/types.js";
 
 export {
   defaultServiceResolver,
+  normalizeFilePath,
+  unwrapExpression,
   scanSourceFiles,
   scanSourceTexts,
   scanCodebase,
   crossReferenceConsumers,
 } from "./scanner/scanner.js";
+
 
 

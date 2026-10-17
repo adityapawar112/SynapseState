@@ -33,7 +33,8 @@ export type ScannerRefusalReason =
   | "NON_LITERAL_FLAG_KEY"
   | "MISSING_ARGUMENTS"
   | "MISSING_DEFAULT_VALUE"
-  | "UNDECLARED_CONSUMER_SERVICE";
+  | "UNDECLARED_CONSUMER_SERVICE"
+  | "SCAN_ERROR";
 
 /**
  * Exact source code coordinates for a detected call site or refusal (1-indexed).
@@ -72,7 +73,7 @@ export interface RefusalMarker {
 export interface CallSite {
   flagKey: string | null;
   isLiteralKey: boolean;
-  methodName: string;
+  methodName: OpenFeatureEvalMethod;
   defaultValueText?: string;
   location: SourceLocation;
   scope: EnclosingScope;
@@ -117,6 +118,8 @@ export interface CodebaseScanResult {
   callSites: CallSite[];
   flagReferences: Record<string, ASTFlagReference>;
   unresolvedCallSites: CallSite[];
+  unresolvedCallSitesByService: Record<string, CallSite[]>;
+  unresolvedServices: string[];
   refusals: RefusalMarker[];
 }
 
@@ -129,6 +132,7 @@ export interface ScannerOptions {
   sourceTexts?: Array<{ filePath: string; content: string }>;
   serviceResolver?: (filePath: string) => string | undefined;
   rootPath?: string;
+  allowBareIdentifiers?: boolean;
 }
 
 /**
@@ -137,4 +141,6 @@ export interface ScannerOptions {
 export interface CrossReferenceOptions {
   candidates: CandidateFlag[];
   scanResult: CodebaseScanResult;
+  allowUnreferencedServices?: boolean;
 }
+

@@ -11,6 +11,8 @@ import {
   scanCodebase,
   crossReferenceConsumers,
   defaultServiceResolver,
+  normalizeFilePath,
+  unwrapExpression,
   OPENFEATURE_EVAL_METHODS,
 } from "./index.js";
 
@@ -34,6 +36,8 @@ describe("Purger Package Exports", () => {
     expect(scanCodebase).toBeTypeOf("function");
     expect(crossReferenceConsumers).toBeTypeOf("function");
     expect(defaultServiceResolver).toBeTypeOf("function");
+    expect(normalizeFilePath).toBeTypeOf("function");
+    expect(unwrapExpression).toBeTypeOf("function");
     expect(Array.isArray(OPENFEATURE_EVAL_METHODS)).toBe(true);
     expect(OPENFEATURE_EVAL_METHODS).toContain("getBooleanValue");
   });
