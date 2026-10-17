@@ -9,5 +9,5 @@
       "@synapsestate/sdk": ["../packages/sdk/src/index.ts"]
     }
   },
-  "include": ["drills/**/*.ts"]
+  "include": ["**/*.ts"]
 }

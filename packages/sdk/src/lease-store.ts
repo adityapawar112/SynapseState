@@ -18,6 +18,8 @@ import {
   safeInvokeMetricCallback,
 } from "./metrics.js";
 
+export const DEFAULT_MAX_TRACKED_MONOTONIC_LEASES = 2000;
+
 export interface LeaseStoreOptions {
   keyset?: Keyset;
   skewToleranceMs?: number;
@@ -189,6 +191,16 @@ export class LeaseStore {
         envelope,
       };
 
+      // Bounded tracking: FIFO evict oldest monotonic anchor if capacity reached
+      if (
+        this.firstSeenMonoByLeaseId.size >= DEFAULT_MAX_TRACKED_MONOTONIC_LEASES
+      ) {
+        const oldestKey = this.firstSeenMonoByLeaseId.keys().next().value;
+        if (oldestKey) {
+          this.firstSeenMonoByLeaseId.delete(oldestKey);
+        }
+      }
+
       this.firstSeenMonoByLeaseId.set(
         envelope.payload.lease_id,
         firstSeenMonoMs,
@@ -257,6 +269,7 @@ export class LeaseStore {
       }
 
       this.revocations.set(envelope.payload.lease_id, envelope);
+      this.firstSeenMonoByLeaseId.delete(envelope.payload.lease_id);
 
       // Evict any active lease matching the revoked lease_id
       for (const [flagKey, lease] of this.leases.entries()) {
@@ -370,6 +383,7 @@ export class LeaseStore {
 
       if (!isValid) {
         this.leases.delete(flagKey);
+        this.firstSeenMonoByLeaseId.delete(lease.leaseId);
         this.metrics.leasesEvictedRevokedCount++;
       }
     }
@@ -386,6 +400,7 @@ export class LeaseStore {
     for (const [flagKey, lease] of this.leases.entries()) {
       if (lease.leaseId === leaseId) {
         this.leases.delete(flagKey);
+        this.firstSeenMonoByLeaseId.delete(leaseId);
         this.metrics.leasesEvictedRevokedCount++;
         evicted = true;
       }

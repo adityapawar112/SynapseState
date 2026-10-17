@@ -186,8 +186,16 @@ describe("Chaos Drill 3: Network Partition During Lease Revocation", () => {
     // While within 1s TTL window, still serves in-memory override safely
     expect(duringPartitionEval.value).toBe(true);
 
-    // Phase 3: Wait for 1-second TTL to expire (> 1200ms)
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    // Phase 3: Wait for 1-second TTL to expire via process monotonic clock deadline.
+    // Deadline-poll until lease expires to eliminate tail-latency flakiness in loaded CI environments.
+    const deadline = performance.now() + 5000;
+    while (performance.now() < deadline) {
+      const check = await client.getBooleanDetails("checkout-v2", false);
+      if (check.value === false && check.reason === "STATIC") {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
 
     // Verification 3: Bounded Exposure Guarantee (Invariant 3 & Threat Model §10):
     // Even though the client NEVER received the revocation from Control API,

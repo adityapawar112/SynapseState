@@ -131,7 +131,7 @@ describe("Chaos Drill 2: Clock-Skew Injection & Dual-Clock Expiry (Invariant 3)"
   it("Scenario 2.3: Anti-Future Skew Defense — Rejects leases issued in the future beyond SKEW_TOLERANCE", () => {
     const nowWallMs = Date.parse("2026-10-17T12:00:00.000Z");
     const nowMonoMs = 5000.0;
-    const skewToleranceMs = DEFAULT_SKEW_TOLERANCE_MS; // 60,000ms (60s)
+    const skewToleranceMs = DEFAULT_SKEW_TOLERANCE_MS; // 30,000ms (30s default per ARCH §5.4)
 
     // Future-skewed lease: issued 120 seconds ahead of server/workload clock
     const futureIssuedAt = new Date(nowWallMs + 120_000).toISOString();
@@ -149,8 +149,8 @@ describe("Chaos Drill 2: Clock-Skew Injection & Dual-Clock Expiry (Invariant 3)"
     expect(futureEval.status).toBe("FUTURE_DATED");
     expect(futureEval.reason).toContain("Lease issued in future");
 
-    // Tolerated skew: issued 30 seconds ahead (within 60s tolerance) -> ACCEPTED
-    const toleratedIssuedAt = new Date(nowWallMs + 30_000).toISOString();
+    // Tolerated skew: issued 15 seconds ahead (within 30s tolerance) -> ACCEPTED
+    const toleratedIssuedAt = new Date(nowWallMs + 15_000).toISOString();
     const toleratedEval = evaluateLeaseExpiry({
       issuedAt: toleratedIssuedAt,
       ttlSeconds: 300,
@@ -191,7 +191,7 @@ describe("Chaos Drill 2: Clock-Skew Injection & Dual-Clock Expiry (Invariant 3)"
     expect(store.getMetrics().leasesRejectedCount).toBe(1);
   });
 
-  it("Scenario 2.5: Monotonic Non-Extension — Subsequent addLease preserves original firstSeenMonoMs", () => {
+  it("Scenario 2.5: Monotonic Non-Extension — Subsequent addLease preserves original firstSeenMonoMs", async () => {
     const store = new LeaseStore({ keyset: pinnedKeyset });
     const leaseId = generateUlid();
     const issuedAt = new Date().toISOString();
@@ -216,16 +216,14 @@ describe("Chaos Drill 2: Clock-Skew Injection & Dual-Clock Expiry (Invariant 3)"
     expect(active1).toBeDefined();
     const originalFirstSeenMono = active1!.firstSeenMonoMs;
 
-    // Simulate re-receiving the exact same lease 100ms later
-    const nowMonoLater = performance.now() + 100;
-    const evalAfterReingest = evaluateLeaseExpiry({
-      issuedAt,
-      ttlSeconds: 300,
-      firstSeenMonoMs: originalFirstSeenMono,
-      nowMonoMs: nowMonoLater,
-    });
-    // Remaining monotonic time decreased by 100ms, not reset
-    expect(evalAfterReingest.remainingMonoMs).toBeLessThan(300_000);
+    // Re-ingest the exact same lease through store.addLease after a delay
+    await new Promise((r) => setTimeout(r, 20));
+    expect(store.addLease(envelope)).toBe(true);
+    const active2 = store.getActiveLease("mon-preservation-flag");
+    expect(active2).toBeDefined();
+
+    // firstSeenMonoMs must NOT be reset or extended
+    expect(active2!.firstSeenMonoMs).toBe(originalFirstSeenMono);
   });
 
   it("Scenario 2.6: In-Process OverrideProvider Integration Under Injected Clock Skew", async () => {

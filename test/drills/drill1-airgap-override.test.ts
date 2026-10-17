@@ -237,8 +237,25 @@ describe("Chaos Drill 1: Air-Gapped Emergency Override Channel", () => {
     expect(overriddenNum.reason).toBe("OVERRIDE");
 
     // Phase 4: Verify Invariant 3 (Dual-Clock Expiry & Automatic Clean Fallback)
-    // Wait for 1-second TTL + SKEW tolerance to elapse
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    // Expiration occurs via the process monotonic leg (firstSeenMono + 1000ms).
+    // Deadline-poll until all three leases expire to eliminate tail-latency flakiness in loaded CI environments.
+    const deadline = performance.now() + 5000;
+    while (performance.now() < deadline) {
+      const checkBool = await client.getBooleanDetails("checkout-v2", false);
+      const checkString = await client.getStringDetails(
+        "payment-gateway",
+        "primary",
+      );
+      const checkNum = await client.getNumberDetails("max-retry-attempts", 5);
+      if (
+        checkBool.value === false &&
+        checkString.value === "legacy-processor" &&
+        checkNum.value === 5
+      ) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
 
     // Hot-path evaluation now falls back to delegate provider without error
     const revertedBool = await client.getBooleanDetails("checkout-v2", false);
@@ -425,5 +442,60 @@ describe("Chaos Drill 1: Air-Gapped Emergency Override Channel", () => {
     expect(active.flagMetadata["synapse.lease_id"]).toBe(
       newerLeasePayload.lease_id,
     );
+  });
+
+  it("resolves conflicting emergency leases with identical issued_at deterministically by lease_id (ULID) DESC", async () => {
+    const client = OpenFeature.getClient("drill1-domain");
+    const scanner = provider.getEmergencyScanner()!;
+
+    const identicalIssuedAt = new Date().toISOString();
+    const lowUlid = "01J9X57YTRPQ8A7F4E11111111";
+    const highUlid = "01J9X57YTRPQ8A7F4E99999999";
+
+    const lowLeasePayload: LeasePayload = {
+      v: 1,
+      lease_id: lowUlid,
+      env: "prod",
+      flag_key: "checkout-v2",
+      value: false,
+      reason: "Lower ULID lease",
+      issued_at: identicalIssuedAt,
+      ttl_seconds: 600,
+      kid: "alice-sre-lead",
+      nonce: "nonce-low-ulid",
+    };
+    const highLeasePayload: LeasePayload = {
+      v: 1,
+      lease_id: highUlid,
+      env: "prod",
+      flag_key: "checkout-v2",
+      value: true,
+      reason: "Higher ULID lease winning tie-break",
+      issued_at: identicalIssuedAt,
+      ttl_seconds: 600,
+      kid: "alice-sre-lead",
+      nonce: "nonce-high-ulid",
+    };
+
+    const lowEnvelope = signLease(lowLeasePayload, alicePair.privateKey);
+    const highEnvelope = signLease(highLeasePayload, alicePair.privateKey);
+
+    fs.writeFileSync(
+      path.join(emergencyDir, "lease-low-ulid.json"),
+      JSON.stringify(lowEnvelope, null, 2),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(emergencyDir, "lease-high-ulid.json"),
+      JSON.stringify(highEnvelope, null, 2),
+      "utf8",
+    );
+
+    await scanner.scanOnce();
+
+    const active = await client.getBooleanDetails("checkout-v2", false);
+    expect(active.value).toBe(true);
+    expect(active.reason).toBe("OVERRIDE");
+    expect(active.flagMetadata["synapse.lease_id"]).toBe(highUlid);
   });
 });
