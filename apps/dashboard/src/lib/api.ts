@@ -348,9 +348,73 @@ export class ControlApiClient {
 
     return (await res.json()) as { lease_id: string; state: string };
   }
+
+  /**
+   * Promotes an emergency override to Git via Control API POST /v1/leases/:id/promote (PR 25)
+   */
+  async promoteLease(
+    leaseId: string,
+    options: { env?: string; actor?: string } = {}
+  ): Promise<{ lease_id: string; pr_url: string; branch: string }> {
+    const url = `${this.baseUrl}/v1/leases/${encodeURIComponent(leaseId)}/promote`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : {}),
+      },
+      body: JSON.stringify(options),
+    });
+
+    if (!res.ok) {
+      const err = await res
+        .json()
+        .catch(() => ({ error: "Promotion request failed", message: `Failed to promote lease: ${res.statusText}` }));
+      const error = new Error(err.message || err.error || `Failed to promote lease: ${res.statusText}`);
+      (error as unknown as { code?: string; existingPrUrl?: string }).code = err.error;
+      if (err.existing_pr_url) {
+        (error as unknown as { existingPrUrl?: string }).existingPrUrl = err.existing_pr_url;
+      }
+      throw error;
+    }
+
+    return (await res.json()) as { lease_id: string; pr_url: string; branch: string };
+  }
+
+  /**
+   * Stages an administrative event into the Control API audit ledger (audit_pending) (PR 25)
+   */
+  async recordAuditEvent(event: {
+    actor: string;
+    eventType: string;
+    payload?: Record<string, unknown>;
+  }): Promise<boolean> {
+    try {
+      const url = `${this.baseUrl}/v1/audit/events`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : {}),
+        },
+        body: JSON.stringify({
+          actor: event.actor,
+          event_type: event.eventType,
+          payload: event.payload || {},
+        }),
+      });
+
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
 }
 
 /**
  * Singleton client instance for Server Components and route handlers
  */
 export const controlApiClient = new ControlApiClient();
+

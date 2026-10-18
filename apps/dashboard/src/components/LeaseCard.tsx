@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import type { ActiveLeaseView, UserRole } from "@/lib/types";
 import { RevokeModal } from "@/components/RevokeModal";
+import { PromoteModal } from "@/components/PromoteModal";
 import { Badge } from "@/components/ui/badge";
-import { LuExternalLink, LuBan, LuClock } from "react-icons/lu";
+import { LuExternalLink, LuBan, LuClock, LuGitPullRequest } from "react-icons/lu";
 
 interface LeaseCardProps {
   lease: ActiveLeaseView;
@@ -34,6 +35,9 @@ export function LeaseCard({
 }: LeaseCardProps) {
   const [remainingSeconds, setRemainingSeconds] = useState(lease.remainingSeconds);
   const [showRevokeModal, setShowRevokeModal] = useState(false);
+  const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [promotePrUrl, setPromotePrUrl] = useState<string | undefined>(lease.promotePrUrl);
+
 
   useEffect(() => {
     setRemainingSeconds(lease.remainingSeconds);
@@ -192,9 +196,9 @@ export function LeaseCard({
           </div>
 
           <div style={{ display: "flex", gap: "8px" }}>
-            {lease.promotePrUrl && (
+            {promotePrUrl ? (
               <a
-                href={lease.promotePrUrl}
+                href={promotePrUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-secondary"
@@ -203,6 +207,19 @@ export function LeaseCard({
                 <span>View Promotion PR</span>
                 <LuExternalLink size={12} />
               </a>
+            ) : (
+              lease.status !== "REVOKED" && userRole !== "viewer" && (
+                <button
+                  id={`promote-btn-${lease.leaseId}`}
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: "12px", height: "32px", padding: "4px 10px", display: "inline-flex", alignItems: "center", gap: "5px" }}
+                  onClick={() => setShowPromoteModal(true)}
+                >
+                  <LuGitPullRequest size={12} />
+                  <span>Promote to Git</span>
+                </button>
+              )
             )}
 
             {!isExpired && lease.status === "ACTIVE" && userRole !== "viewer" && (
@@ -232,6 +249,20 @@ export function LeaseCard({
           }}
         />
       )}
+
+      {showPromoteModal && (
+        <PromoteModal
+          lease={lease}
+          userRole={userRole}
+          onClose={() => setShowPromoteModal(false)}
+          onPromoted={(prUrl) => {
+            setPromotePrUrl(prUrl);
+            setShowPromoteModal(false);
+            if (onRefresh) onRefresh();
+          }}
+        />
+      )}
     </>
   );
 }
+

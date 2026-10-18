@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
-import { RoleBadge } from "@/components/RoleBadge";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { UserProfileDropdown } from "@/components/UserProfileDropdown";
 import { LuZap, LuShieldCheck, LuArrowUpRight } from "react-icons/lu";
+
+
 import { cookies } from "next/headers";
 import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
@@ -201,43 +203,11 @@ export default async function RootLayout({
                 Mesh Online
               </span>
 
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "4px 10px",
-                  borderRadius: "var(--radius-full)",
-                  backgroundColor: "var(--color-cream)",
-                  border: "1px solid var(--color-hairline)",
-                }}
-              >
-                <RoleBadge role={role} />
-                <span
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--color-ink-soft)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  {user?.login || "anonymous"}
-                </span>
-                <Link
-                  href="/login"
-                  id="switch-role-link"
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--color-kumo-brand)",
-                    fontWeight: 500,
-                    marginLeft: "4px",
-                  }}
-                >
-                  Switch
-                </Link>
-              </div>
+              <UserProfileDropdown user={user} role={role} />
             </div>
           </div>
         </header>
+
 
         {/* Main Content Area */}
         <main

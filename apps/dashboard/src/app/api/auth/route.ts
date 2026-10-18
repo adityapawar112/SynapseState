@@ -8,6 +8,8 @@ import {
   getSessionSecret,
 } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
+import { controlApiClient } from "@/lib/api";
+
 
 export async function GET(request: NextRequest) {
   const secret = getSessionSecret();
@@ -61,6 +63,13 @@ export async function POST(request: NextRequest) {
     csrfToken,
     message: `Switched session to role: ${role}`,
   });
+
+  void controlApiClient.recordAuditEvent({
+    actor: user.login,
+    eventType: "DASHBOARD_LOGIN",
+    payload: { role: user.role, isDev: true },
+  });
+
 
   const isProduction = (process.env.NODE_ENV as string) === "production";
 
