@@ -240,6 +240,7 @@ All state delivery and evaluation paths are validated against continuous benchma
 - [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md) — Microbenchmarks measuring wrapper overhead
 - [docs/benchmarks/load-test-report.md](docs/benchmarks/load-test-report.md) — k6 long-polling load and saturation report
 - [docs/LOAD_TESTING_AND_OBSERVABILITY_HANDOFF.md](docs/LOAD_TESTING_AND_OBSERVABILITY_HANDOFF.md) — Operational handoff for running k6 load suites and capturing dashboard screenshots
+- [docs/ADVANCED_TESTING_HANDOFF.md](docs/ADVANCED_TESTING_HANDOFF.md) — Handoff for Playwright E2E, Stryker mutation testing, and chaos/stress automation
 - [docs/runbooks/propagation-latency.md](docs/runbooks/propagation-latency.md) — Incident runbook for lease propagation degradation
 - [docs/adr/](docs/adr/) — Architectural Decision Records
 

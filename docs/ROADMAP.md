@@ -256,11 +256,53 @@ gantt
 
 ---
 
-### Phase 7: Optional Advanced Integrations (Post-GA)
+### Phase 7: End-to-End Verification & Mutation Resilience (Weeks 13 – 14)
 
-- GitOps controller integration (ArgoCD / Flux image-updater).
-- Kubernetes CRD & operator for declarative flag manifest synchronization.
-- Additional delegate providers (Unleash provider, Flipt provider).
+**Deliverable:** Playwright browser test suite for the Operations Portal, Stryker mutation testing for cryptographic/safety boundaries, and automated CI chaos drills. Reference: [docs/ADVANCED_TESTING_HANDOFF.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ADVANCED_TESTING_HANDOFF.md).
+
+- **7.1 Dashboard End-to-End Test Suite (`apps/dashboard/e2e`):**
+  - Full Playwright user journeys against production builds (`next build && next start` on port 3010).
+  - RBAC permission enforcement: verify `viewer` cannot trigger mutations; `operator` and `admin` execute valid actions.
+  - Real-time countdown timer testing: monotonic decrement and dual-clock expiry visual updates.
+  - Revocation and Promotion modal execution with YAML diff preview and toast confirmation.
+- **7.2 Cryptographic & Invariant Mutation Testing (`packages/lease` & `packages/sdk`):**
+  - Granular Stryker Mutator configuration (`@stryker-mutator/core` + `@stryker-mutator/vitest-runner`) with `related: true`.
+  - Enforce mutation testing against core invariants:
+    - Invariant 3: Dual-clock expiry arithmetic ($\min(\text{mono}, \text{wall})$ and skew tolerance).
+    - Invariant 1: Fail-safe fallback try/catch delegation to base provider.
+    - Invariant 2: Ed25519 signature verification, RFC 8785 canonicalization, and SHA-256 hash chaining.
+  - Enforce Mutation Score Indicator (MSI) break threshold $\ge 80\%$.
+- **7.3 Automated Chaos & Fault-Injection Pipeline:**
+  - Automated execution of the 3 chaos failure drills (`test/drills/`) in CI against live Docker environments (API partition, host clock-skew injection, and revocation packet loss).
+- **Recommended Branches & Pull Requests:**
+  - **PR 27 (`test/dashboard-playwright-e2e`):** `test(dashboard): Playwright E2E suite for RBAC, active leases, and promotion flows` — `apps/dashboard/e2e/*`
+  - **PR 28 (`test/mutation-stryker-invariants`):** `test(lease,sdk): Stryker mutation testing for cryptographic and dual-clock invariants` — `packages/lease/stryker.config.json`, `packages/sdk/stryker.config.json`
+  - **PR 29 (`test/chaos-drill-automation`):** `test(drills): automated CI runner and assertions for network partitions and clock-skew drills` — `test/drills/*`, `.github/workflows/*`
+- **Security & Best Practice Review Checkpoints:**
+  - **Production Build Only:** Ensure Playwright tests run against production `next start` server to avoid dev-server hydration jitter.
+  - **Zero Surviving Invariant Mutants:** 100% of mutants touching dual-clock expiry and signature checks must be killed.
+- **Definition of Done:** 100% Playwright test pass rate; Stryker Mutation Score $\ge 80\%$ on `packages/lease` and `packages/sdk`; 3/3 chaos drills passing in CI.
+
+---
+
+### Phase 8: Production Load Saturation, Soak Benchmarks & Observability Visuals (Weeks 15 – 16)
+
+**Deliverable:** 10-minute soak testing, saturation cliff identification, bulkhead load-shedding proof, and automated headless screenshot capture during live load. Reference: [docs/LOAD_TESTING_AND_OBSERVABILITY_HANDOFF.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/LOAD_TESTING_AND_OBSERVABILITY_HANDOFF.md).
+
+- **8.1 Multi-Scenario k6 Saturation & Soak Harness (`load/k6/`):**
+  - Standardized 4-phase Story Arc traffic orchestration: Baseline $\to$ Emergency Break-Glass $\to$ Telemetry Bulkhead Saturation $\to$ Ephemeral Expiry.
+  - 10-minute sustained soak test to verify Node.js memory RSS stability under continuous long-polling.
+- **8.2 Bulkhead Isolation & Load-Shedding Verification:**
+  - Empirical proof under 5,000+ evals/s that telemetry saturation sheds load (HTTP 429 on `telemetryPool`) while state delivery (`leasePool`) maintains 100% availability and $<10\text{ms}$ latency.
+- **8.3 Automated Observability Screenshot Pipeline:**
+  - Automated headless browser capture of all 5 dashboards (Overview, Leases, Flags, Audit Ledger, Grafana) during live load for automated README and release asset generation.
+- **Recommended Branches & Pull Requests:**
+  - **PR 30 (`test/k6-soak-and-saturation`):** `test(load): 10-minute soak harness and saturation cliff benchmarks` — `load/k6/*`
+  - **PR 31 (`ci/automated-dashboard-screenshots`):** `ci(docs): automated headless capture of operations portal and Grafana during live load scenarios` — `scratch/capture-dashboards.js`, `docs/assets/*`
+- **Security & Best Practice Review Checkpoints:**
+  - **Bulkhead Immunity:** Confirm zero connection starvation on `leasePool` during telemetry write spikes.
+  - **Zero PII in Documentation Visuals:** Assert that captured dashboard screenshots contain only synthetic test personas.
+- **Definition of Done:** Documented saturation cliff report; published Grafana and Next.js screenshots captured during active load testing; zero memory leaks over 10-minute soak.
 
 ---
 
@@ -290,6 +332,9 @@ These decisions represent in-scope areas that depend on earlier milestone learni
 
 Work ruled permanently beyond this destination; closed and excluded from the frontier:
 
+- **Bespoke Kubernetes Operator / CRD for Flag Declarations:** Evaluating baseline flags or syncing manifests via a custom in-pod or in-cluster controller. Standard GitOps tools (ArgoCD, Flux) and native OpenFeature file/ConfigMap providers handle baseline synchronization declaratively.
+- **Bespoke GitOps Controller Integration:** Maintaining custom synchronization agents; standard Git pull requests (`synapse promote`) cleanly interface with existing GitOps controllers without bespoke integration code.
+- **Vendor-Specific In-Core Adapters:** Core SynapseState wraps any OpenFeature standard `Provider` interface generically (`new OverrideProvider({ delegate })`). Any OpenFeature-compliant provider (Unleash, Flipt, LaunchDarkly, flagd) works out-of-the-box without bespoke vendor adapters in core.
 - **Custom Flag Evaluation Engine:** Building rule evaluation, context segmenters, or MurmurHash3 bucketing. Evaluation is strictly delegated to OpenFeature providers.
 - **Client-Side / Mobile SDKs:** Browser, iOS, or Android SDK distribution. Internal keysets and rulesets never egress to untrusted environments.
 - **Web Administrative Flag Authoring:** A web UI for creating or editing flag definitions. Git is the sole source of truth for baseline configurations.
