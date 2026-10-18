@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     const existingPrUrl = (err as { existingPrUrl?: string })?.existingPrUrl;
     const message = err instanceof Error ? err.message : "Control API rejected promotion";
 
-    if (code === "STALE_PR_CONFLICT" || message.includes("Conflict") || message.includes("already")) {
+    if (code === "STALE_PR_CONFLICT") {
       return NextResponse.json(
         {
           error: "STALE_PR_CONFLICT",
@@ -140,6 +140,7 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
+
 
     return NextResponse.json(
       {

@@ -46,14 +46,20 @@ describe("Dashboard Middleware Route Protection", () => {
 
   it("blocks viewer role from mutation API routes with 403 Forbidden", async () => {
     const token = await createSessionToken(viewerUser, secret);
-    const result = await checkRouteAccess("/api/actions/revoke", token, secret, false);
-    expect(result.action).toBe("forbidden");
+    const revokeResult = await checkRouteAccess("/api/actions/revoke", token, secret, false);
+    expect(revokeResult.action).toBe("forbidden");
+
+    const promoteResult = await checkRouteAccess("/api/actions/promote", token, secret, false);
+    expect(promoteResult.action).toBe("forbidden");
   });
 
-  it("permits operator role to access revocation API route", async () => {
+  it("permits operator role to access revocation and promotion API routes", async () => {
     const token = await createSessionToken(operatorUser, secret);
-    const result = await checkRouteAccess("/api/actions/revoke", token, secret, false);
-    expect(result.action).toBe("allow");
+    const revokeResult = await checkRouteAccess("/api/actions/revoke", token, secret, false);
+    expect(revokeResult.action).toBe("allow");
+
+    const promoteResult = await checkRouteAccess("/api/actions/promote", token, secret, false);
+    expect(promoteResult.action).toBe("allow");
   });
 
   it("allows dev mode bypass when devAuthEnabled is explicitly true", async () => {

@@ -50,7 +50,11 @@ export function PromoteModal({
         "Content-Type": "application/json",
       };
       if (csrfCookie) {
-        headers["x-synapse-csrf"] = decodeURIComponent(csrfCookie);
+        try {
+          headers["x-synapse-csrf"] = decodeURIComponent(csrfCookie);
+        } catch {
+          headers["x-synapse-csrf"] = csrfCookie;
+        }
       }
 
       const res = await fetch("/api/actions/promote", {
@@ -315,7 +319,7 @@ export function PromoteModal({
             style={{
               padding: "10px 14px",
               borderRadius: "var(--radius-xs)",
-              backgroundColor: "rgba(181, 41, 50, 0.08)",
+              backgroundColor: "var(--color-canvas)",
               border: "1px solid var(--color-under-attack)",
               color: "var(--color-under-attack)",
               fontSize: "13px",

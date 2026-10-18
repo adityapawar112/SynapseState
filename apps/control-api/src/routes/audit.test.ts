@@ -345,6 +345,21 @@ describe("Phase 4 PR 19: Audit Export Routes (apps/control-api/src/routes/audit.
       expect(res2.statusCode).toBe(400);
     });
 
+    it("returns 400 INVALID_EVENT_TYPE when event_type is not in the allowed operational events list", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/audit/events",
+        headers: { authorization: `Bearer ${masterToken}` },
+        payload: {
+          actor: "sre-alice",
+          event_type: "LEASE_CREATED", // Spoofed event type attempting ledger pollution
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe("INVALID_EVENT_TYPE");
+    });
+
     it("stages audit event to audit_pending and returns 202 Accepted", async () => {
       const res = await app.inject({
         method: "POST",

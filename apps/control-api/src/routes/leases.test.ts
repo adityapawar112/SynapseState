@@ -584,11 +584,15 @@ describe("Lease Ingestion & Revocation Routes", () => {
       });
 
       expect(res.statusCode).toBe(409);
-      expect(res.json().error).toBe("CONFLICT");
+      expect(res.json().error).toBe("STALE_PR_CONFLICT");
+      expect(res.json().existing_pr_url).toBe(
+        "https://github.com/org/repo/pull/123",
+      );
       expect(res.json().promote_pr_url).toBe(
         "https://github.com/org/repo/pull/123",
       );
     });
+
 
     it("returns 409 Conflict when lease is REVOKED", async () => {
       const leaseId = generateUlid();

@@ -153,7 +153,10 @@ export async function GET(request: NextRequest) {
       maxAge: 3600 * 24,
     });
 
-    res.cookies.delete("synapse_oauth_state");
+    res.cookies.set("synapse_oauth_state", "", {
+      path: "/",
+      maxAge: 0,
+    });
     return res;
   } catch {
     const errorUrl = new URL("/login", request.url);

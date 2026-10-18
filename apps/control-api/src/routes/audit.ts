@@ -13,6 +13,15 @@ interface AuditEventsQuery {
   limit?: string;
 }
 
+export const ALLOWED_STAGED_AUDIT_EVENTS = new Set([
+  "DASHBOARD_LOGIN",
+  "DASHBOARD_REVOKE_TRIGGERED",
+  "DASHBOARD_PROMOTE_TRIGGERED",
+  "LEASE_PROMOTE_REQUESTED",
+  "INCIDENT_ALERT_RECEIVED",
+  "INCIDENT_ATTRIBUTION_EMITTED",
+]);
+
 /**
  * Parses a string strictly as a non-negative integer.
  * Rejects floats ("1.5"), trailing alphas ("10abc"), exponentials ("10e2"), and unsafe numbers.
@@ -332,11 +341,19 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
       });
     }
 
+    const eventType = body.event_type.trim();
+    if (!ALLOWED_STAGED_AUDIT_EVENTS.has(eventType)) {
+      return reply.code(400).send({
+        error: "INVALID_EVENT_TYPE",
+        message: `event_type "${eventType}" is not an allowed operational audit event type`,
+      });
+    }
+
     const payload = body.payload && typeof body.payload === "object" ? body.payload : {};
 
     await pool.query(
       "INSERT INTO audit_pending (actor, event_type, payload) VALUES ($1, $2, $3)",
-      [body.actor.trim(), body.event_type.trim(), JSON.stringify(payload)],
+      [body.actor.trim(), eventType, JSON.stringify(payload)],
     );
 
     return reply.code(202).send({

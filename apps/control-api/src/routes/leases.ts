@@ -588,11 +588,13 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     // 3. State validation
     if (lease.state === "PROMOTED") {
       return reply.code(409).send({
-        error: "CONFLICT",
+        error: "STALE_PR_CONFLICT",
         message: `Cannot promote lease "${id}": lease is already in state "PROMOTED"`,
-        promote_pr_url: lease.promote_pr_url,
+        existing_pr_url: lease.promote_pr_url ?? undefined,
+        promote_pr_url: lease.promote_pr_url ?? undefined,
       });
     }
+
 
     if (lease.state !== "ACTIVE" && lease.state !== "EXPIRED") {
       return reply.code(409).send({

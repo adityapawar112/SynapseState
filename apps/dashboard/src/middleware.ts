@@ -58,7 +58,14 @@ export async function checkRouteAccess(
     }
   }
 
+  if (pathname.startsWith("/api/actions/promote")) {
+    if (!hasRolePermission(user.role, "promote")) {
+      return { action: "forbidden" };
+    }
+  }
+
   return { action: "allow", user };
+
 }
 
 /**

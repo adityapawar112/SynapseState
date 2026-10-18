@@ -373,11 +373,13 @@ export class ControlApiClient {
         .catch(() => ({ error: "Promotion request failed", message: `Failed to promote lease: ${res.statusText}` }));
       const error = new Error(err.message || err.error || `Failed to promote lease: ${res.statusText}`);
       (error as unknown as { code?: string; existingPrUrl?: string }).code = err.error;
-      if (err.existing_pr_url) {
-        (error as unknown as { existingPrUrl?: string }).existingPrUrl = err.existing_pr_url;
+      const prUrl = err.existing_pr_url || err.promote_pr_url;
+      if (prUrl) {
+        (error as unknown as { existingPrUrl?: string }).existingPrUrl = prUrl;
       }
       throw error;
     }
+
 
     return (await res.json()) as { lease_id: string; pr_url: string; branch: string };
   }
@@ -406,8 +408,19 @@ export class ControlApiClient {
         }),
       });
 
-      return res.ok;
-    } catch {
+      if (!res.ok) {
+        console.warn(
+          `[ControlApiClient] Failed to stage audit event "${event.eventType}" for actor "${event.actor}" (HTTP ${res.status})`
+        );
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.warn(
+        `[ControlApiClient] Failed to reach Control API to stage audit event "${event.eventType}" for actor "${event.actor}":`,
+        err
+      );
       return false;
     }
   }
