@@ -282,13 +282,8 @@ a {
 }
 
 .btn-danger:hover {
-  background-color: #991b1b;
-  color: #ffffff;
-}
-
-.btn-danger:hover {
   background-color: var(--color-emergency-red);
-  color: var(--color-cream);
+  color: #ffffff;
   border-color: var(--color-emergency-red);
 }
 

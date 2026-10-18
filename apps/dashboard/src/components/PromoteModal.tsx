@@ -90,7 +90,7 @@ export function PromoteModal({
     }
   };
 
-  const cliCommand = `synapse promote --lease-id ${lease.leaseId}`;
+  const cliCommand = `synapse promote ${lease.leaseId} --env ${lease.env}`;
 
   return (
     <div
@@ -227,14 +227,14 @@ export function PromoteModal({
             style={{
               padding: "14px 16px",
               borderRadius: "var(--radius-xs)",
-              backgroundColor: "rgba(0, 189, 125, 0.1)",
-              border: "1px solid var(--color-storage)",
+              backgroundColor: "var(--color-cream)",
+              border: "1px solid var(--color-ai)",
               display: "flex",
               flexDirection: "column",
               gap: "10px",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--color-storage)", fontWeight: 600, fontSize: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--color-ai)", fontWeight: 600, fontSize: "14px" }}>
               <LuCircleCheck size={18} />
               <span>Draft Pull Request Created Successfully</span>
             </div>
@@ -251,8 +251,8 @@ export function PromoteModal({
                 rel="noreferrer"
                 className="btn btn-primary"
                 style={{
-                  backgroundColor: "var(--color-storage)",
-                  borderColor: "var(--color-storage)",
+                  backgroundColor: "var(--color-ai)",
+                  borderColor: "var(--color-ai)",
                   color: "#ffffff",
                   fontSize: "13px",
                   display: "inline-flex",
@@ -282,7 +282,7 @@ export function PromoteModal({
             style={{
               padding: "12px 14px",
               borderRadius: "var(--radius-xs)",
-              backgroundColor: "rgba(255, 94, 31, 0.08)",
+              backgroundColor: "var(--color-cream)",
               border: "1px solid var(--color-kumo-brand)",
               display: "flex",
               flexDirection: "column",
