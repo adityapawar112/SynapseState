@@ -31,10 +31,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 2. CSRF Token Validation
-  const csrfToken =
-    request.headers.get("x-synapse-csrf") ||
-    request.cookies.get("synapse_csrf")?.value;
+  // 2. CSRF Token Validation — Strictly require header for double-submit protection
+  const csrfToken = request.headers.get("x-synapse-csrf");
 
   const isDevAuth =
     process.env.NODE_ENV !== "production" &&
@@ -49,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "CSRF_FORBIDDEN",
-          message: "Valid x-synapse-csrf token is required for mutation requests",
+          message: "Valid x-synapse-csrf token header is required for mutation requests",
         },
         { status: 403 }
       );
@@ -133,7 +131,10 @@ export async function POST(request: NextRequest) {
       actor: user.login,
     });
   } catch (err: unknown) {
-    if (process.env.NODE_ENV !== "production") {
+    if (
+      process.env.NODE_ENV !== "production" &&
+      process.env.SYNAPSE_MOCK_REVOKE === "true"
+    ) {
       return NextResponse.json({
         success: true,
         leaseId: body.leaseId,

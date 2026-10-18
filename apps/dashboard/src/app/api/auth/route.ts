@@ -32,17 +32,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // Security Guard: Prohibit uncredentialed session minting in production
-  const isDevAllowed =
-    process.env.NODE_ENV !== "production" ||
-    process.env.SYNAPSE_DEV_AUTH === "true";
-
-  if (!isDevAllowed) {
+  // Security Guard: Prohibit uncredentialed session minting in production under all conditions
+  if (process.env.NODE_ENV === "production" || process.env.SYNAPSE_DEV_AUTH !== "true") {
     return NextResponse.json(
       {
         error: "FORBIDDEN",
         message:
-          "Direct session minting is disabled in production. Authenticate via GitHub OIDC or configure SYNAPSE_DEV_AUTH=true for testing.",
+          "Direct session minting is disabled in production. Authenticate via GitHub OIDC.",
       },
       { status: 403 }
     );
@@ -66,10 +62,12 @@ export async function POST(request: NextRequest) {
     message: `Switched session to role: ${role}`,
   });
 
+  const isProduction = (process.env.NODE_ENV as string) === "production";
+
   response.cookies.set("synapse_session", token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isProduction,
     path: "/",
     maxAge: 3600 * 24, // 24 hours
   });
@@ -77,7 +75,7 @@ export async function POST(request: NextRequest) {
   response.cookies.set("synapse_csrf", csrfToken, {
     httpOnly: false, // Accessible to client-side JS for x-synapse-csrf header
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isProduction,
     path: "/",
     maxAge: 3600 * 24,
   });

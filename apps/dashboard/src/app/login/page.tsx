@@ -4,8 +4,7 @@ import React, { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { UserRole } from "@/lib/types";
 import { Card } from "@/components/ui/card";
-import { LuZap, LuShieldAlert, LuShieldCheck, LuEye, LuCircleAlert } from "react-icons/lu";
-import { FaGithub } from "react-icons/fa";
+import { LuZap, LuShieldAlert, LuShieldCheck, LuEye, LuCircleAlert, LuGithub } from "react-icons/lu";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -75,7 +74,6 @@ export default function LoginPage() {
           display: "flex",
           flexDirection: "column",
           gap: "28px",
-          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.03)",
         }}
       >
         <div style={{ textAlign: "center" }}>
@@ -89,7 +87,6 @@ export default function LoginPage() {
               alignItems: "center",
               justifyContent: "center",
               margin: "0 auto 16px auto",
-              boxShadow: "0 2px 8px rgba(255, 94, 31, 0.3)",
             }}
           >
             <LuZap size={24} color="var(--color-cream)" />
@@ -144,7 +141,7 @@ export default function LoginPage() {
             gap: "10px",
           }}
         >
-          <FaGithub size={18} />
+          <LuGithub size={18} />
           <span>Sign In with GitHub OIDC</span>
         </a>
 

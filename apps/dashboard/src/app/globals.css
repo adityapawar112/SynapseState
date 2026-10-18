@@ -233,7 +233,6 @@ a {
   border-radius: var(--radius-full);
   padding: 12px 24px;
   height: 46px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 .btn-pill-cream:hover {
@@ -248,7 +247,6 @@ a {
   border-radius: var(--radius-full);
   padding: 12px 24px;
   height: 46px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 .btn-pill-brand:hover {
@@ -273,14 +271,19 @@ a {
 
 /* Destructive / Emergency Red Button */
 .btn-danger {
-  background-color: #fee2e2;
-  color: var(--color-under-attack);
-  border: 1px solid #fca5a5;
+  background-color: var(--color-under-attack);
+  color: #ffffff;
+  border: none;
   border-radius: var(--radius-md);
   padding: 8px 14px;
   height: 40px;
   font-size: 14px;
   font-weight: 500;
+}
+
+.btn-danger:hover {
+  background-color: #991b1b;
+  color: #ffffff;
 }
 
 .btn-danger:hover {

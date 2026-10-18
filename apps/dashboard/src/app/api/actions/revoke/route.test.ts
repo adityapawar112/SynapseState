@@ -85,6 +85,26 @@ describe("API Route: /api/actions/revoke", () => {
     expect(data.error).toBe("CSRF_FORBIDDEN");
   });
 
+  it("returns 403 when synapse_csrf cookie is sent but x-synapse-csrf header is missing (CSRF bypass regression)", async () => {
+    const operator = getDevSessionUser("operator");
+    const sessionToken = await createSessionToken(operator, testSecret);
+    const csrfToken = await generateCsrfToken(operator.id, testSecret);
+
+    const req = new NextRequest("http://localhost:3000/api/actions/revoke", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: `synapse_session=${sessionToken}; synapse_csrf=${csrfToken}`,
+      },
+      body: JSON.stringify({ leaseId: "lease-1", reason: "Test" }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.error).toBe("CSRF_FORBIDDEN");
+  });
+
   it("returns 400 when missing required fields (reason or leaseId)", async () => {
     const operator = getDevSessionUser("operator");
     const sessionToken = await createSessionToken(operator, testSecret);

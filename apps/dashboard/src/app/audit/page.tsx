@@ -96,7 +96,7 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
             >
               {chainVerification.valid ? "Hash Chain Verified" : "Tampering Detected"}
             </div>
-            <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.9)" }}>
+            <div style={{ fontSize: "12px", color: "#ffffff", opacity: 0.9 }}>
               {chainVerification.valid
                 ? "Cryptographic SHA-256 continuity unbroken"
                 : `Sequence discontinuity at seq #${chainVerification.brokenAtSeq}`}
@@ -232,9 +232,23 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
                         </span>
                       </td>
                       <td style={{ padding: "14px 18px", color: "var(--color-ink-soft)" }}>
-                        <span className="code-inline" style={{ fontSize: "11px" }}>
-                          {JSON.stringify(event.payload).slice(0, 48)}…
-                        </span>
+                        {(() => {
+                          const p = (event.payload || {}) as Record<string, unknown>;
+                          const parts: string[] = [];
+                          const flagKey = p.flagKey || p.flag_key;
+                          if (flagKey) parts.push(`flag:${flagKey}`);
+                          const leaseId = p.leaseId || p.lease_id;
+                          if (leaseId) parts.push(`lease:${String(leaseId).slice(0, 14)}…`);
+                          if (p.reason) parts.push(`reason:${String(p.reason).slice(0, 24)}…`);
+                          const prUrl = p.prUrl || p.pr_url;
+                          if (prUrl) parts.push(`pr:${String(prUrl).split("/").pop()}`);
+                          const safeText = parts.length > 0 ? parts.join(" · ") : "sealed payload";
+                          return (
+                            <span className="code-inline" style={{ fontSize: "11px" }}>
+                              {safeText}
+                            </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );

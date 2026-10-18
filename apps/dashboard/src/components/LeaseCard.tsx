@@ -205,7 +205,7 @@ export function LeaseCard({
               </a>
             )}
 
-            {!isExpired && lease.status === "ACTIVE" && (
+            {!isExpired && lease.status === "ACTIVE" && userRole !== "viewer" && (
               <button
                 id={`revoke-btn-${lease.leaseId}`}
                 type="button"

@@ -43,8 +43,25 @@ describe("API Route: /api/auth", () => {
     expect(data.error).toBe("FORBIDDEN");
   });
 
-  it("POST /api/auth allows role switching in development environment", async () => {
+  it("POST /api/auth rejects role switching in production EVEN IF SYNAPSE_DEV_AUTH=true (hard-block priv-esc)", async () => {
+    setNodeEnv("production");
+    process.env.SYNAPSE_DEV_AUTH = "true";
+
+    const req = new NextRequest("http://localhost:3000/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "admin" }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.error).toBe("FORBIDDEN");
+  });
+
+  it("POST /api/auth allows role switching in development environment when SYNAPSE_DEV_AUTH=true", async () => {
     setNodeEnv("development");
+    process.env.SYNAPSE_DEV_AUTH = "true";
 
     const req = new NextRequest("http://localhost:3000/api/auth", {
       method: "POST",
