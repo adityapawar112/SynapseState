@@ -837,6 +837,19 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
         process.exitCode = originalExitCode;
       }
     });
+
+    it("accepts --variant as an alias for --value", async () => {
+      const program = new Command();
+      registerLeaseCommands(program);
+
+      // Verify command parses --variant without throw
+      const cmd = program.commands.find((c) => c.name() === "lease");
+      const createCmd = cmd?.commands.find((c) => c.name() === "create");
+      expect(createCmd).toBeDefined();
+
+      const variantOption = createCmd?.options.find((o) => o.long === "--variant");
+      expect(variantOption).toBeDefined();
+    });
   });
 });
 

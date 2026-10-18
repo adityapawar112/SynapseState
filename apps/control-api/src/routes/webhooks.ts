@@ -5,6 +5,13 @@ import { withTransaction } from "../db/transaction.js";
 import type { StateManager } from "../services/state-manager.js";
 import type { SynapseMetrics } from "../metrics/index.js";
 import type { GitHubWebhookPullRequestPayload } from "../github/types.js";
+import type { GrafanaClient } from "../grafana/index.js";
+import {
+  rankSuspects,
+  quoteShellArg,
+  type ChangeEvent,
+  type FlagEvaluationRecord,
+} from "@synapsestate/lease";
 
 export interface WebhookRoutesOptions {
   leasePool: Pool;
@@ -14,6 +21,11 @@ export interface WebhookRoutesOptions {
   expectedOwner?: string;
   expectedRepo?: string;
   expectedBaseBranch?: string;
+  alertmanagerWebhookSecret?: string;
+  grafanaUrl?: string;
+  grafanaApiKey?: string;
+  grafanaClient?: GrafanaClient;
+  lookbackMinutes?: number;
 }
 
 const LEASE_ID_BRANCH_REGEX = /synapse\/promote-lease-([0-9A-HJKMNP-TV-Z]{26})/;
@@ -393,4 +405,339 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       lease_id: targetLeaseId,
     });
   });
+
+  /**
+   * Prometheus Alertmanager Incident Webhook Route.
+   *
+   * Implements ARCHITECTURE §11.4 & ROADMAP §5 Phase 6 PR 26:
+   * - Validates ALERTMANAGER_WEBHOOK_SECRET via timing-safe comparison.
+   * - Filters for firing alerts and stages INCIDENT_ALERT_RECEIVED into audit_pending.
+   * - Correlates with recent change_events and flag_usage_daily within configurable lookback.
+   * - Ranks suspect flag modifications using shared rankSuspects pure heuristic.
+   * - Stages INCIDENT_ATTRIBUTION_EMITTED into audit_pending when a change is attributed.
+   * - Formats copy-pasteable emergency override commands for incident responders.
+   * - Emits Grafana annotations with fail-open timeout protection.
+   */
+  fastify.post("/v1/webhooks/alertmanager", async (req, reply) => {
+    // 1. Secret validation
+    const alertSecret =
+      options.alertmanagerWebhookSecret ?? process.env.ALERTMANAGER_WEBHOOK_SECRET;
+
+    if (!alertSecret) {
+      req.log.error(
+        "ALERTMANAGER_WEBHOOK_SECRET is not configured on server",
+      );
+      return reply.code(500).send({
+        error: "ALERTMANAGER_SECRET_NOT_CONFIGURED",
+        message: "Alertmanager webhook secret is not configured on the server",
+      });
+    }
+
+    const headerSecret = req.headers["x-alertmanager-secret"];
+    const authHeader = req.headers.authorization;
+    let bearerSecret: string | undefined;
+    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+      bearerSecret = authHeader.slice(7).trim();
+    }
+
+    const matchedSecret =
+      (typeof headerSecret === "string" &&
+        isTimingSafeMatch(headerSecret, alertSecret)) ||
+      (typeof bearerSecret === "string" &&
+        isTimingSafeMatch(bearerSecret, alertSecret));
+
+    if (!matchedSecret) {
+      return reply.code(401).send({
+        error: "UNAUTHORIZED",
+        message: "Missing or invalid Alertmanager webhook secret",
+      });
+    }
+
+    // 2. Payload validation
+    const body = req.body as AlertmanagerPayload | undefined;
+    if (!body || typeof body !== "object" || !Array.isArray(body.alerts)) {
+      return reply.code(400).send({
+        error: "INVALID_PAYLOAD",
+        message: "Malformed Alertmanager payload: expected alerts array",
+      });
+    }
+
+    const firingAlerts = body.alerts.filter((a) => a.status === "firing");
+    if (firingAlerts.length === 0) {
+      return reply.code(200).send({
+        status: "ignored",
+        reason: "No firing alerts in payload",
+      });
+    }
+
+    // 3. Attribution & Correlation
+    const lookbackMinutes = options.lookbackMinutes ?? 60;
+    const attributions: Array<{
+      alertname: string;
+      service?: string;
+      env: string;
+      attributed: boolean;
+      suspected_flag?: string;
+      score?: number;
+      remediation_command?: string;
+      reason?: string;
+      grafana_annotation_id?: number;
+    }> = [];
+
+    for (const alert of firingAlerts) {
+      const alertname = alert.labels?.alertname || "UnknownAlert";
+      const env = alert.labels?.env || "production";
+      const service =
+        alert.labels?.service ||
+        alert.labels?.app ||
+        alert.labels?.job ||
+        alert.labels?.repo ||
+        "";
+
+      const parsedStartsAt = alert.startsAt ? new Date(alert.startsAt) : new Date();
+      const startsAtDate = Number.isFinite(parsedStartsAt.getTime())
+        ? parsedStartsAt
+        : new Date();
+
+      // Stage INCIDENT_ALERT_RECEIVED into audit_pending
+      await leasePool.query(
+        `INSERT INTO audit_pending (actor, event_type, payload)
+         VALUES ($1, 'INCIDENT_ALERT_RECEIVED', $2)`,
+        [
+          "alertmanager",
+          JSON.stringify({
+            alertname,
+            service,
+            env,
+            severity: alert.labels?.severity || "unknown",
+            starts_at: startsAtDate.toISOString(),
+            annotations: alert.annotations || {},
+          }),
+        ],
+      );
+
+      // Lookback window: default 60 minutes prior to startsAtDate
+      const lookbackMs = lookbackMinutes * 60 * 1000;
+      const lookbackStart = new Date(startsAtDate.getTime() - lookbackMs);
+      const lookbackEnd = new Date(
+        Math.max(startsAtDate.getTime() + 5 * 60 * 1000, Date.now()),
+      );
+
+      // Query change_events for env
+      const changeSql = `
+        SELECT id, event_type, env, flag_key, actor, occurred_at, payload
+        FROM change_events
+        WHERE env = $1 AND occurred_at >= $2 AND occurred_at <= $3
+        ORDER BY occurred_at DESC, id DESC
+        LIMIT 50
+      `;
+      const changeRes = await leasePool.query<{
+        id: string | number;
+        event_type: string;
+        env: string;
+        flag_key: string | null;
+        actor: string;
+        occurred_at: Date | string;
+        payload: unknown;
+      }>(changeSql, [env, lookbackStart, lookbackEnd]);
+
+      const events: ChangeEvent[] = changeRes.rows.map((row) => ({
+        id: Number(row.id),
+        event_type: row.event_type,
+        env: row.env,
+        flag_key: row.flag_key,
+        actor: row.actor,
+        occurred_at:
+          row.occurred_at instanceof Date
+            ? row.occurred_at.toISOString()
+            : new Date(row.occurred_at).toISOString(),
+        payload:
+          typeof row.payload === "string"
+            ? JSON.parse(row.payload)
+            : (row.payload as Record<string, unknown>),
+      }));
+
+      // Query flag_usage_daily
+      let evalSql = `
+        SELECT flag_key, variant, SUM(eval_count)::bigint AS eval_count
+        FROM flag_usage_daily
+        WHERE env = $1 AND usage_date >= $2
+      `;
+      const evalParams: unknown[] = [env, lookbackStart.toISOString().slice(0, 10)];
+      if (service) {
+        evalParams.push(service);
+        evalSql += ` AND service = $${evalParams.length}`;
+      }
+      evalSql += ` GROUP BY flag_key, variant ORDER BY flag_key ASC, variant ASC`;
+
+      const evalRes = await leasePool.query<{
+        flag_key: string;
+        variant: string;
+        eval_count: string | number;
+      }>(evalSql, evalParams);
+
+      const evaluations: FlagEvaluationRecord[] = evalRes.rows.map((r) => ({
+        flag_key: r.flag_key,
+        variant: r.variant,
+        eval_count: Number(r.eval_count),
+      }));
+
+      // Attribution heuristic using shared pure ranker
+      const suspects = rankSuspects(
+        events,
+        evaluations,
+        service,
+        startsAtDate.getTime(),
+      );
+
+      if (suspects.length === 0) {
+        attributions.push({
+          alertname,
+          service: service || undefined,
+          env,
+          attributed: false,
+          reason: "No recent flag changes found within lookback window",
+        });
+        continue;
+      }
+
+      const topSuspect = suspects[0];
+      const quotedValue =
+        typeof topSuspect.suggested_action.suggested_value === "string"
+          ? quoteShellArg(topSuspect.suggested_action.suggested_value)
+          : String(topSuspect.suggested_action.suggested_value);
+      const safeAlertName = alertname.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const remediationReason = `Incident attribution: ${safeAlertName}`;
+      const remediationCommand = `synapse lease create --flag ${topSuspect.flag_key} --value ${quotedValue} --env ${env} --ttl 30m --reason ${quoteShellArg(remediationReason)}`;
+
+      // Stage INCIDENT_ATTRIBUTION_EMITTED into audit_pending
+      await leasePool.query(
+        `INSERT INTO audit_pending (actor, event_type, payload)
+         VALUES ($1, 'INCIDENT_ATTRIBUTION_EMITTED', $2)`,
+        [
+          "alertmanager",
+          JSON.stringify({
+            alertname,
+            service,
+            env,
+            suspected_flag: topSuspect.flag_key,
+            score: topSuspect.score,
+            remediation_command: remediationCommand,
+            starts_at: startsAtDate.toISOString(),
+          }),
+        ],
+      );
+
+      // Dispatch Grafana annotation (fail-open)
+      let annotationId: number | undefined;
+      const grafanaClient = options.grafanaClient;
+      if (grafanaClient) {
+        try {
+          const timeAgo = formatRelativeTime(
+            topSuspect.occurred_at,
+            startsAtDate.getTime(),
+          );
+          const annotationText = `[SynapseState Alert Correlation] Suspected flag: ${topSuspect.flag_key} (Changed ${timeAgo}). Remediation: ${remediationCommand}`;
+          const annotationTags = [
+            "synapse",
+            "incident",
+            "suspected-flag",
+            `env:${env}`,
+            ...(service ? [`service:${service}`] : []),
+          ];
+
+          const grafanaRes = await grafanaClient.createAnnotation({
+            time: startsAtDate.getTime(),
+            text: annotationText,
+            tags: annotationTags,
+          });
+          annotationId = grafanaRes.id;
+        } catch (grafanaErr) {
+          req.log.warn(
+            { err: grafanaErr },
+            "[Webhook] Failed to dispatch Grafana annotation (fail-open)",
+          );
+        }
+      }
+
+      attributions.push({
+        alertname,
+        service: service || undefined,
+        env,
+        attributed: true,
+        suspected_flag: topSuspect.flag_key,
+        score: topSuspect.score,
+        remediation_command: remediationCommand,
+        ...(annotationId !== undefined
+          ? { grafana_annotation_id: annotationId }
+          : {}),
+      });
+    }
+
+    return reply.code(200).send({
+      status: "processed",
+      alerts_count: firingAlerts.length,
+      attributions,
+    });
+  });
 };
+
+function formatRelativeTime(
+  dateInput: Date | string,
+  nowInput: Date | number = Date.now(),
+): string {
+  const time =
+    dateInput instanceof Date ? dateInput.getTime() : new Date(dateInput).getTime();
+  const now = typeof nowInput === "number" ? nowInput : nowInput.getTime();
+  if (!Number.isFinite(time)) return "recently";
+
+  const diffMs = Math.max(0, now - time);
+  const diffSec = Math.floor(diffMs / 1000);
+
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function isTimingSafeMatch(a: string | undefined, b: string): boolean {
+  if (!a) return false;
+  const aBuf = Buffer.from(a, "utf8");
+  const bBuf = Buffer.from(b, "utf8");
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+export interface AlertmanagerAlert {
+  status: "firing" | "resolved" | string;
+  labels?: {
+    alertname?: string;
+    service?: string;
+    app?: string;
+    job?: string;
+    repo?: string;
+    env?: string;
+    severity?: string;
+    [key: string]: string | undefined;
+  };
+  annotations?: {
+    summary?: string;
+    description?: string;
+    [key: string]: string | undefined;
+  };
+  startsAt?: string;
+  endsAt?: string;
+  generatorURL?: string;
+  fingerprint?: string;
+}
+
+export interface AlertmanagerPayload {
+  version?: string;
+  groupKey?: string;
+  status?: "firing" | "resolved" | string;
+  receiver?: string;
+  alerts?: AlertmanagerAlert[];
+}
