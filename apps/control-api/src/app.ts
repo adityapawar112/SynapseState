@@ -25,6 +25,10 @@ import {
   GitHubReconciler as DefaultGitHubReconciler,
   createGitHubClient,
 } from "./github/index.js";
+import {
+  type GrafanaClient,
+  createGrafanaClient,
+} from "./grafana/index.js";
 
 export interface ServerOptions {
   fastifyOptions?: FastifyServerOptions;
@@ -43,6 +47,11 @@ export interface ServerOptions {
   githubOwner?: string;
   githubRepo?: string;
   githubBaseBranch?: string;
+  alertmanagerWebhookSecret?: string;
+  grafanaUrl?: string;
+  grafanaApiKey?: string;
+  grafanaClient?: GrafanaClient;
+  lookbackMinutes?: number;
 }
 
 /**
@@ -79,6 +88,20 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       owner: githubOwner || "synapsestate",
       repo: githubRepo || "flags",
       baseBranch: githubBaseBranch || "main",
+    });
+  }
+
+  const grafanaUrl = options.grafanaUrl ?? process.env.GRAFANA_URL;
+  const grafanaApiKey =
+    options.grafanaApiKey ??
+    process.env.GRAFANA_API_KEY ??
+    process.env.GRAFANA_TOKEN;
+
+  let activeGrafanaClient = options.grafanaClient;
+  if (!activeGrafanaClient && grafanaUrl && grafanaApiKey) {
+    activeGrafanaClient = createGrafanaClient({
+      url: grafanaUrl,
+      apiKey: grafanaApiKey,
     });
   }
 
@@ -142,6 +165,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     expectedOwner: githubOwner,
     expectedRepo: githubRepo,
     expectedBaseBranch: githubBaseBranch,
+    alertmanagerWebhookSecret:
+      options.alertmanagerWebhookSecret ?? process.env.ALERTMANAGER_WEBHOOK_SECRET,
+    grafanaClient: activeGrafanaClient,
+    grafanaUrl,
+    grafanaApiKey,
+    lookbackMinutes: options.lookbackMinutes,
   });
   void server.register(auditRoutes, {
     leasePool: activePool,

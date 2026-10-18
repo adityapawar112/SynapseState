@@ -853,7 +853,8 @@ export function registerLeaseCommands(program: Command): void {
     )
     .requiredOption("-e, --env <env>", "Target environment (e.g. prod, staging)")
     .requiredOption("-f, --flag <key>", "Feature flag key (e.g. checkout-v2)")
-    .requiredOption("-v, --value <val>", "Override value (true, false, number, or JSON)")
+    .option("-v, --value <val>", "Override value (true, false, number, or JSON)")
+    .option("--variant <variant>", "Alias for --value")
     .requiredOption("-r, --reason <text>", "Mandatory operational incident justification")
     .option(
       "-t, --ttl <seconds>",
@@ -899,10 +900,19 @@ export function registerLeaseCommands(program: Command): void {
     )
     .action(async (opts) => {
       try {
+        if (opts.value !== undefined && opts.variant !== undefined && opts.value !== opts.variant) {
+          console.warn(
+            `[WARNING] Both --value and --variant were supplied with differing values ('${opts.value}' vs '${opts.variant}'). Using --value ('${opts.value}').`,
+          );
+        }
+        const rawValue = opts.value ?? opts.variant;
+        if (rawValue === undefined) {
+          throw new Error("error: required option '-v, --value <val>' (or '--variant <val>') not specified");
+        }
         const res = await executeLeaseCreate({
           env: opts.env,
           flag: opts.flag,
-          value: opts.value,
+          value: rawValue,
           reason: opts.reason,
           ttl: opts.ttl,
           kid: opts.kid,

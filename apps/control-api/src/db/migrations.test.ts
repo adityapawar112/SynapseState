@@ -3,7 +3,7 @@ import { leasePool } from "./pool.js";
 import { runMigrations, getMigrationFiles } from "./migrator.js";
 
 describe("Database Migrations & Schema Invariants", () => {
-  it("discovers all 6 sequential migration files", () => {
+  it("discovers all 7 sequential migration files", () => {
     const files = getMigrationFiles();
     expect(files.map((f) => f.name)).toEqual([
       "001_create_leases.sql",
@@ -12,6 +12,7 @@ describe("Database Migrations & Schema Invariants", () => {
       "004_create_change_events.sql",
       "005_create_telemetry_and_services.sql",
       "006_create_api_tokens.sql",
+      "007_flag_usage_daily_lookup_idx.sql",
     ]);
   });
 
@@ -24,7 +25,7 @@ describe("Database Migrations & Schema Invariants", () => {
     const appliedSecond = await runMigrations(leasePool);
     expect(appliedSecond).toEqual([]);
 
-    // Check schema_migrations has all 6 recorded
+    // Check schema_migrations has all 7 recorded
     const migRows = await leasePool.query<{ name: string }>(
       "SELECT name FROM schema_migrations ORDER BY name ASC"
     );
@@ -35,6 +36,7 @@ describe("Database Migrations & Schema Invariants", () => {
       "004_create_change_events.sql",
       "005_create_telemetry_and_services.sql",
       "006_create_api_tokens.sql",
+      "007_flag_usage_daily_lookup_idx.sql",
     ]);
   });
 

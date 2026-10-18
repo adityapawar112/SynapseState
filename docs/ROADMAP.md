@@ -250,7 +250,7 @@ gantt
   - **PR 24 (`feat/dashboard-nextjs-portal`):** `feat(dashboard): read-mostly operations portal with OIDC authentication` — `apps/dashboard/*` `[COMPLETED]`
   - **PR 25 (`feat/dashboard-rbac-and-actions`):** `feat(dashboard): RBAC controls and lease promotion/revocation triggers` — `apps/dashboard/src/auth/*`, `apps/dashboard/src/api/*` `[COMPLETED]`
 
-  - **PR 26 (`feat/push-incident-webhook`):** `feat(api): optional alertmanager incident webhook and grafana annotations` — `apps/control-api/src/webhooks/*`
+  - **PR 26 (`feat/push-incident-webhook`):** `[COMPLETED]` `feat(api): optional alertmanager incident webhook and grafana annotations` — `apps/control-api/src/webhooks/*`
 - **Security & Best Practice Review Checkpoints:**
   - **Signing Key Air-Gap:** Ensure the dashboard backend has no access to operator private keys and cannot sign emergency leases.
   - **OIDC RBAC Audit:** Validate role enforcement (`viewer`, `operator`, `admin`), CSRF token protection, and secure cookie flags (`HttpOnly; Secure; SameSite=Strict`).

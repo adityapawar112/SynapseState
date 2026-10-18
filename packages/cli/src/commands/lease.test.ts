@@ -8,6 +8,7 @@ import {
   parseKeysetJson,
   ULID_REGEX,
   type LeaseEnvelope,
+  type LeasePayload,
   type RevocationEnvelope,
 } from "@synapsestate/lease";
 import { EncryptedKeyfileSigner } from "../signer/encrypted-file.js";
@@ -836,6 +837,55 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       } finally {
         process.exitCode = originalExitCode;
       }
+    });
+
+    it("accepts --variant as an alias for --value", async () => {
+      const program = new Command();
+      registerLeaseCommands(program);
+
+      // Verify command parses --variant without throw
+      const cmd = program.commands.find((c) => c.name() === "lease");
+      const createCmd = cmd?.commands.find((c) => c.name() === "create");
+      expect(createCmd).toBeDefined();
+
+      const variantOption = createCmd?.options.find((o) => o.long === "--variant");
+      expect(variantOption).toBeDefined();
+    });
+
+    it("warns when both --value and --variant are provided with differing values", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const program = new Command();
+      program.exitOverride(); // Prevent process.exit
+      registerLeaseCommands(program);
+
+      await program.parseAsync([
+        "node",
+        "synapse",
+        "lease",
+        "create",
+        "-e",
+        "production",
+        "-f",
+        "test-flag",
+        "-v",
+        "true",
+        "--variant",
+        "false",
+        "-r",
+        "incident justification",
+        "-k",
+        testKid,
+        "--key-file",
+        keyFilePath,
+        "-p",
+        keyPassword,
+        "--no-wait",
+      ]);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Both --value and --variant were supplied with differing values ('true' vs 'false'). Using --value ('true')."),
+      );
     });
   });
 });

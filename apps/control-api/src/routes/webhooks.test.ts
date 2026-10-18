@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { generateUlid } from "@synapsestate/sdk";
 import { buildServer } from "../app.js";
@@ -598,3 +598,564 @@ describe("GitHub Webhook Route (POST /v1/webhooks/github) - PR 18", () => {
     }
   });
 });
+
+describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) - PR 26", () => {
+  let app: FastifyInstance;
+  const alertmanagerSecret = "test-alertmanager-secret-xyz123";
+  const env = "alertmanager-test-env";
+
+  beforeAll(async () => {
+    await runMigrations(leasePool);
+
+    app = buildServer({
+      leasePool,
+      alertmanagerWebhookSecret: alertmanagerSecret,
+      fastifyOptions: { logger: false },
+    });
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(async () => {
+    await leasePool.query("DELETE FROM change_events WHERE env = $1", [env]);
+    await leasePool.query("DELETE FROM flag_usage_daily WHERE env = $1", [env]);
+    await leasePool.query("DELETE FROM audit_pending");
+  });
+
+  it("rejects Alertmanager webhook missing secret with 401 Unauthorized", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate" } }],
+      }),
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("UNAUTHORIZED");
+  });
+
+  it("rejects Alertmanager webhook with invalid secret with 401 Unauthorized", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": "wrong-secret",
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate" } }],
+      }),
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("UNAUTHORIZED");
+  });
+
+  it("authenticates Alertmanager webhook with Authorization: Bearer <secret> header", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${alertmanagerSecret}`,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate", env } }],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("authenticates Alertmanager webhook with X-Alertmanager-Secret header", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate", env } }],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("rejects malformed payload missing alerts array with 400 Bad Request", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+      }),
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("INVALID_PAYLOAD");
+  });
+
+  it("ignores payload with no firing alerts with 200 OK and status: 'ignored'", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "resolved",
+        alerts: [{ status: "resolved", labels: { alertname: "HighHttp5xxRate", env } }],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe("ignored");
+  });
+
+  it("processes firing alert with no recent changes: returns attributed: false, stages INCIDENT_ALERT_RECEIVED", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        receiver: "synapse-webhook",
+        alerts: [
+          {
+            status: "firing",
+            labels: {
+              alertname: "HighHttp5xxRate",
+              service: "checkout",
+              env,
+              severity: "critical",
+            },
+            annotations: {
+              summary: "High 5xx rate on checkout service",
+            },
+            startsAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe("processed");
+    expect(body.alerts_count).toBe(1);
+    expect(body.attributions[0].attributed).toBe(false);
+    expect(body.attributions[0].alertname).toBe("HighHttp5xxRate");
+    expect(body.attributions[0].service).toBe("checkout");
+
+    // Verify INCIDENT_ALERT_RECEIVED staged in audit_pending
+    const auditRes = await leasePool.query<{
+      actor: string;
+      event_type: string;
+      payload: { alertname: string; service: string; env: string };
+    }>("SELECT actor, event_type, payload FROM audit_pending WHERE event_type = 'INCIDENT_ALERT_RECEIVED'");
+
+    expect(auditRes.rows.length).toBe(1);
+    expect(auditRes.rows[0].event_type).toBe("INCIDENT_ALERT_RECEIVED");
+    expect(auditRes.rows[0].payload.alertname).toBe("HighHttp5xxRate");
+    expect(auditRes.rows[0].payload.service).toBe("checkout");
+    expect(auditRes.rows[0].payload.env).toBe(env);
+
+    // Verify zero INCIDENT_ATTRIBUTION_EMITTED
+    const emitRes = await leasePool.query(
+      "SELECT COUNT(*) FROM audit_pending WHERE event_type = 'INCIDENT_ATTRIBUTION_EMITTED'",
+    );
+    expect(Number(emitRes.rows[0].count)).toBe(0);
+  });
+
+  it("processes firing alert attributing recent change: returns attributed: true, suspected flag, remediation command, stages both audit events", async () => {
+    const flagKey = "checkout-v2";
+    const service = "checkout";
+    const now = new Date();
+
+    // Insert recent change event (10 minutes ago)
+    await leasePool.query(
+      `INSERT INTO change_events (event_type, env, flag_key, actor, occurred_at, payload)
+       VALUES ('LEASE_CREATED', $1, $2, 'sre-bob', $3, $4)`,
+      [
+        env,
+        flagKey,
+        new Date(now.getTime() - 10 * 60 * 1000),
+        JSON.stringify({ value: true, reason: "Canary rollout" }),
+      ],
+    );
+
+    // Insert usage telemetry for service
+    await leasePool.query(
+      `INSERT INTO flag_usage_daily (flag_key, env, service, variant, usage_date, eval_count, first_seen, last_seen)
+       VALUES ($1, $2, $3, 'true', CURRENT_DATE, 5000, NOW(), NOW())`,
+      [flagKey, env, service],
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        receiver: "synapse-webhook",
+        alerts: [
+          {
+            status: "firing",
+            labels: {
+              alertname: "HighHttp5xxRate",
+              service,
+              env,
+              severity: "critical",
+            },
+            annotations: {
+              summary: "High 5xx rate on checkout service",
+            },
+            startsAt: now.toISOString(),
+          },
+        ],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe("processed");
+    expect(body.attributions[0].attributed).toBe(true);
+    expect(body.attributions[0].suspected_flag).toBe(flagKey);
+    expect(body.attributions[0].score).toBeGreaterThan(0);
+    expect(body.attributions[0].remediation_command).toContain(
+      `synapse lease create --flag ${flagKey}`,
+    );
+    expect(body.attributions[0].remediation_command).toContain(
+      `--env ${env}`,
+    );
+
+    // Verify both INCIDENT_ALERT_RECEIVED and INCIDENT_ATTRIBUTION_EMITTED in audit_pending
+    const auditRes = await leasePool.query<{
+      event_type: string;
+      payload: { suspected_flag?: string; remediation_command?: string };
+    }>("SELECT event_type, payload FROM audit_pending ORDER BY id ASC");
+
+    const eventTypes = auditRes.rows.map((r) => r.event_type);
+    expect(eventTypes).toContain("INCIDENT_ALERT_RECEIVED");
+    expect(eventTypes).toContain("INCIDENT_ATTRIBUTION_EMITTED");
+
+    const emitted = auditRes.rows.find(
+      (r) => r.event_type === "INCIDENT_ATTRIBUTION_EMITTED",
+    );
+    expect(emitted?.payload.suspected_flag).toBe(flagKey);
+    expect(emitted?.payload.remediation_command).toContain(flagKey);
+  });
+
+  it("dispatches Grafana annotation when grafanaClient is configured", async () => {
+    const flagKey = "checkout-v2";
+    const service = "checkout";
+    const now = new Date();
+
+    await leasePool.query(
+      `INSERT INTO change_events (event_type, env, flag_key, actor, occurred_at, payload)
+       VALUES ('LEASE_CREATED', $1, $2, 'sre-bob', $3, $4)`,
+      [
+        env,
+        flagKey,
+        new Date(now.getTime() - 5 * 60 * 1000),
+        JSON.stringify({ value: true, reason: "Canary rollout" }),
+      ],
+    );
+
+    const mockCreateAnnotation = vi.fn().mockResolvedValue({ id: 42, message: "Annotation added" });
+    const mockGrafanaClient = { createAnnotation: mockCreateAnnotation };
+
+    const appWithGrafana = buildServer({
+      leasePool,
+      alertmanagerWebhookSecret: alertmanagerSecret,
+      grafanaClient: mockGrafanaClient,
+      fastifyOptions: { logger: false },
+    });
+    await appWithGrafana.ready();
+
+    try {
+      const res = await appWithGrafana.inject({
+        method: "POST",
+        url: "/v1/webhooks/alertmanager",
+        headers: {
+          "content-type": "application/json",
+          "x-alertmanager-secret": alertmanagerSecret,
+        },
+        payload: JSON.stringify({
+          version: "4",
+          status: "firing",
+          alerts: [
+            {
+              status: "firing",
+              labels: {
+                alertname: "HighHttp5xxRate",
+                service,
+                env,
+                severity: "critical",
+              },
+              startsAt: now.toISOString(),
+            },
+          ],
+        }),
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockCreateAnnotation).toHaveBeenCalledTimes(1);
+      const callArg = mockCreateAnnotation.mock.calls[0][0];
+      expect(callArg.tags).toContain("synapse");
+      expect(callArg.tags).toContain("incident");
+      expect(callArg.tags).toContain("suspected-flag");
+      expect(callArg.tags).toContain(`env:${env}`);
+      expect(callArg.tags).toContain(`service:${service}`);
+      expect(callArg.text).toContain(`[SynapseState Alert Correlation] Suspected flag: ${flagKey}`);
+      expect(callArg.text).toContain("Remediation: synapse lease create");
+    } finally {
+      await appWithGrafana.close();
+    }
+  });
+
+  it("handles Grafana API failure / timeout gracefully without failing webhook response (fail-open)", async () => {
+    const flagKey = "checkout-v2";
+    const service = "checkout";
+    const now = new Date();
+
+    await leasePool.query(
+      `INSERT INTO change_events (event_type, env, flag_key, actor, occurred_at, payload)
+       VALUES ('LEASE_CREATED', $1, $2, 'sre-bob', $3, $4)`,
+      [
+        env,
+        flagKey,
+        new Date(now.getTime() - 5 * 60 * 1000),
+        JSON.stringify({ value: true, reason: "Canary rollout" }),
+      ],
+    );
+
+    const mockCreateAnnotation = vi.fn().mockRejectedValue(new Error("ETIMEDOUT: Grafana unreachable"));
+    const mockGrafanaClient = { createAnnotation: mockCreateAnnotation };
+
+    const appWithGrafanaFail = buildServer({
+      leasePool,
+      alertmanagerWebhookSecret: alertmanagerSecret,
+      grafanaClient: mockGrafanaClient,
+      fastifyOptions: { logger: false },
+    });
+    await appWithGrafanaFail.ready();
+
+    try {
+      const res = await appWithGrafanaFail.inject({
+        method: "POST",
+        url: "/v1/webhooks/alertmanager",
+        headers: {
+          "content-type": "application/json",
+          "x-alertmanager-secret": alertmanagerSecret,
+        },
+        payload: JSON.stringify({
+          version: "4",
+          status: "firing",
+          alerts: [
+            {
+              status: "firing",
+              labels: {
+                alertname: "HighHttp5xxRate",
+                service,
+                env,
+                severity: "critical",
+              },
+              startsAt: now.toISOString(),
+            },
+          ],
+        }),
+      });
+
+      // Crucial: Webhook returns 200 OK despite Grafana error (fail-open invariant)
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.status).toBe("processed");
+      expect(body.attributions[0].attributed).toBe(true);
+      expect(mockCreateAnnotation).toHaveBeenCalledTimes(1);
+    } finally {
+      await appWithGrafanaFail.close();
+    }
+  });
+
+  it("safely quotes malicious env containing shell metacharacters in remediation command (C1)", async () => {
+    const flagKey = "checkout-v2";
+    const service = "checkout";
+    const maliciousEnv = "prod; rm -rf /; echo pwned";
+    const now = new Date();
+
+    await leasePool.query(
+      `INSERT INTO change_events (event_type, env, flag_key, actor, occurred_at, payload)
+       VALUES ('LEASE_CREATED', $1, $2, 'sre-bob', $3, $4)`,
+      [
+        maliciousEnv,
+        flagKey,
+        new Date(now.getTime() - 5 * 60 * 1000),
+        JSON.stringify({ value: true, reason: "Canary rollout" }),
+      ],
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [
+          {
+            status: "firing",
+            labels: {
+              alertname: "High5xx",
+              service,
+              env: maliciousEnv,
+              severity: "critical",
+            },
+            startsAt: now.toISOString(),
+          },
+        ],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.attributions[0].attributed).toBe(true);
+    expect(body.attributions[0].remediation_command).toContain(
+      `--env 'prod; rm -rf /; echo pwned'`,
+    );
+  });
+
+  it("handles corrupt change_events row payload and invalid date without 500 crash (C2)", async () => {
+    const flagKey = "checkout-v2";
+    const service = "checkout";
+    const now = new Date();
+
+    // Insert rows with non-object payload (string scalar)
+    await leasePool.query(
+      `INSERT INTO change_events (event_type, env, flag_key, actor, occurred_at, payload)
+       VALUES 
+       ('LEASE_CREATED', $1, $2, 'sre-bob', $3, '"string-scalar-not-object"'::jsonb),
+       ('LEASE_CREATED', $1, 'other-flag', 'sre-bob', $3, '{"value": true}'::jsonb)`,
+      [env, flagKey, new Date(now.getTime() - 5 * 60 * 1000)],
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [
+          {
+            status: "firing",
+            labels: {
+              alertname: "High5xx",
+              service,
+              env,
+            },
+            startsAt: now.toISOString(),
+          },
+        ],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe("processed");
+  });
+
+  it("truncates batch and warns when more than 10 firing alerts are received (I2)", async () => {
+    const alerts = Array.from({ length: 15 }, (_, i) => ({
+      status: "firing",
+      labels: {
+        alertname: `Alert_${i}`,
+        env,
+      },
+    }));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts,
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.truncated).toBe(true);
+    expect(body.attributions).toHaveLength(10);
+  });
+
+  it("returns 503 SERVICE_UNAVAILABLE when ALERTMANAGER_WEBHOOK_SECRET is not configured (I5)", async () => {
+    const unconfiguredApp = buildServer({
+      leasePool,
+      alertmanagerWebhookSecret: undefined,
+      fastifyOptions: { logger: false },
+    });
+    await unconfiguredApp.ready();
+
+    try {
+      const res = await unconfiguredApp.inject({
+        method: "POST",
+        url: "/v1/webhooks/alertmanager",
+        headers: {
+          "content-type": "application/json",
+          "x-alertmanager-secret": "any-secret",
+        },
+        payload: JSON.stringify({
+          version: "4",
+          status: "firing",
+          alerts: [{ status: "firing" }],
+        }),
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error).toBe("SERVICE_UNAVAILABLE");
+    } finally {
+      await unconfiguredApp.close();
+    }
+  });
+});
+

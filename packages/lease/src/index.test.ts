@@ -36,6 +36,8 @@ import {
   verifyLeaseWithKeyset,
   verifyRevocationWithKeyset,
   verifyKeyRevocationWithKeyset,
+  rankSuspects,
+  quoteShellArg,
 } from "./index.js";
 
 describe("Lease Package Exports & Public API Surface", () => {
@@ -78,6 +80,8 @@ describe("Lease Package Exports & Public API Surface", () => {
     expect(typeof verifyLeaseWithKeyset).toBe("function");
     expect(typeof verifyRevocationWithKeyset).toBe("function");
     expect(typeof verifyKeyRevocationWithKeyset).toBe("function");
+    expect(typeof rankSuspects).toBe("function");
+    expect(typeof quoteShellArg).toBe("function");
   });
 
   it("supports fast-check property testing", () => {

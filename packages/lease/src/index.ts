@@ -124,3 +124,15 @@ export {
   MAX_ULID_TIME_MS,
   resetUlidMonotonicStateForTest,
 } from "./ulid.js";
+
+// Incident Attribution & Change Suspect Ranker (ARCHITECTURE §11.4 & ADR 0007)
+export {
+  type ChangeEvent,
+  type FlagEvaluationRecord,
+  type SuggestedAction,
+  type RankedSuspect,
+  type BuildRemediationCommandOptions,
+  quoteShellArg,
+  buildRemediationCommand,
+  rankSuspects,
+} from "./ranker.js";
