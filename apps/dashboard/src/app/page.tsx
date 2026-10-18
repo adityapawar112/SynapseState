@@ -347,7 +347,7 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
               >
                 Application workloads are evaluating feature flags normally through the delegate
                 OpenFeature provider. To initiate an emergency break-glass override during an
-                incident, run <code className="code-inline">synapse lease apply</code> from an
+                incident, run <code className="code-inline">synapse lease create</code> from an
                 authorized operator workstation.
               </p>
             </Card>
@@ -463,7 +463,7 @@ export default async function DashboardOverviewPage({ searchParams }: PageProps)
             {[
               {
                 label: "Apply Emergency Break-Glass Override",
-                cmd: `synapse lease apply <flag-key> <variant> --env ${currentEnv} --reason "Incident #123"`,
+                cmd: `synapse lease create --flag <flag-key> --env ${currentEnv} --value <value> --ttl 30m --reason "Incident #123"`,
               },
               {
                 label: "Investigate Suspect Flag Attribution",

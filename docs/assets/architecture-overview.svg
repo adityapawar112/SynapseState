@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 520" width="100%" height="100%">
+  <defs>
+    <style>
+      .title { font-family: "Instrument Serif", Georgia, serif; font-size: 26px; fill: #121212; font-weight: 500; }
+      .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; fill: #666666; }
+      .zone-title { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 11px; fill: #666666; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+      .node-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; font-weight: 600; fill: #121212; }
+      .node-focal-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; font-weight: 700; fill: #ffffff; }
+      .node-desc { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; fill: #666666; }
+      .node-focal-desc { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; fill: #ffeedd; }
+      .badge-text { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 9px; font-weight: 600; fill: #ffffff; text-transform: uppercase; }
+      .edge-label { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 10px; fill: #555555; }
+      .code-text { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 11px; fill: #121212; }
+    </style>
+
+    <!-- Marker: Default arrow -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#888888" />
+    </marker>
+    <!-- Marker: Accent arrow -->
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ff5e1f" />
+    </marker>
+    <!-- Marker: Green arrow -->
+    <marker id="arrow-success" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669" />
+    </marker>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1000" height="520" fill="#ffffff" />
+
+  <!-- Header -->
+  <text x="40" y="46" class="title">SynapseState Architecture &amp; Evaluation Pipeline</text>
+  <text x="40" y="68" class="subtitle">In-Process OpenFeature Override Layer with Ed25519 Cryptographic Verification &amp; Dual-Control GitOps</text>
+
+  <!-- ========================================================================= -->
+  <!-- ZONE 1: APPLICATION RUNTIME (In-Process Memory Space)                     -->
+  <!-- ========================================================================= -->
+  <rect x="40" y="95" width="580" height="395" rx="8" fill="#fcfcfc" stroke="#e0e0e0" stroke-width="1.2" />
+  <rect x="56" y="87" width="220" height="18" rx="3" fill="#ffffff" />
+  <text x="62" y="100" class="zone-title">APPLICATION PROCESS (IN-MEMORY)</text>
+
+  <!-- OpenFeature Client Node -->
+  <rect x="70" y="130" width="140" height="64" rx="4" fill="#f4f4f5" stroke="#d4d4d8" stroke-width="1" />
+  <text x="82" y="155" class="node-title">OpenFeature Client</text>
+  <text x="82" y="174" class="node-desc">Standard API Resolution</text>
+
+  <!-- FOCAL NODE: SynapseState OverrideProvider (Voltage Orange) -->
+  <rect x="260" y="120" width="220" height="84" rx="4" fill="#ff5e1f" stroke="#e04e12" stroke-width="1" />
+  <rect x="272" y="130" width="82" height="15" rx="2" fill="#121212" />
+  <text x="277" y="141" class="badge-text">INVARIANT 1</text>
+  <text x="272" y="165" class="node-focal-title">OverrideProvider</text>
+  <text x="272" y="185" class="node-focal-desc">Active Lease In-Memory Lookup</text>
+
+  <!-- In-Memory Active Leases Table -->
+  <rect x="260" y="245" width="220" height="95" rx="4" fill="#ffffff" stroke="#e4e4e7" stroke-width="1" />
+  <text x="274" y="270" class="node-title">Active Lease Store</text>
+  <text x="274" y="288" class="node-desc">Dual-Clock Verification</text>
+  <text x="274" y="306" class="code-text" fill="#ff5e1f">min(wall_clock, mono_clock)</text>
+  <text x="274" y="324" class="node-desc">0 locks • sub-microsecond</text>
+
+  <!-- Delegate Provider (Fallback) -->
+  <rect x="70" y="245" width="140" height="95" rx="4" fill="#ffffff" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="3,3" />
+  <text x="82" y="270" class="node-title">Delegate Provider</text>
+  <text x="82" y="288" class="node-desc">flagd / LaunchDarkly</text>
+  <text x="82" y="306" class="node-desc">Unleash / In-Memory JSON</text>
+  <text x="82" y="324" class="node-desc" fill="#059669">Baseline Ruleset</text>
+
+  <!-- Keyset File (Mounted from Git) -->
+  <rect x="260" y="380" width="220" height="80" rx="4" fill="#ffffff" stroke="#059669" stroke-width="1.2" />
+  <rect x="272" y="390" width="82" height="15" rx="2" fill="#059669" />
+  <text x="277" y="401" class="badge-text">INVARIANT 2</text>
+  <text x="272" y="425" class="node-title">Pinned Keyset Root</text>
+  <text x="272" y="443" class="node-desc">Mounted Git file (/etc/synapse)</text>
+
+  <!-- Telemetry Hook -->
+  <rect x="70" y="380" width="140" height="80" rx="4" fill="#ffffff" stroke="#d4d4d8" stroke-width="1" />
+  <text x="82" y="405" class="node-title">TelemetryHook</text>
+  <text x="82" y="423" class="node-desc">Zero-Context Tuples</text>
+  <text x="82" y="441" class="code-text">(flag, variant, reason)</text>
+
+  <!-- ========================================================================= -->
+  <!-- ZONE 2: CONTROL PLANE & GOVERNANCE                                        -->
+  <!-- ========================================================================= -->
+  <rect x="660" y="95" width="300" height="395" rx="8" fill="#fcfcfc" stroke="#e0e0e0" stroke-width="1.2" />
+  <rect x="676" y="87" width="180" height="18" rx="3" fill="#ffffff" />
+  <text x="682" y="100" class="zone-title">CONTROL PLANE &amp; AUDIT</text>
+
+  <!-- Control API -->
+  <rect x="685" y="125" width="250" height="80" rx="4" fill="#ffffff" stroke="#121212" stroke-width="1.2" />
+  <text x="700" y="152" class="node-title">Synapse Control API</text>
+  <text x="700" y="170" class="node-desc">Fastify • State Delivery (ETag)</text>
+  <text x="700" y="188" class="code-text">GET /v1/sdk/state</text>
+
+  <!-- PostgreSQL Ledger -->
+  <rect x="685" y="245" width="250" height="85" rx="4" fill="#ffffff" stroke="#d4d4d8" stroke-width="1" />
+  <text x="700" y="270" class="node-title">PostgreSQL Audit Ledger</text>
+  <text x="700" y="288" class="node-desc">SHA-256 Tamper-Evident Hash Chain</text>
+  <text x="700" y="308" class="code-text">audit_pending → sealed_ledger</text>
+
+  <!-- Dual-Control Interface: CLI & Dashboard -->
+  <rect x="685" y="370" width="250" height="90" rx="4" fill="#ffffff" stroke="#2563eb" stroke-width="1" />
+  <text x="700" y="396" class="node-title">Operator CLI &amp; Dashboard</text>
+  <text x="700" y="415" class="code-text">synapse lease create ...</text>
+  <text x="700" y="433" class="code-text">synapse promote (Draft PR)</text>
+  <text x="700" y="450" class="node-desc" fill="#2563eb">Dual-Control Git Reconciliation</text>
+
+  <!-- ========================================================================= -->
+  <!-- CONNECTORS (Rounded Orthogonal Paths with r=8)                             -->
+  <!-- ========================================================================= -->
+
+  <!-- OpenFeature Client -> OverrideProvider -->
+  <path d="M 210,162 H 252" fill="none" stroke="#121212" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- OverrideProvider -> Active Lease Store -->
+  <path d="M 370,204 V 237" fill="none" stroke="#ff5e1f" stroke-width="1.5" marker-end="url(#arrow-accent)" />
+  <text x="378" y="225" class="edge-label" fill="#ff5e1f">Check Hit</text>
+
+  <!-- OverrideProvider -> Delegate Provider (Fail-Safe Fallback) -->
+  <path d="M 260,175 H 180 Q 172,175 172,183 V 237" fill="none" stroke="#888888" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)" />
+  <text x="110" y="220" class="edge-label">Miss / Fallback</text>
+
+  <!-- Keyset Root -> Active Lease Store (Signature verification) -->
+  <path d="M 370,380 V 348" fill="none" stroke="#059669" stroke-width="1.2" marker-end="url(#arrow-success)" />
+  <text x="378" y="366" class="edge-label" fill="#059669">Ed25519 Trust</text>
+
+  <!-- OpenFeature Client -> TelemetryHook -->
+  <path d="M 140,194 V 372" fill="none" stroke="#888888" stroke-width="1" marker-end="url(#arrow)" />
+
+  <!-- Control API -> Lease Store (ETag Long Polling) -->
+  <path d="M 685,165 H 520 Q 512,165 512,173 V 285 Q 512,293 504,293 H 488" fill="none" stroke="#2563eb" stroke-width="1.2" marker-end="url(#arrow)" />
+  <text x="522" y="220" class="edge-label" fill="#2563eb">Poll State</text>
+  <text x="522" y="234" class="edge-label" fill="#2563eb">(ETag, &#x2264;10s)</text>
+
+  <!-- Control API -> Audit Ledger -->
+  <path d="M 810,205 V 237" fill="none" stroke="#121212" stroke-width="1.2" marker-end="url(#arrow)" />
+
+  <!-- Operator / CLI -> Control API -->
+  <path d="M 810,370 V 338" fill="none" stroke="#121212" stroke-width="1.2" marker-end="url(#arrow)" />
+
+  <!-- TelemetryHook -> Control API (Batch Egress) -->
+  <path d="M 140,460 V 475 Q 140,483 148,483 H 640 Q 648,483 648,460 V 180 Q 648,172 656,172 H 677" fill="none" stroke="#888888" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrow)" />
+  <text x="540" y="478" class="edge-label">Async Flush POST /v1/telemetry</text>
+</svg>

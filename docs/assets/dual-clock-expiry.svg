@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 420" width="100%" height="100%">
+  <defs>
+    <style>
+      .title { font-family: "Instrument Serif", Georgia, serif; font-size: 24px; fill: #121212; font-weight: 500; }
+      .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; fill: #666666; }
+      .label-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13px; font-weight: 600; fill: #121212; }
+      .label-desc { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; fill: #666666; }
+      .mono-code { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 11px; fill: #121212; }
+      .mono-highlight { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 11px; font-weight: 600; fill: #ff5e1f; }
+      .badge-text { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 9px; font-weight: 600; fill: #ffffff; text-transform: uppercase; }
+      .axis-label { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 10px; fill: #888888; font-weight: 500; }
+    </style>
+
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#888888" />
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ff5e1f" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="940" height="420" fill="#ffffff" />
+
+  <!-- Header -->
+  <text x="40" y="44" class="title">Deterministic Dual-Clock Expiry (Invariant 3)</text>
+  <text x="40" y="66" class="subtitle">Monotonic Process Duration vs. Absolute Wall-Clock Ceiling with NTP Skew Tolerance</text>
+
+  <!-- Formula Callout Box (Top Right) -->
+  <rect x="580" y="24" width="320" height="52" rx="4" fill="#fff5f0" stroke="#ff5e1f" stroke-width="1" />
+  <text x="595" y="45" class="mono-highlight">Effective Expiry Rule:</text>
+  <text x="595" y="63" class="mono-code">effective_deadline &#x2264; min(mono_t, wall_t)</text>
+
+  <!-- ========================================================================= -->
+  <!-- TRACK 1: MONOTONIC PROCESS TIMELINE                                       -->
+  <!-- ========================================================================= -->
+  <rect x="40" y="95" width="860" height="110" rx="6" fill="#fcfcfc" stroke="#e4e4e7" stroke-width="1" />
+  <rect x="55" y="110" width="130" height="18" rx="2" fill="#121212" />
+  <text x="60" y="122" class="badge-text">CLOCK A • MONOTONIC</text>
+  <text x="195" y="124" class="label-title">process.hrtime.bigint() / performance.now()</text>
+  <text x="55" y="148" class="label-desc">Tracks relative duration elapsed within the running process. Immune to NTP backward shifts, leap seconds, or VM pauses.</text>
+
+  <!-- Timeline Axis 1 -->
+  <line x1="160" y1="180" x2="840" y2="180" stroke="#d4d4d8" stroke-width="2" />
+  <!-- Points -->
+  <circle cx="180" cy="180" r="5" fill="#121212" />
+  <text x="180" y="200" class="axis-label" text-anchor="middle">first_seen_mono</text>
+
+  <rect x="180" y="174" width="380" height="12" fill="rgba(255,94,31,0.15)" />
+  <line x1="560" y1="168" x2="560" y2="192" stroke="#ff5e1f" stroke-width="2.5" />
+  <circle cx="560" cy="180" r="5" fill="#ff5e1f" />
+  <text x="560" y="200" class="axis-label" text-anchor="middle" fill="#ff5e1f">mono_expiry = first_seen + ttl</text>
+
+  <!-- ========================================================================= -->
+  <!-- TRACK 2: WALL-CLOCK TIMELINE                                              -->
+  <!-- ========================================================================= -->
+  <rect x="40" y="225" width="860" height="110" rx="6" fill="#fcfcfc" stroke="#e4e4e7" stroke-width="1" />
+  <rect x="55" y="240" width="130" height="18" rx="2" fill="#059669" />
+  <text x="60" y="252" class="badge-text">CLOCK B • WALL-CLOCK</text>
+  <text x="195" y="254" class="label-title">Date.now() / Absolute Epoch Milliseconds</text>
+  <text x="55" y="278" class="label-desc">Bounds absolute lifespan across multi-pod restarts and cold boots with deterministic SKEW_TOLERANCE (5 seconds).</text>
+
+  <!-- Timeline Axis 2 -->
+  <line x1="160" y1="310" x2="840" y2="310" stroke="#d4d4d8" stroke-width="2" />
+  <!-- Points -->
+  <circle cx="160" cy="310" r="5" fill="#121212" />
+  <text x="160" y="330" class="axis-label" text-anchor="middle">issued_at (SRE signature)</text>
+
+  <rect x="160" y="304" width="450" height="12" fill="rgba(5,150,105,0.12)" />
+  <line x1="610" y1="298" x2="610" y2="322" stroke="#059669" stroke-width="2" />
+  <circle cx="610" cy="310" r="4" fill="#059669" />
+  <text x="610" y="330" class="axis-label" text-anchor="middle" fill="#059669">issued_at + ttl</text>
+
+  <!-- Tolerance zone -->
+  <rect x="610" y="304" width="60" height="12" fill="rgba(234,179,8,0.25)" />
+  <line x1="670" y1="298" x2="670" y2="322" stroke="#d97706" stroke-width="2.5" />
+  <circle cx="670" cy="310" r="5" fill="#d97706" />
+  <text x="670" y="330" class="axis-label" text-anchor="middle" fill="#d97706">wall_ceiling (+5s skew)</text>
+
+  <!-- ========================================================================= -->
+  <!-- RESULT BAR: ZERO SURVIVAL GUARANTEE                                       -->
+  <!-- ========================================================================= -->
+  <rect x="40" y="355" width="860" height="45" rx="4" fill="#121212" />
+  <text x="60" y="382" class="badge-text" fill="#ff5e1f">FAIL-SAFE INVARIANT</text>
+  <text x="210" y="382" class="mono-code" fill="#ffffff">At T = min(mono_expiry, wall_ceiling), LeaseStore evicts lease and delegates immediately to baseline.</text>
+</svg>

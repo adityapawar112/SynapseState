@@ -6,9 +6,9 @@ This glossary establishes the canonical vocabulary for SynapseState. Every term 
 
 A signed, periodic summary of the append-only audit ledger written to an external, write-once storage destination to detect and prevent unauthorized tampering.
 
-### Audit Sealer
+### Audit Sealer (`AuditSealer`)
 
-An asynchronous in-process single-writer background loop that consumes staged audit events from a buffer table, computes a sequential SHA-256 hash chain, and commits sealed records to an append-only ledger.
+An asynchronous in-process single-writer background loop that consumes staged audit events from a buffer table (`audit_pending`), computes a sequential SHA-256 hash chain, and commits sealed records to an append-only ledger (`audit_events`).
 
 ### Break-Glass Lease
 
@@ -18,7 +18,7 @@ A short-lived, cryptographically signed emergency override issued by a single on
 
 A specific syntactic location in application source code where an OpenFeature client evaluates a feature flag.
 
-### Candidate Report
+### Candidate Report (`CandidateReport`)
 
 A structured artifact emitted by the automated code scanner detailing a qualified stale feature flag, its winning variant, associated call site coordinates, and tool-compatible configuration rules (such as Uber Piranha properties or GritQL patterns) for automated refactoring or human review.
 
@@ -50,6 +50,10 @@ A verification algorithm that enforces both a monotonic clock duration from the 
 
 A time-bounded, Ed25519-signed envelope that forces a specific flag variant in-memory within application runtimes to mitigate an outage.
 
+### Encrypted Keyfile Signer (`EncryptedKeyfileSigner`)
+
+The default `Signer` implementation in `@synapsestate/cli` that encrypts operator Ed25519 private keys using AES-256-GCM and `crypto.scrypt` with AAD binding to `kid` and file format version, stored under `~/.synapse/keys/<kid>.key` with POSIX `0600` permissions.
+
 ### Flag Lifecycle Class
 
 The operational classification of a feature flag (such as temporary `release`, permanent `killswitch`, or long-lived `permission`) that dictates its governing rules and its eligibility for automated code retirement.
@@ -58,7 +62,7 @@ The operational classification of a feature flag (such as temporary `release`, p
 
 A thread-safe, in-memory collection of verified, unexpired emergency leases checked by the `OverrideProvider` prior to delegating evaluations.
 
-### Override Provider
+### Override Provider (`OverrideProvider`)
 
 An OpenFeature provider implementation that intercepts flag evaluations, serving active emergency lease values when present, and falling back safely to a delegate provider otherwise.
 
@@ -70,7 +74,7 @@ A trusted, Git-managed registry mapping key IDs (`kid`) to public keys and autho
 
 The workflow of converting a temporary break-glass lease into a permanent Git baseline configuration by opening an automated Pull Request.
 
-### Refusal Report
+### Refusal Report (`RefusalReport`)
 
 A structured report emitted by the automated code refactoring engine (`synapse-purger`) detailing specific AST locations where ambiguity or unsupported patterns prevented safe automated code deletion.
 
@@ -94,7 +98,7 @@ A release flag that has served an invariant variant across all evaluating consum
 
 A verification prerequisite for stale flag detection requiring that every service that recorded evaluations for a flag within data retention is in an `ACTIVE` or explicitly `RETIRED` status.
 
-### Telemetry Hook
+### Telemetry Hook (`TelemetryHook`)
 
 An OpenFeature evaluation hook that aggregates flag evaluation outcomes `(flag_key, variant, reason)` in memory without capturing or exporting contextual attributes or user identifiers.
 

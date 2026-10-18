@@ -43,9 +43,9 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 .
 ├── apps/
 │   ├── control-api/        # Node.js + Postgres governance service (HTTP API)
-│   ├── dashboard/          # Read-mostly Next.js operations portal with OIDC RBAC
+│   ├── dashboard/          # Read-mostly Next.js operations portal with GitHub OAuth & RBAC
 │   ├── demo-shop/          # Example microservice app using SDK (fault-injection target)
-│   └── purger/             # TypeScript AST refactoring worker (ts-morph)
+│   └── purger/             # Read-only TypeScript AST scanner & qualifier (ts-morph)
 ├── packages/
 │   ├── lease/              # Canonicalization (RFC 8785), Ed25519 signing & verification
 │   ├── sdk/                # Pure TypeScript OpenFeature OverrideProvider & TelemetryHook
@@ -55,6 +55,8 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 │   ├── terraform/          # Cloud VM, networking, firewall, DNS, object storage
 │   ├── helm/               # Helm charts for Control API, Postgres, Observability
 │   └── gitops/             # GitOps deployment manifests (Phase 7)
+├── test/
+│   └── drills/             # Chaos injection & disaster recovery failure drills
 ├── load/                   # k6 load-testing scripts
 └── docs/
     ├── ARCHITECTURE.md     # Authoritative system architecture

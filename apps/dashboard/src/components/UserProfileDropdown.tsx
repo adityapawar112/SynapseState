@@ -331,9 +331,7 @@ export function UserProfileDropdown({ user, role }: UserProfileDropdownProps) {
               justifyContent: "space-between",
               padding: "8px 12px",
               borderRadius: "var(--radius-xs)",
-              backgroundColor: countdown.isNearExpiry
-                ? "rgba(255, 94, 31, 0.08)"
-                : "var(--color-cream)",
+              backgroundColor: "var(--color-cream)",
               border: `1px solid ${
                 countdown.isNearExpiry
                   ? "var(--color-kumo-brand)"

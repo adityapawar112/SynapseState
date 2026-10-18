@@ -153,11 +153,12 @@ export function RevokeModal({
 
         {/* Safety Boundary Notice */}
         <div
+          className="notice-danger"
           style={{
             padding: "12px 14px",
             borderRadius: "var(--radius-xs)",
-            backgroundColor: "#fff1f2",
-            border: "1px solid #fecdd3",
+            backgroundColor: "var(--color-cream)",
+            border: "1px solid var(--color-under-attack)",
             fontSize: "13px",
             color: "var(--color-under-attack)",
             lineHeight: 1.45,

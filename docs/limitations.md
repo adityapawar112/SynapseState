@@ -64,7 +64,7 @@ SynapseState adheres to an **evidence-based claims policy**: we document our arc
 ### 4.1 Telemetry Coverage Dependency & Service Lifecycle
 * **Limitation:** A flag qualifies as a `stale_candidate` only if all services that recorded evaluations for that flag within data retention are in `ACTIVE` or `RETIRED` status.
 * **Implication:** If an evaluating service goes `SILENT` (no heartbeat for $> 14\text{ days}$), stale qualification for its flags is paused to prevent deleting code prematurely from scaled-to-zero or monthly batch services.
-* **Escape Valve:** SREs explicitly unblock flags by retiring decommissioned services via `synapse service retire`, or allowing the 90-day auto-retirement sweep to transition them.
+* **Escape Valve:** SREs explicitly unblock flags by retiring decommissioned services via database update (`status = 'RETIRED'`), or allowing the 90-day auto-retirement sweep to transition them.
 
 ### 4.2 Zero Context Invisibility
 * **Limitation:** To guarantee zero context egress and complete privacy compliance, `TelemetryHook` captures only `(flag_key, variant, reason)` tuples.
@@ -84,7 +84,7 @@ SynapseState adheres to an **evidence-based claims policy**: we document our arc
 ## 6. Evaluation Path & Wrapper Overhead
 
 * **Limitation:** SynapseState wraps an underlying OpenFeature provider. It cannot evaluate flags faster than the delegate provider itself.
-* **Overhead Budget:** The `OverrideProvider` introduces a single in-memory Map lookup and null check before calling the delegate. The exact overhead will be measured in Phase 1 microbenchmarks and published transparently in `docs/benchmarks/`.
+* **Overhead Budget:** The `OverrideProvider` introduces a single in-memory Map lookup and null check before calling the delegate. The empirical wrapper overhead has been measured in microbenchmarks and published transparently in [docs/benchmarks/sdk-overhead.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/benchmarks/sdk-overhead.md) (cache miss latency: 99.0 ns ±0.54%, active override latency: 2.16 µs – 3.06 µs, fail-safe fallback delta: -525 ns to 1.14 µs).
 
 ---
 
