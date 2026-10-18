@@ -138,16 +138,16 @@ This recomputes the hash chain from genesis and validates it against external ch
 ### MVP Scope (Phases 1 to 4)
 - **`packages/lease`:** Canonicalization (RFC 8785), Ed25519 signing, verification, and process-scoped dual-clock expiry.
 - **`packages/sdk`:** Pure TypeScript OpenFeature `OverrideProvider` and `TelemetryHook` with ETag long-polling (`wait=30s`), 10s keyset hash polling, and air-gapped ConfigMap fallback.
-- **`packages/cli`:** SRE tool with pluggable `Signer` (`~/.synapse/keys/<kid>.key` encrypted keyfile default), rollout verification loop, `synapse log` (pull-based attribution with `--offline` and `--json`), key management (`synapse key generate/export-public`), service retirement, promotion, and audit verification.
+- **`packages/cli`:** SRE tool with pluggable `Signer` (`~/.synapse/keys/<kid>.key` encrypted keyfile default), rollout verification loop, `synapse log` (pull-based attribution with `--offline` and `--json`), key management (`synapse key generate/export-public`), promotion (`synapse promote`), and audit ledger verification and checkpointing (`synapse audit verify/checkpoint`).
 - **`apps/control-api`:** Node.js + Postgres service managing lease lifecycle, ETag long-polling, in-process asynchronous audit sealer, `change_events` log, telemetry rollups, and Git integration.
 - **Git Reconciliation:** Automated PR opening upon promotion (scoped to Git-backed providers in v1); merge webhooks for final lease finalization.
 - **Demo Application:** Fully instrumented demo service for fault-injection drills and load testing.
 - **Full Production Pipeline:** GitHub Actions CI/CD, multi-stage Docker builds, Terraform IaC, k3s Helm charts, Prometheus/Grafana observability, and published SLOs.
 
-### Expanded Scope (Phases 5 to 6)
-- **`apps/purger`:** Read-only AST scanner and qualification engine exporting candidate reports for external tools.
-- **`apps/dashboard`:** Read-mostly Next.js operations portal with OIDC RBAC.
-- **Push Incident Automation (Optional):** Alertmanager webhook / Slack bot layering on top of shared `rankSuspects` and `GET /v1/changes`.
+### Completed Expanded Scope (Phases 5 to 6)
+- **`apps/purger`:** Read-only AST scanner and qualification engine exporting candidate reports for external tools (Phase 5: PRs 21–23).
+- **`apps/dashboard`:** Read-mostly Next.js operations portal with GitHub OAuth & RBAC (Phase 6: PRs 24–25).
+- **Push Incident Automation:** Alertmanager webhook listener (`POST /v1/webhooks/alertmanager`) and Grafana annotations layered on top of shared `rankSuspects` and `GET /v1/changes` (Phase 6: PR 26).
 
 ### Explicit Non-Goals
 1. **No Custom Evaluator or Targeting DSL:** We do not build rule evaluation, segment matching, or MurmurHash percentage rollouts. Evaluation is completely delegated to standard OpenFeature providers.

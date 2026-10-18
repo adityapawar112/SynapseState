@@ -21,7 +21,11 @@
 3. **Verify Fail-Safe Invariant (ARCH §2 Invariant 1):**
    - Confirm application microservices continue evaluating flags fail-safe using local in-memory state and delegate providers.
 4. **Air-Gapped Mitigation (if Control API remains down during an active incident):**
-   - Apply emergency leases directly via ConfigMap:
+   - Generate an air-gapped emergency override ConfigMap using the SRE CLI:
      ```bash
-     kubectl apply -f /path/to/emergency-lease.yaml -n workloads
+     synapse lease emergency-apply --flag <key> --env prod --value <val> --ttl 30m --reason "<incident-id>" --out-file emergency-lease.yaml
+     ```
+   - Apply the emergency lease ConfigMap directly to the workload namespace:
+     ```bash
+     kubectl apply -f emergency-lease.yaml -n workloads
      ```

@@ -154,9 +154,10 @@ export class OverrideProvider implements Provider {
           variant: String(activeLease.value),
           reason: 'OVERRIDE',
           flagMetadata: {
-            leaseId: activeLease.leaseId,
-            issuedBy: activeLease.kid,
-            effectiveExpiry: activeLease.effectiveExpiry.toISOString(),
+            'synapse.override': true,
+            'synapse.lease_id': activeLease.leaseId,
+            'synapse.issued_by': activeLease.kid,
+            'synapse.effective_expiry': activeLease.effectiveExpiry.toISOString(),
           },
         };
       }
@@ -267,21 +268,81 @@ Base path: `/v1`
 #### `POST /v1/leases/:id/promote`
 - **Headers:** `Authorization: Bearer <operator_token>`
 - **Response 202:** `{ "lease_id": "01J...", "pr_url": "https://github.com/org/repo/pull/123" }`
+- **Purpose:** Initiates Git reconciliation by creating a GitHub Draft PR to merge the flag override permanently into Git.
 
 #### `POST /v1/leases/:id/revoke`
 - **Headers:** `Authorization: Bearer <operator_token>`
 - **Body:** `{ "payload": { ... }, "sig": "..." }`
 - **Response 200:** `{ "lease_id": "01J...", "state": "REVOKED" }`
+- **Purpose:** Atomically revokes an active lease with a cryptographically signed revocation payload.
 
-#### `POST /v1/keys/revoke`
-- **Headers:** `Authorization: Bearer <security_lead_token>`
-- **Body:** `{ "payload": { "kid": "...", ... }, "sig": "..." }`
-- **Response 200:** `{ "kid": "...", "state": "REVOKED" }`
+#### `GET /v1/audit/events?from_seq={seq}&to_seq={seq}&limit={limit}`
+- **Query Parameters:** `from_seq` (int, default `1`), `to_seq` (int, optional), `limit` (int, default `100`, max `1000`).
+- **Headers:** `Authorization: Bearer <operator_or_admin_token>`
+- **Response 200:**
+  ```json
+  {
+    "events": [
+      {
+        "seq": 1,
+        "ts": "2026-10-06T02:14:00.000Z",
+        "actor": "sre-alice",
+        "event_type": "LEASE_CREATED",
+        "payload": { ... },
+        "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "hash": "3f7a8b..."
+      }
+    ],
+    "count": 1,
+    "has_more": false
+  }
+  ```
+- **Purpose:** Streams sealed, SHA-256 hash-chained audit ledger events for independent client-side verification (`synapse audit verify`).
 
-#### `POST /v1/services/:name/retire`
-- **Headers:** `Authorization: Bearer <operator_token>`
-- **Body:** `{ "env": "prod", "reason": "Decommissioned in PR #412" }`
-- **Response 200:** `{ "service": "...", "status": "RETIRED" }`
+#### `GET /v1/audit/checkpoint/latest`
+- **Headers:** `Authorization: Bearer <operator_or_admin_token>`
+- **Response 200:**
+  ```json
+  {
+    "checkpoint_seq": 42,
+    "checkpoint_hash": "3f7a8b...",
+    "sealed_count": 42,
+    "timestamp": "2026-10-06T02:15:00.000Z"
+  }
+  ```
+- **Purpose:** Returns the latest sealed sequence number and hash for external anchoring (`synapse audit checkpoint`).
+
+#### `POST /v1/audit/events`
+- **Headers:** `Authorization: Bearer <operator_or_admin_token>`
+- **Body:** `{ "actor": "dashboard-user", "event_type": "DASHBOARD_LOGIN", "payload": { ... } }`
+- **Response 202:** `{ "status": "staged", "event_type": "...", "actor": "..." }`
+- **Purpose:** Stages operational and administrative actions into `audit_pending` for asynchronous sealing into the hash chain.
+
+#### `POST /v1/webhooks/github`
+- **Headers:** `x-hub-signature-256: sha256=...`
+- **Body:** GitHub Pull Request webhook payload
+- **Response 200:** `{ "status": "reconciled", "lease_id": "01J..." }`
+- **Purpose:** Reconciles PR merges on branches matching `synapse/promote-lease-<ULID>`, transitions the lease to `PROMOTED`, logs `GIT_MERGE`, and notifies active SDK long-polls.
+
+#### `POST /v1/webhooks/alertmanager`
+- **Headers:** `x-alertmanager-secret: <secret>` or `Authorization: Bearer <secret>`
+- **Body:** Prometheus Alertmanager webhook payload
+- **Response 200:**
+  ```json
+  {
+    "status": "attributed",
+    "suspects": [ ... ],
+    "remediation": "synapse lease create --flag checkout-v2 --env prod --value false --ttl 30m"
+  }
+  ```
+- **Purpose:** Automated incident response webhook that correlates firing alerts with recent flag changes and generates Grafana annotations with copy-pasteable remediation commands.
+
+#### `GET /healthz` & `GET /readyz`
+- **Response 200:** `{ "status": "ok" }` (healthz) / `{ "status": "ok", "db": "connected" }` (readyz).
+- **Purpose:** Kubernetes liveness and readiness container probes.
+
+#### `GET /metrics`
+- **Response 200:** Prometheus exposition text format. Fail-open with 5s database query cache throttle.
 
 #### `POST /v1/telemetry/batches`
 - **Headers:** `Authorization: Bearer <service_token>`
@@ -351,7 +412,7 @@ A flag $f$ in environment $E$ is qualified as a `stale_candidate` over observati
    $$\exists v^* \text{ s.t. } \forall (v, t) \in \mathcal{U}(f, E, \tau), v = v^* \quad \lor \quad \vert{}\mathcal{U}(f, E, \tau)\vert{} = 0$$
 3. Per-Flag Consumer Coverage:
    $$\forall s \in \text{Evaluators}(f, E, \tau), \quad \text{status}(s, E) \in \{\text{ACTIVE}, \text{RETIRED}\}$$
-   *(If any historical evaluator is `SILENT`, the flag is blocked until unblocked via `synapse service retire`).*
+   *(If any historical evaluator is `SILENT`, the flag is blocked until the service resumes emitting telemetry or is marked `RETIRED` in the database).*
 4. AST Consistency:
    $$\text{ASTReferences}(f, \text{Repos}) \subseteq \text{Evaluators}(f, E, \tau)$$
    *(A read-only AST scan detects call sites only in known consumer services).*

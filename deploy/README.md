@@ -90,9 +90,9 @@ kubectl apply -f emergency-leases.yaml -n synapse-system
 
 ### Checkpoint Signer CronJob (ARCH §8.3, Invariant 7, Review C3, I3)
 
-- Checkpoint signer CLI logic is scheduled for implementation in **PR 19** (`ROADMAP §4`).
-- Manifest template is fully parameterized with a dedicated ServiceAccount (`automountServiceAccountToken: false`) and non-optional secret keys.
-- Defaults to `cronjob.enabled: false` until PR 19.
+- Implemented in **PR 19** via `synapse audit checkpoint` ([packages/cli/src/commands/audit.ts](file:///c:/Users/adity/Desktop/Projects/SynapseState/packages/cli/src/commands/audit.ts)).
+- Manifest template (`checkpoint-cronjob.yaml`) is fully parameterized with a dedicated ServiceAccount (`automountServiceAccountToken: false`), isolated checkpoint signing key, and external immutable store credentials.
+- Periodically queries `GET /v1/audit/checkpoint/latest`, creates a signed checkpoint envelope with domain separation `"synapsestate/checkpoint/v1\n"`, and writes to external immutable storage.
 
 ---
 

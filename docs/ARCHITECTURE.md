@@ -499,6 +499,8 @@ CREATE TABLE flag_usage_daily (
     PRIMARY KEY (flag_key, env, service, variant, usage_date)
 ) WITH (fillfactor = 70);
 
+CREATE INDEX idx_flag_usage_daily_env_date ON flag_usage_daily (env, usage_date, service);
+
 -- Asynchronous Staging Buffer for Audit Events (Zero request lock contention)
 CREATE TABLE audit_pending (
     id BIGSERIAL PRIMARY KEY,
@@ -631,6 +633,15 @@ A flag qualifies as a `stale_candidate` if and only if all five conditions hold:
 * **No Untrusted Test Execution:** The purger **never** runs `npm test`, `npm run lint`, or arbitrary scripts inside target repositories while holding GitHub App credentials.
 * **Tool Interoperability:** Generates structured reports containing exact file paths, line numbers, and `(flag_key, winning_variant)` tuples. This report directly powers external battle-tested refactoring tools (e.g. Uber Piranha, GritQL) or human-reviewed pull requests.
 
+### 9.3 Next.js Operations Dashboard with GitHub OAuth RBAC (`apps/dashboard`)
+* **Read-Mostly Operations Portal:** Built using Next.js 15 App Router, React 19, and the Voltage Design System ([design.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/design.md)). Provides real-time visibility into active break-glass leases, TTL countdowns, flag inventory, quiescence evaluations, and sealed audit records without vendor lock-in.
+* **Authentication & RBAC:** Enforces GitHub OAuth authentication (`/api/auth/github`, `/api/auth/callback`) with Edge-safe WebCrypto session verification ([apps/dashboard/src/middleware.ts](file:///c:/Users/adity/Desktop/Projects/SynapseState/apps/dashboard/src/middleware.ts)) and sealed JWT cookies (`synapse_session`):
+  - `viewer`: Read-only access to cluster state, active leases, flag metrics, and audit chains.
+  - `operator`: All viewer capabilities plus operational mutations: triggering lease promotions (`POST /api/actions/promote`) and early revocations (`POST /api/actions/revoke`).
+  - `admin`: Full administrative control, team mappings, and audit oversight.
+* **Key Safety Invariant (Signing Air-Gap):** The dashboard backend has **zero access to operator private keys and cannot sign emergency leases**. Emergency leases can only be created by operators using the CLI (`synapse lease create`) holding local encrypted keyfiles.
+* **Audit Trail Integration:** Administrative actions triggered through the dashboard emit staged audit events (`DASHBOARD_LOGIN`, `DASHBOARD_REVOKE_TRIGGERED`, `DASHBOARD_PROMOTE_TRIGGERED`) via `POST /v1/audit/events` for cryptographic hash-chain sealing.
+
 ---
 
 ## 10. Security Architecture & Threat Model
@@ -638,6 +649,7 @@ A flag qualifies as a `stale_candidate` if and only if all five conditions hold:
 | Threat Scenario | Impact | Primary Architectural Mitigation | Residual Risk |
 |---|---|---|---|
 | **Compromised Control API or DB** | Malicious overrides injected into cluster | SDKs verify Ed25519 signatures against pinned keyset mounted from Git. Control plane cannot sign leases. | Bounded replay within active TTL window; delayed revocation if partitioned. |
+| **Dashboard Compromise** | Unauthorized attempt to create or forge leases | Dashboard backend has zero signing keys and cannot sign leases; all mutations proxy to Control API with session RBAC and audit staging. | Stolen operator token could trigger promotions or revocations, strictly bounded by Git review and audit logs. |
 | **Stolen Operator Private Key** | Attacker signs unauthorized overrides | Fast-path key revocation envelope (`synapsestate/keyrevocation/v1\n`); SDK file-hash polling (10s); per-key `max_ttl_seconds` caps. | Window bounded by per-key TTL or fast-path revocation delivery. |
 | **Stolen Workload Service Token** | False telemetry injection; read state | Scoped tokens, hashed storage, rate limiting, isolated telemetry connection pool. | Poisoned usage metrics; purger outputs advisory reports, requiring human merge. |
 | **Replay of Expired Lease** | Historic override re-applied | Dual-clock validation: process-scoped monotonic timer combined with absolute wall-clock ceiling (`issued_at + ttl + SKEW_TOLERANCE`). | Severe node clock drift combined with cold pod restart (bounded by server timestamp age check). |
@@ -776,7 +788,7 @@ synapse log --service checkout-service --since 30m [--offline] [--json]
 - **Trust Root & Air-Gapped Fallback Separation:**
   - Pinned Keyset (`synapse-keyset`) and emergency leases volume (`synapse-emergency-leases`) are mounted as read-only volumes but **never** created, modified, or owned by Helm templates, guaranteeing that Helm upgrades cannot clobber GitOps-managed trust roots (Invariant 2).
 - **Isolated Checkpoint Signer CronJob:**
-  - Packaged as a standalone `batch/v1` CronJob (`synapse-checkpoint-signer`) with a dedicated non-automounting ServiceAccount, isolated secret credentials, and read-only filesystem. Disabled by default until PR 19 CLI release.
+  - Packaged as a standalone `batch/v1` CronJob (`synapse-checkpoint-signer`) with a dedicated non-automounting ServiceAccount, isolated secret credentials, and read-only filesystem (implemented in PR 19 via `synapse audit checkpoint`).
 
 ---
 
