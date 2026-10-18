@@ -1,0 +1,548 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+:root {
+  /* Brand Voltage Tier */
+  --color-kumo-brand: #ff5e1f;
+  --color-kumo-brand-hover: #ff7038;
+  --color-kumo-brand-soft: #ff9650;
+  --color-kumo-brand-dark: #d63c01;
+  --color-emergency-red: #ed1641;
+  --color-under-attack: #b52932;
+
+  /* Surface Tier (Cream warmth over pure white) */
+  --color-cream: #fffbf5;
+  --color-canvas: #ffffff;
+
+  /* Typography / Ink Tier (Never pure black) */
+  --color-ink: #262626;
+  --color-ink-soft: #414040;
+  --color-muted: #727272;
+  --color-nav-muted: #6a6967;
+
+  /* Hairline Border Tier (Single dominant border tone) */
+  --color-hairline: #f0f0f0;
+
+  /* Product Domain Tiers (Scoped to SynapseState Subsystems) */
+  --color-compute: #0a95ff; /* Blue: In-Process SDK Provider & State Delivery */
+  --color-storage: #ee0ddb; /* Pink: Break-Glass Leases & Key Store */
+  --color-ai: #00bd7d;      /* Green: Purger AST Qualification & Cleanups */
+  --color-sase: #0d9488;    /* Teal: Control API Governance & Audit Ledger */
+  --color-selection-bg: #c82800;
+
+  /* Shadcn standard theme variable mappings */
+  --background: var(--color-canvas);
+  --foreground: var(--color-ink);
+  --card: var(--color-canvas);
+  --card-foreground: var(--color-ink);
+  --primary: var(--color-kumo-brand);
+  --primary-foreground: var(--color-cream);
+  --secondary: var(--color-canvas);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-cream);
+  --muted-foreground: var(--color-muted);
+  --border: var(--color-hairline);
+  --input: var(--color-hairline);
+  --ring: var(--color-kumo-brand);
+
+  /* Binary Radius Scale (Small-step + Full Pill) */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+
+  /* Font Families (Clean Grotesk Display + Monospace Metadata) */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ============================================================================
+   Dark Mode Palette (High-Voltage Carbon & Obsidian)
+   ============================================================================ */
+
+html.dark,
+:root[data-theme="dark"] {
+  /* Brand Voltage Tier (Uncompromised punch on dark background) */
+  --color-kumo-brand: #ff5e1f;
+  --color-kumo-brand-hover: #ff7038;
+  --color-kumo-brand-soft: #ff9650;
+  --color-kumo-brand-dark: #d63c01;
+  --color-emergency-red: #ff3358;
+  --color-under-attack: #fb7185;
+
+  /* Surface Tier (Deep obsidian floor with warm zinc-charcoal card surfaces) */
+  --color-cream: #141416;
+  --color-canvas: #1b1b1e;
+  --color-bg-base: #0d0d0f;
+
+  /* Typography / Ink Tier (Crisp readable off-white, never blinding) */
+  --color-ink: #f4f4f6;
+  --color-ink-soft: #d2d2d6;
+  --color-muted: #8e8e98;
+  --color-nav-muted: #a4a4af;
+
+  /* Hairline Border Tier (Subtle dark boundary) */
+  --color-hairline: #2a2a2e;
+
+  /* Product Domain Tiers */
+  --color-compute: #38bdf8;
+  --color-storage: #f472b6;
+  --color-ai: #34d399;
+  --color-sase: #2dd4bf;
+  --color-selection-bg: #ff5e1f;
+
+  /* Shadcn mappings */
+  --background: var(--color-bg-base);
+  --foreground: var(--color-ink);
+  --card: var(--color-canvas);
+  --card-foreground: var(--color-ink);
+  --primary: var(--color-kumo-brand);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-canvas);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-cream);
+  --muted-foreground: var(--color-muted);
+  --border: var(--color-hairline);
+  --input: var(--color-hairline);
+  --ring: var(--color-kumo-brand);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark body {
+  background-color: var(--color-bg-base);
+}
+
+::selection {
+  background-color: var(--color-selection-bg);
+  color: var(--color-cream);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ============================================================================
+   Typography Hierarchy (Display 500 weight, Monospace Metadata)
+   ============================================================================ */
+
+.display-xl {
+  font-family: var(--font-sans);
+  font-size: 56px;
+  font-weight: 500;
+  line-height: 56px;
+  letter-spacing: -1.4px;
+}
+
+.display-lg {
+  font-family: var(--font-sans);
+  font-size: 48px;
+  font-weight: 500;
+  line-height: 48px;
+  letter-spacing: -1.2px;
+}
+
+.heading-md {
+  font-family: var(--font-sans);
+  font-size: 19.2px;
+  font-weight: 400;
+  line-height: 23px;
+  letter-spacing: -0.48px;
+}
+
+.heading-sm {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 21.6px;
+  letter-spacing: -0.45px;
+}
+
+.body-md {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: -0.04px;
+}
+
+.body-sm {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 16.1px;
+  letter-spacing: -0.14px;
+}
+
+.mono-caption {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mono-body {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+/* ============================================================================
+   Buttons & Pills (Binary Radius System: Small-step or Full Pill)
+   ============================================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  letter-spacing: -0.16px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  border: 1px solid transparent;
+}
+
+/* Signature Primary CTA Pill (Cream over Brand Canvas) */
+.btn-pill-cream {
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  border-radius: var(--radius-full);
+  padding: 12px 24px;
+  height: 46px;
+}
+
+.btn-pill-cream:hover {
+  background-color: var(--color-canvas);
+  color: var(--color-kumo-brand);
+}
+
+/* Primary Brand Voltage Pill */
+.btn-pill-brand {
+  background-color: var(--color-kumo-brand);
+  color: var(--color-cream);
+  border-radius: var(--radius-full);
+  padding: 12px 24px;
+  height: 46px;
+}
+
+.btn-pill-brand:hover {
+  background-color: var(--color-kumo-brand-hover);
+}
+
+/* Secondary Hairline Card Button */
+.btn-secondary {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  height: 40px;
+  font-size: 14px;
+}
+
+.btn-secondary:hover {
+  border-color: #d8d8d8;
+  background-color: var(--color-cream);
+}
+
+/* Destructive / Emergency Red Button */
+.btn-danger {
+  background-color: var(--color-under-attack);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-danger:hover {
+  background-color: #991b1b;
+  color: #ffffff;
+}
+
+.btn-danger:hover {
+  background-color: var(--color-emergency-red);
+  color: var(--color-cream);
+  border-color: var(--color-emergency-red);
+}
+
+/* Category Tab Pills */
+.category-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-full);
+  padding: 8px 16px;
+  height: 36px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.category-tab:hover {
+  border-color: #d8d8d8;
+  background-color: var(--color-cream);
+}
+
+.category-tab-active {
+  background-color: var(--color-kumo-brand);
+  color: var(--color-cream);
+  border-color: var(--color-kumo-brand);
+}
+
+.category-tab-active:hover {
+  background-color: var(--color-kumo-brand-hover);
+  color: var(--color-cream);
+}
+
+/* ============================================================================
+   Cards & Surfaces (Hairline-Only Architecture, Zero Drop-Shadow)
+   ============================================================================ */
+
+.card-hairline {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  transition: border-color 0.15s ease;
+}
+
+.card-hairline:hover {
+  border-color: #e0e0e0;
+}
+
+/* Voltage Split Panel Emphasis Block */
+.card-orange {
+  background-color: var(--color-kumo-brand);
+  color: var(--color-cream);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Metric Stat Card */
+.stat-card {
+  background-color: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-family: var(--font-sans);
+  font-size: 32px;
+  font-weight: 500;
+  color: var(--color-ink);
+  line-height: 1.1;
+  letter-spacing: -0.8px;
+}
+
+.stat-hint {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* ============================================================================
+   Badges (Monospace small-caps labels & product domain tokens)
+   ============================================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  border: none;
+  color: #ffffff;
+}
+
+.badge-active {
+  background-color: var(--color-ai);
+  color: #ffffff;
+}
+
+.badge-near-expiry {
+  background-color: var(--color-kumo-brand);
+  color: #ffffff;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+.badge-expired {
+  background-color: var(--color-muted);
+  color: #ffffff;
+}
+
+.badge-revoked {
+  background-color: var(--color-under-attack);
+  color: #ffffff;
+}
+
+.badge-promoted {
+  background-color: var(--color-storage);
+  color: #ffffff;
+}
+
+.badge-compute {
+  background-color: var(--color-compute);
+  color: #ffffff;
+}
+
+.badge-storage {
+  background-color: var(--color-storage);
+  color: #ffffff;
+}
+
+.badge-ai {
+  background-color: var(--color-ai);
+  color: #ffffff;
+}
+
+.badge-sase {
+  background-color: var(--color-sase);
+  color: #ffffff;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ============================================================================
+   Inputs & Code Blocks
+   ============================================================================ */
+
+.text-input {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xs);
+  padding: 10px 14px;
+  height: 40px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.text-input:focus {
+  border-color: var(--color-kumo-brand);
+}
+
+.code-inline {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background-color: #f7f6f3;
+  color: var(--color-ink);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--color-hairline);
+}
+
+/* ============================================================================
+   Modal / Dialog Overlay
+   ============================================================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(38, 38, 38, 0.4);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+/* ============================================================================
+   Dark Mode Component Specifics
+   ============================================================================ */
+
+html.dark .code-inline {
+  background-color: #161619;
+  color: #e4e4e7;
+  border-color: var(--color-hairline);
+}
+
+html.dark .card-hairline:hover {
+  border-color: #3b3b42;
+}
+
+html.dark .btn-secondary:hover {
+  border-color: #3b3b42;
+  background-color: var(--color-cream);
+}
+
+html.dark .category-tab:hover {
+  border-color: #3b3b42;
+  background-color: var(--color-cream);
+}
+
+html.dark .modal-overlay {
+  background-color: rgba(0, 0, 0, 0.75);
+}
+
+html.dark .badge-expired {
+  background-color: var(--color-muted);
+  color: #ffffff;
+  border: none;
+}
+
+html.dark .notice-danger {
+  background-color: var(--color-under-attack) !important;
+  border: none !important;
+  color: #ffffff !important;
+}
+
+

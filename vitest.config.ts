@@ -13,6 +13,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@": path.resolve(__dirname, "./apps/dashboard/src"),
       "@synapsestate/lease": path.resolve(
         __dirname,
         "./packages/lease/src/index.ts",

@@ -247,7 +247,7 @@ gantt
   - Optional webhook listener calling shared `rankSuspects` and `GET /v1/changes`.
   - Automatically creates Grafana annotations and suggests copy-pasteable `synapse lease create` commands in incident channels.
 - **Recommended Branches & Pull Requests:**
-  - **PR 24 (`feat/dashboard-nextjs-portal`):** `feat(dashboard): read-mostly operations portal with OIDC authentication` — `apps/dashboard/*`
+  - **PR 24 (`feat/dashboard-nextjs-portal`):** `feat(dashboard): read-mostly operations portal with OIDC authentication` — `apps/dashboard/*` `[COMPLETED]`
   - **PR 25 (`feat/dashboard-rbac-and-actions`):** `feat(dashboard): RBAC controls and lease promotion/revocation triggers` — `apps/dashboard/src/auth/*`, `apps/dashboard/src/api/*`
   - **PR 26 (`feat/push-incident-webhook`):** `feat(api): optional alertmanager incident webhook and grafana annotations` — `apps/control-api/src/webhooks/*`
 - **Security & Best Practice Review Checkpoints:**
