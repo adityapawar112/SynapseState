@@ -245,6 +245,7 @@ gantt
 - **6.2 Push Incident Automation (Optional Extension):** `[COMPLETED]`
   - Optional webhook listener calling shared `rankSuspects` and `GET /v1/changes`.
   - Automatically creates Grafana annotations and suggests copy-pasteable `synapse lease create` commands in incident channels.
+  - Outbox worker retry policy (Decision: Open Question 9): 5 exponential retries with jitter (~15m total), transition to `dead_letter` status on exhaustion, Prometheus metric `synapse_webhook_dead_letters_total`, and manual operator CLI replay.
 - **Recommended Branches & Pull Requests:**
   - **PR 24 (`feat/dashboard-nextjs-portal`):** `[COMPLETED]` `feat(dashboard): read-mostly operations portal with OIDC authentication` — `apps/dashboard/*`
   - **PR 25 (`feat/dashboard-rbac-and-actions`):** `[COMPLETED]` `feat(dashboard): RBAC controls and lease promotion/revocation triggers` — `apps/dashboard/src/auth/*`, `apps/dashboard/src/api/*`
@@ -258,15 +259,16 @@ gantt
 
 ### Phase 7: End-to-End Verification & Mutation Resilience (Weeks 13 – 14)
 
-**Deliverable:** Playwright browser test suite for the Operations Portal, Stryker mutation testing for cryptographic/safety boundaries, and automated CI chaos drills. Reference: [docs/ADVANCED_TESTING_HANDOFF.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ADVANCED_TESTING_HANDOFF.md).
+**Deliverable:** Playwright browser test suite for the Operations Portal, Stryker mutation testing for cryptographic/safety boundaries, and automated CI chaos drills. Reference: [docs/handoff-phase7-pr27-29-advanced-testing.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/handoff-phase7-pr27-29-advanced-testing.md).
 
 - **7.1 Dashboard End-to-End Test Suite (`apps/dashboard/e2e`):**
-  - Full Playwright user journeys against production builds (`next build && next start` on port 3010).
+  - Full Playwright user journeys against production builds connected to real PostgreSQL 16 and live Control API via Playwright multi-`webServer` orchestration (Decision: Open Question 6; zero mock-routing).
   - RBAC permission enforcement: verify `viewer` cannot trigger mutations; `operator` and `admin` execute valid actions.
   - Real-time countdown timer testing: monotonic decrement and dual-clock expiry visual updates.
   - Revocation and Promotion modal execution with YAML diff preview and toast confirmation.
 - **7.2 Cryptographic & Invariant Mutation Testing (`packages/lease` & `packages/sdk`):**
-  - Granular Stryker Mutator configuration (`@stryker-mutator/core` + `@stryker-mutator/vitest-runner`) with `related: true`.
+  - Granular Stryker Mutator configuration (`@stryker-mutator/core` + `@stryker-mutator/vitest-runner`) strictly scoped to core evaluation and crypto packages (Decision: Open Question 7).
+  - Fast PR checks via `pnpm exec stryker run --since origin/main` to mutate only changed lines in pull requests.
   - Enforce mutation testing against core invariants:
     - Invariant 3: Dual-clock expiry arithmetic ($\min(\text{mono}, \text{wall})$ and skew tolerance).
     - Invariant 1: Fail-safe fallback try/catch delegation to base provider.
@@ -287,15 +289,17 @@ gantt
 
 ### Phase 8: Production Load Saturation, Soak Benchmarks & Observability Visuals (Weeks 15 – 16)
 
-**Deliverable:** 10-minute soak testing, saturation cliff identification, bulkhead load-shedding proof, and automated headless screenshot capture during live load. Reference: [docs/LOAD_TESTING_AND_OBSERVABILITY_HANDOFF.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/LOAD_TESTING_AND_OBSERVABILITY_HANDOFF.md).
+**Deliverable:** 10-minute soak testing, saturation cliff identification, bulkhead load-shedding proof, and automated headless screenshot capture during live load. Reference: [docs/handoff-phase8-pr30-31-load-testing-and-observability.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/handoff-phase8-pr30-31-load-testing-and-observability.md).
 
 - **8.1 Multi-Scenario k6 Saturation & Soak Harness (`load/k6/`):**
   - Standardized 4-phase Story Arc traffic orchestration: Baseline $\to$ Emergency Break-Glass $\to$ Telemetry Bulkhead Saturation $\to$ Ephemeral Expiry.
   - 10-minute sustained soak test to verify Node.js memory RSS stability under continuous long-polling.
+  - Native k6 threshold assertions (`p(95) < 10s`, `http_req_failed < 0.1%`) exiting with code 99 to fail CI on performance regressions; workflow artifact summary export (Decision: Open Question 8; zero auto-commit bots).
 - **8.2 Bulkhead Isolation & Load-Shedding Verification:**
   - Empirical proof under 5,000+ evals/s that telemetry saturation sheds load (HTTP 429 on `telemetryPool`) while state delivery (`leasePool`) maintains 100% availability and $<10\text{ms}$ latency.
 - **8.3 Automated Observability Screenshot Pipeline:**
-  - Automated headless browser capture of all 5 dashboards (Overview, Leases, Flags, Audit Ledger, Grafana) during live load for automated README and release asset generation.
+  - Containerized Playwright visual capture (`pnpm run capture:docs`) running in official Docker container (`mcr.microsoft.com/playwright:v1.49.0-jammy`) with pinned fonts for deterministic, platform-independent screenshot generation (Decision: Open Question 10).
+  - Captures all 5 monitoring surfaces (Overview, Leases, Flags, Audit Ledger, Grafana) during live load scenarios for README and documentation assets.
 - **Recommended Branches & Pull Requests:**
   - **PR 30 (`test/k6-soak-and-saturation`):** `test(load): 10-minute soak harness and saturation cliff benchmarks` — `load/k6/*`
   - **PR 31 (`ci/automated-dashboard-screenshots`):** `ci(docs): automated headless capture of operations portal and Grafana during live load scenarios` — `scratch/capture-dashboards.js`, `docs/assets/*`

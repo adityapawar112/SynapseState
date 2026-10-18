@@ -1,7 +1,7 @@
-# Handoff: Load Testing, Scenario Execution & Observability Screenshotting
+# Phase 8 Handoff: Production Load Saturation, Soak Benchmarks & Observability Visuals (PRs 30–31)
 
 > **Target Audience:** SREs, Performance Engineers, and Full-Stack Contributors  
-> **Goal:** Standardized protocol for running multi-scenario k6 load tests, capturing Prometheus metrics, and generating high-resolution dashboard screenshots for documentation and `README.md`.
+> **Goal:** Comprehensive implementation guide for running multi-scenario k6 load/soak tests (PR 30), capturing Prometheus metrics, and executing the containerized visual pipeline for `README.md` assets (PR 31).
 
 ---
 
@@ -16,8 +16,8 @@ In production infrastructure engineering, high-impact documentation does not sho
    - **Phase 3: Bulkhead Saturation & Load-Shedding:** High-volume telemetry batch flushes (5,000+ evals/sec). Proves Invariant 1 bulkhead isolation: `telemetryPool` sheds load with HTTP 429 while `leasePool` state delivery remains 100% available with 0 drops.
    - **Phase 4: Graceful Expiry & Revocation:** Lease is promoted or revoked via `synapse lease revoke`. Active override count returns to 0.
 
-2. **Automated Headless Capture:**
-   Screenshots are captured programmatically via headless Chrome / Playwright / CDP at exact viewports (1440x900) after waiting for network idle and metric collection windows (e.g. 15–30 seconds after load spikes).
+2. **Automated Containerized Visual Pipeline:**
+   Screenshots are captured programmatically via headless Chrome inside the official Playwright Docker container at exact viewports (1440x900) after waiting for network idle and metric collection windows, guaranteeing 100% platform-independent font rendering.
 
 3. **No Synthetic Mocks:**
    All dashboards and metrics reflect actual database writes, real cryptographic Ed25519 signatures, and real Prometheus scrape intervals.
@@ -51,11 +51,24 @@ $env:PORT="3010"; $env:SYNAPSE_DEV_AUTH="true"; $env:CONTROL_API_URL="http://loc
 
 ---
 
-## 3. Running Load-Testing Scenarios with k6
+## 3. PR 30: Soak Harness, Saturation Benchmarks & Regression Enforcement (`test/k6-soak-and-saturation`)
 
 The repository includes pre-tuned k6 test harnesses in [`load/k6/`](file:///c:/Users/adity/Desktop/Projects/SynapseState/load/k6/).
 
-### Scenario A: Steady-State & ETag Long-Polling Delivery
+### 3.1 Decision & Architecture (Native k6 Thresholds & CI Artifacts)
+Per **Open Question 8**, we avoid complex auto-commit bots that pollute Git history. We define native k6 `thresholds` inside the test script options:
+```javascript
+export const options = {
+  thresholds: {
+    'lease_propagation_lag': ['p(95)<10000'], // <= 10s SLO
+    'http_req_failed': ['rate<0.001'],         // < 0.1% error rate
+  },
+};
+```
+- **Exit Code Enforcement:** Violations exit with code 99 and automatically fail CI.
+- **Workflow Artifact Export:** CI exports `summary.json` as a standard GitHub Actions artifact (retained 30 days). Static baselines in [docs/benchmarks/load-test-report.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/benchmarks/load-test-report.md) are updated manually only upon tagged release milestones.
+
+### 3.2 Scenario A: Steady-State & ETag Long-Polling Delivery
 Simulates 100 concurrent application microservices long-polling state:
 ```bash
 k6 run -e VUS=100 -e DURATION=1m load/k6/long-polling.js
@@ -63,7 +76,7 @@ k6 run -e VUS=100 -e DURATION=1m load/k6/long-polling.js
 - **What it exercises:** In-process caching, conditional HTTP 304 holding, memory leak stability.
 - **Observability impact:** In Grafana, `synapse_state_poll_duration_seconds` shows steady 304 count; `synapse_leases_active` remains 0.
 
-### Scenario B: Live Invalidation & Emergency Lease Injection
+### 3.3 Scenario B: Live Invalidation & Emergency Lease Injection
 Simulates 100 concurrent pollers while a background thread injects and revokes signed emergency overrides:
 ```bash
 k6 run -e VUS=100 -e DURATION=2m -e INJECT_MUTATIONS=true load/k6/long-polling.js
@@ -73,7 +86,7 @@ k6 run -e VUS=100 -e DURATION=2m -e INJECT_MUTATIONS=true load/k6/long-polling.j
   - Grafana: `Lease Propagation Lag` panel plots $p50/p95/p99$ curves below the $10\text{s}$ red line.
   - Next.js Portal: `/leases` displays live countdown cards and active override badges.
 
-### Scenario C: High-Throughput Telemetry Ingestion (Zero-Context Flush)
+### 3.4 Scenario C: High-Throughput Telemetry Ingestion (Zero-Context Flush)
 Drives high-rate batch ingestion across multiple synthetic services:
 ```bash
 k6 run -e VUS=50 -e DURATION=1m -e BATCH_SIZE=50 load/k6/telemetry.js
@@ -83,41 +96,42 @@ k6 run -e VUS=50 -e DURATION=1m -e BATCH_SIZE=50 load/k6/telemetry.js
   - Next.js Portal: `/flags` updates with 30-day evaluation counts and variant percentage bars.
   - Grafana: `synapse_sdk_telemetry_evaluations_total` spikes upwards.
 
-### Scenario D: Combined Mixed-Stress Saturation & Bulkhead Verification
-Executes concurrent readers, telemetry writers, and background lease mutators simultaneously:
+### 3.5 Scenario D: Combined 10-Minute Soak & Bulkhead Saturation Proof
+Executes concurrent readers, telemetry writers, and background lease mutators continuously for 10 minutes:
 ```bash
-k6 run -e PROFILE=stress load/k6/mixed-stress.js
+k6 run -e PROFILE=stress -e DURATION=10m load/k6/mixed-stress.js
 ```
-- **What it exercises:** Complete system under load. Proves that telemetry spikes shed load via HTTP 429 without degrading critical state delivery.
+- **What it exercises:** Proves zero connection starvation on `leasePool` during telemetry write bursts; memory profile flat over 10 minutes.
 
 ---
 
-## 4. Capturing High-Resolution Dashboard Screenshots
+## 4. PR 31: Deterministic Containerized Visual Capture (`ci/automated-dashboard-screenshots`)
 
-Once the desired load scenario has been running for 30–60 seconds, capture the visual state across all monitoring surfaces.
+### 4.1 Decision & Architecture (On-Demand Docker One-Liner)
+Per **Open Question 10**, to prevent subpixel font antialiasing differences across macOS, Windows, and Linux CI runners from causing noisy binary diffs, we execute visual capture inside the official Playwright Docker container with pinned fonts:
+```bash
+pnpm run capture:docs
+```
+Which executes under the hood:
+```bash
+docker run --rm -v $(pwd):/work -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scratch/capture-dashboards.js
+```
 
-### Recommended Viewport & Settings
-- **Resolution:** `1440 x 900` (Standard 16:10 laptop / clean technical documentation width).
-- **Format:** PNG (lossless, crisp typography and hairlines).
-- **Target Directory:** `docs/assets/`.
-
-### Automated Capture Commands (via Browser Agent or Puppeteer / Playwright)
-
-You can use the browser DevTools agent or a Node script with Puppeteer/Playwright:
-
+### 4.2 Automated Capture Script (`scratch/capture-dashboards.js`)
 ```javascript
-// scratch/capture-dashboards.js
 import { chromium } from "playwright";
 
 const targets = [
-  { url: "http://localhost:3010/", file: "docs/assets/dashboard-overview.png" },
-  { url: "http://localhost:3010/leases", file: "docs/assets/dashboard-leases.png" },
-  { url: "http://localhost:3010/flags", file: "docs/assets/dashboard-flags.png" },
-  { url: "http://localhost:3010/audit", file: "docs/assets/dashboard-audit.png" },
-  { url: "http://localhost:3002/d/synapsestate-operations/synapsestate-incident-safety-and-fleet-operations?kiosk", file: "docs/assets/grafana-dashboard.png" }
+  { url: "http://host.docker.internal:3010/", file: "docs/assets/dashboard-overview.png" },
+  { url: "http://host.docker.internal:3010/leases", file: "docs/assets/dashboard-leases.png" },
+  { url: "http://host.docker.internal:3010/flags", file: "docs/assets/dashboard-flags.png" },
+  { url: "http://host.docker.internal:3010/audit", file: "docs/assets/dashboard-audit.png" },
+  { url: "http://host.docker.internal:3002/d/synapsestate-operations/synapsestate-incident-safety-and-fleet-operations?kiosk", file: "docs/assets/grafana-dashboard.png" }
 ];
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({
+  args: ["--disable-font-subpixel-positioning"],
+});
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
 for (const target of targets) {
@@ -139,5 +153,5 @@ Before committing new screenshots to `docs/assets/` and referencing them in `REA
 - [ ] **No Personal Identifiers:** Header profile badges display standard demo personas (`operator` or `alice-oncall-sre`).
 - [ ] **Data Populated:** Tables and charts show real data (active leases, non-zero telemetry counts, and sealed SHA-256 blocks), not "No data available".
 - [ ] **No Visual Glitches:** Font rendering is crisp, SVG hairlines have 1px crispness, and alert banners are closed.
-- [ ] **Consistent Dark/Light Framing:** Next.js dashboard screenshots captured on standard light canvas (`#ffffff` / `#fffbf5`); Grafana captured in standard dark theme or kiosk mode (`?kiosk`).
+- [ ] **Consistent Framing:** Next.js dashboard screenshots captured on standard light canvas (`#ffffff` / `#fffbf5`); Grafana captured in standard dark theme or kiosk mode (`?kiosk`).
 - [ ] **File Size Optimization:** Images are compressed with lossless PNG tools (`oxipng` or standard PNG optimization) to maintain repository cloning speed.
