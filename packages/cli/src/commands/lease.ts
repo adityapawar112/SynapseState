@@ -900,6 +900,11 @@ export function registerLeaseCommands(program: Command): void {
     )
     .action(async (opts) => {
       try {
+        if (opts.value !== undefined && opts.variant !== undefined && opts.value !== opts.variant) {
+          console.warn(
+            `[WARNING] Both --value and --variant were supplied with differing values ('${opts.value}' vs '${opts.variant}'). Using --value ('${opts.value}').`,
+          );
+        }
         const rawValue = opts.value ?? opts.variant;
         if (rawValue === undefined) {
           throw new Error("error: required option '-v, --value <val>' (or '--variant <val>') not specified");

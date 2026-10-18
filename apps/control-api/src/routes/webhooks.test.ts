@@ -1005,4 +1005,157 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       await appWithGrafanaFail.close();
     }
   });
+
+  it("safely quotes malicious env containing shell metacharacters in remediation command (C1)", async () => {
+    const flagKey = "checkout-v2";
+    const service = "checkout";
+    const maliciousEnv = "prod; rm -rf /; echo pwned";
+    const now = new Date();
+
+    await leasePool.query(
+      `INSERT INTO change_events (event_type, env, flag_key, actor, occurred_at, payload)
+       VALUES ('LEASE_CREATED', $1, $2, 'sre-bob', $3, $4)`,
+      [
+        maliciousEnv,
+        flagKey,
+        new Date(now.getTime() - 5 * 60 * 1000),
+        JSON.stringify({ value: true, reason: "Canary rollout" }),
+      ],
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [
+          {
+            status: "firing",
+            labels: {
+              alertname: "High5xx",
+              service,
+              env: maliciousEnv,
+              severity: "critical",
+            },
+            startsAt: now.toISOString(),
+          },
+        ],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.attributions[0].attributed).toBe(true);
+    expect(body.attributions[0].remediation_command).toContain(
+      `--env 'prod; rm -rf /; echo pwned'`,
+    );
+  });
+
+  it("handles corrupt change_events row payload and invalid date without 500 crash (C2)", async () => {
+    const flagKey = "checkout-v2";
+    const service = "checkout";
+    const now = new Date();
+
+    // Insert rows with non-object payload (string scalar)
+    await leasePool.query(
+      `INSERT INTO change_events (event_type, env, flag_key, actor, occurred_at, payload)
+       VALUES 
+       ('LEASE_CREATED', $1, $2, 'sre-bob', $3, '"string-scalar-not-object"'::jsonb),
+       ('LEASE_CREATED', $1, 'other-flag', 'sre-bob', $3, '{"value": true}'::jsonb)`,
+      [env, flagKey, new Date(now.getTime() - 5 * 60 * 1000)],
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts: [
+          {
+            status: "firing",
+            labels: {
+              alertname: "High5xx",
+              service,
+              env,
+            },
+            startsAt: now.toISOString(),
+          },
+        ],
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe("processed");
+  });
+
+  it("truncates batch and warns when more than 10 firing alerts are received (I2)", async () => {
+    const alerts = Array.from({ length: 15 }, (_, i) => ({
+      status: "firing",
+      labels: {
+        alertname: `Alert_${i}`,
+        env,
+      },
+    }));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/webhooks/alertmanager",
+      headers: {
+        "content-type": "application/json",
+        "x-alertmanager-secret": alertmanagerSecret,
+      },
+      payload: JSON.stringify({
+        version: "4",
+        status: "firing",
+        alerts,
+      }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.truncated).toBe(true);
+    expect(body.attributions).toHaveLength(10);
+  });
+
+  it("returns 503 SERVICE_UNAVAILABLE when ALERTMANAGER_WEBHOOK_SECRET is not configured (I5)", async () => {
+    const unconfiguredApp = buildServer({
+      leasePool,
+      alertmanagerWebhookSecret: undefined,
+      fastifyOptions: { logger: false },
+    });
+    await unconfiguredApp.ready();
+
+    try {
+      const res = await unconfiguredApp.inject({
+        method: "POST",
+        url: "/v1/webhooks/alertmanager",
+        headers: {
+          "content-type": "application/json",
+          "x-alertmanager-secret": "any-secret",
+        },
+        payload: JSON.stringify({
+          version: "4",
+          status: "firing",
+          alerts: [{ status: "firing" }],
+        }),
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error).toBe("SERVICE_UNAVAILABLE");
+    } finally {
+      await unconfiguredApp.close();
+    }
+  });
 });
+

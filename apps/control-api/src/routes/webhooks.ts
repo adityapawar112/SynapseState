@@ -8,7 +8,7 @@ import type { GitHubWebhookPullRequestPayload } from "../github/types.js";
 import type { GrafanaClient } from "../grafana/index.js";
 import {
   rankSuspects,
-  quoteShellArg,
+  buildRemediationCommand,
   type ChangeEvent,
   type FlagEvaluationRecord,
 } from "@synapsestate/lease";
@@ -424,29 +424,32 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       options.alertmanagerWebhookSecret ?? process.env.ALERTMANAGER_WEBHOOK_SECRET;
 
     if (!alertSecret) {
-      req.log.error(
-        "ALERTMANAGER_WEBHOOK_SECRET is not configured on server",
+      req.log.warn(
+        "Alertmanager webhook called but ALERTMANAGER_WEBHOOK_SECRET is not configured",
       );
-      return reply.code(500).send({
-        error: "ALERTMANAGER_SECRET_NOT_CONFIGURED",
-        message: "Alertmanager webhook secret is not configured on the server",
+      return reply.code(503).send({
+        error: "SERVICE_UNAVAILABLE",
+        message:
+          "Alertmanager webhook is not enabled: ALERTMANAGER_WEBHOOK_SECRET is not configured on this server",
       });
     }
 
-    const headerSecret = req.headers["x-alertmanager-secret"];
+    const headerSecret =
+      typeof req.headers["x-alertmanager-secret"] === "string"
+        ? req.headers["x-alertmanager-secret"]
+        : undefined;
     const authHeader = req.headers.authorization;
     let bearerSecret: string | undefined;
     if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
       bearerSecret = authHeader.slice(7).trim();
     }
 
-    const matchedSecret =
-      (typeof headerSecret === "string" &&
-        isTimingSafeMatch(headerSecret, alertSecret)) ||
-      (typeof bearerSecret === "string" &&
-        isTimingSafeMatch(bearerSecret, alertSecret));
+    // Fixed-length SHA-256 comparison without early short-circuit (I1)
+    const matchHeader = isTimingSafeMatch(headerSecret, alertSecret);
+    const matchBearer = isTimingSafeMatch(bearerSecret, alertSecret);
+    const isAuthorized = matchHeader || matchBearer;
 
-    if (!matchedSecret) {
+    if (!isAuthorized) {
       return reply.code(401).send({
         error: "UNAUTHORIZED",
         message: "Missing or invalid Alertmanager webhook secret",
@@ -471,7 +474,23 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
     }
 
     // 3. Attribution & Correlation
-    const lookbackMinutes = options.lookbackMinutes ?? 60;
+    // Clamp lookbackMinutes to [1, 1440] (1m to 24h) to avoid DoS query exhaustion (I2)
+    const rawLookback = Number(options.lookbackMinutes);
+    const lookbackMinutes = Number.isFinite(rawLookback)
+      ? Math.min(1440, Math.max(1, Math.round(rawLookback)))
+      : 60;
+
+    // Cap processed firing alerts per batch (max 10) to prevent connection starvation (I2)
+    const MAX_ALERTS_PER_BATCH = 10;
+    const alertsToProcess = firingAlerts.slice(0, MAX_ALERTS_PER_BATCH);
+    const isTruncated = firingAlerts.length > MAX_ALERTS_PER_BATCH;
+    if (isTruncated) {
+      req.log.warn(
+        { count: firingAlerts.length, max: MAX_ALERTS_PER_BATCH },
+        "[Webhook] Truncating firing alerts batch to maximum limit (10)",
+      );
+    }
+
     const attributions: Array<{
       alertname: string;
       service?: string;
@@ -484,7 +503,7 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       grafana_annotation_id?: number;
     }> = [];
 
-    for (const alert of firingAlerts) {
+    for (const alert of alertsToProcess) {
       const alertname = alert.labels?.alertname || "UnknownAlert";
       const env = alert.labels?.env || "production";
       const service =
@@ -499,145 +518,207 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
         ? parsedStartsAt
         : new Date();
 
-      // Stage INCIDENT_ALERT_RECEIVED into audit_pending
-      await leasePool.query(
-        `INSERT INTO audit_pending (actor, event_type, payload)
-         VALUES ($1, 'INCIDENT_ALERT_RECEIVED', $2)`,
-        [
-          "alertmanager",
-          JSON.stringify({
-            alertname,
-            service,
-            env,
-            severity: alert.labels?.severity || "unknown",
-            starts_at: startsAtDate.toISOString(),
-            annotations: alert.annotations || {},
-          }),
-        ],
-      );
-
       // Lookback window: default 60 minutes prior to startsAtDate
       const lookbackMs = lookbackMinutes * 60 * 1000;
       const lookbackStart = new Date(startsAtDate.getTime() - lookbackMs);
+      // Small skew tolerance (30s) prevents causality inversion (I3)
+      const SKEW_TOLERANCE_MS = 30_000;
       const lookbackEnd = new Date(
-        Math.max(startsAtDate.getTime() + 5 * 60 * 1000, Date.now()),
+        Math.min(
+          startsAtDate.getTime() + SKEW_TOLERANCE_MS,
+          Date.now() + SKEW_TOLERANCE_MS,
+        ),
       );
 
-      // Query change_events for env
-      const changeSql = `
-        SELECT id, event_type, env, flag_key, actor, occurred_at, payload
-        FROM change_events
-        WHERE env = $1 AND occurred_at >= $2 AND occurred_at <= $3
-        ORDER BY occurred_at DESC, id DESC
-        LIMIT 50
-      `;
-      const changeRes = await leasePool.query<{
-        id: string | number;
-        event_type: string;
-        env: string;
-        flag_key: string | null;
-        actor: string;
-        occurred_at: Date | string;
-        payload: unknown;
-      }>(changeSql, [env, lookbackStart, lookbackEnd]);
+      // Execute database operations per alert atomically inside transaction (I4)
+      const alertAttributionResult = await withTransaction(
+        leasePool,
+        async (client) => {
+          // Stage INCIDENT_ALERT_RECEIVED into audit_pending
+          await client.query(
+            `INSERT INTO audit_pending (actor, event_type, payload)
+             VALUES ($1, 'INCIDENT_ALERT_RECEIVED', $2)`,
+            [
+              "alertmanager",
+              JSON.stringify({
+                alertname,
+                service,
+                env,
+                severity: alert.labels?.severity || "unknown",
+                starts_at: startsAtDate.toISOString(),
+                annotations: alert.annotations || {},
+              }),
+            ],
+          );
 
-      const events: ChangeEvent[] = changeRes.rows.map((row) => ({
-        id: Number(row.id),
-        event_type: row.event_type,
-        env: row.env,
-        flag_key: row.flag_key,
-        actor: row.actor,
-        occurred_at:
-          row.occurred_at instanceof Date
-            ? row.occurred_at.toISOString()
-            : new Date(row.occurred_at).toISOString(),
-        payload:
-          typeof row.payload === "string"
-            ? JSON.parse(row.payload)
-            : (row.payload as Record<string, unknown>),
-      }));
+          // Query change_events for env
+          const changeSql = `
+            SELECT id, event_type, env, flag_key, actor, occurred_at, payload
+            FROM change_events
+            WHERE env = $1 AND occurred_at >= $2 AND occurred_at <= $3
+            ORDER BY occurred_at DESC, id DESC
+            LIMIT 50
+          `;
+          const changeRes = await client.query<{
+            id: string | number;
+            event_type: string;
+            env: string;
+            flag_key: string | null;
+            actor: string;
+            occurred_at: Date | string;
+            payload: unknown;
+          }>(changeSql, [env, lookbackStart, lookbackEnd]);
 
-      // Query flag_usage_daily
-      let evalSql = `
-        SELECT flag_key, variant, SUM(eval_count)::bigint AS eval_count
-        FROM flag_usage_daily
-        WHERE env = $1 AND usage_date >= $2
-      `;
-      const evalParams: unknown[] = [env, lookbackStart.toISOString().slice(0, 10)];
-      if (service) {
-        evalParams.push(service);
-        evalSql += ` AND service = $${evalParams.length}`;
-      }
-      evalSql += ` GROUP BY flag_key, variant ORDER BY flag_key ASC, variant ASC`;
+          // Safe row-by-row parse prevents corrupt rows from failing the entire batch (C2)
+          const events: ChangeEvent[] = [];
+          for (const row of changeRes.rows) {
+            let payload: Record<string, unknown> = {};
+            try {
+              if (typeof row.payload === "string") {
+                payload = JSON.parse(row.payload);
+              } else if (row.payload && typeof row.payload === "object") {
+                payload = row.payload as Record<string, unknown>;
+              }
+            } catch (err) {
+              req.log.warn(
+                { err, rowId: row.id },
+                "[Webhook] Malformed change_events payload JSON; falling back to empty payload",
+              );
+              payload = {};
+            }
 
-      const evalRes = await leasePool.query<{
-        flag_key: string;
-        variant: string;
-        eval_count: string | number;
-      }>(evalSql, evalParams);
+            let occurredAtIso: string;
+            try {
+              if (row.occurred_at instanceof Date) {
+                occurredAtIso = row.occurred_at.toISOString();
+              } else {
+                const d = new Date(row.occurred_at);
+                occurredAtIso = Number.isFinite(d.getTime())
+                  ? d.toISOString()
+                  : new Date(0).toISOString();
+              }
+            } catch {
+              occurredAtIso = new Date(0).toISOString();
+            }
 
-      const evaluations: FlagEvaluationRecord[] = evalRes.rows.map((r) => ({
-        flag_key: r.flag_key,
-        variant: r.variant,
-        eval_count: Number(r.eval_count),
-      }));
+            events.push({
+              id: Number(row.id),
+              event_type: row.event_type || "UNKNOWN",
+              env: row.env || env,
+              flag_key: row.flag_key,
+              actor: row.actor || "unknown",
+              occurred_at: occurredAtIso,
+              payload,
+            });
+          }
 
-      // Attribution heuristic using shared pure ranker
-      const suspects = rankSuspects(
-        events,
-        evaluations,
-        service,
-        startsAtDate.getTime(),
-      );
-
-      if (suspects.length === 0) {
-        attributions.push({
-          alertname,
-          service: service || undefined,
-          env,
-          attributed: false,
-          reason: "No recent flag changes found within lookback window",
-        });
-        continue;
-      }
-
-      const topSuspect = suspects[0];
-      const quotedValue =
-        typeof topSuspect.suggested_action.suggested_value === "string"
-          ? quoteShellArg(topSuspect.suggested_action.suggested_value)
-          : String(topSuspect.suggested_action.suggested_value);
-      const safeAlertName = alertname.replace(/[^a-zA-Z0-9_.-]/g, "_");
-      const remediationReason = `Incident attribution: ${safeAlertName}`;
-      const remediationCommand = `synapse lease create --flag ${topSuspect.flag_key} --value ${quotedValue} --env ${env} --ttl 30m --reason ${quoteShellArg(remediationReason)}`;
-
-      // Stage INCIDENT_ATTRIBUTION_EMITTED into audit_pending
-      await leasePool.query(
-        `INSERT INTO audit_pending (actor, event_type, payload)
-         VALUES ($1, 'INCIDENT_ATTRIBUTION_EMITTED', $2)`,
-        [
-          "alertmanager",
-          JSON.stringify({
-            alertname,
-            service,
+          // Query flag_usage_daily
+          let evalSql = `
+            SELECT flag_key, variant, SUM(eval_count)::bigint AS eval_count
+            FROM flag_usage_daily
+            WHERE env = $1 AND usage_date >= $2
+          `;
+          const evalParams: unknown[] = [
             env,
+            lookbackStart.toISOString().slice(0, 10),
+          ];
+          if (service) {
+            evalParams.push(service);
+            evalSql += ` AND service = $${evalParams.length}`;
+          }
+          evalSql += ` GROUP BY flag_key, variant ORDER BY flag_key ASC, variant ASC`;
+
+          const evalRes = await client.query<{
+            flag_key: string;
+            variant: string;
+            eval_count: string | number;
+          }>(evalSql, evalParams);
+
+          const evaluations: FlagEvaluationRecord[] = evalRes.rows.map((r) => ({
+            flag_key: r.flag_key,
+            variant: r.variant,
+            eval_count: Number(r.eval_count),
+          }));
+
+          // Attribution heuristic using shared pure ranker
+          const suspects = rankSuspects(
+            events,
+            evaluations,
+            service,
+            startsAtDate.getTime(),
+          );
+
+          if (suspects.length === 0) {
+            return {
+              attributed: false,
+              reason: "No recent flag changes found within lookback window",
+              startsAtDate,
+              alertname,
+              service: service || undefined,
+              env,
+            };
+          }
+
+          const topSuspect = suspects[0];
+          const safeAlertName = alertname.replace(/[^a-zA-Z0-9_.-]/g, "_");
+          const remediationReason = `Incident attribution: ${safeAlertName}`;
+
+          // Centralized remediation command with POSIX shell quoting for all args (C1, I7)
+          const remediationCommand = buildRemediationCommand({
+            flagKey: topSuspect.flag_key,
+            env,
+            value: topSuspect.suggested_action.suggested_value,
+            ttl: "30m",
+            reason: remediationReason,
+          });
+
+          // Stage INCIDENT_ATTRIBUTION_EMITTED into audit_pending
+          await client.query(
+            `INSERT INTO audit_pending (actor, event_type, payload)
+             VALUES ($1, 'INCIDENT_ATTRIBUTION_EMITTED', $2)`,
+            [
+              "alertmanager",
+              JSON.stringify({
+                alertname,
+                service,
+                env,
+                suspected_flag: topSuspect.flag_key,
+                score: topSuspect.score,
+                remediation_command: remediationCommand,
+                starts_at: startsAtDate.toISOString(),
+              }),
+            ],
+          );
+
+          return {
+            attributed: true,
             suspected_flag: topSuspect.flag_key,
             score: topSuspect.score,
             remediation_command: remediationCommand,
-            starts_at: startsAtDate.toISOString(),
-          }),
-        ],
+            occurred_at: topSuspect.occurred_at,
+            startsAtDate,
+            alertname,
+            service: service || undefined,
+            env,
+          };
+        },
       );
 
-      // Dispatch Grafana annotation (fail-open)
+      // Dispatch Grafana annotation (fail-open outside transaction)
       let annotationId: number | undefined;
       const grafanaClient = options.grafanaClient;
-      if (grafanaClient) {
+      if (
+        alertAttributionResult.attributed &&
+        grafanaClient &&
+        alertAttributionResult.suspected_flag &&
+        alertAttributionResult.remediation_command
+      ) {
         try {
           const timeAgo = formatRelativeTime(
-            topSuspect.occurred_at,
-            startsAtDate.getTime(),
+            alertAttributionResult.occurred_at || new Date().toISOString(),
+            alertAttributionResult.startsAtDate.getTime(),
           );
-          const annotationText = `[SynapseState Alert Correlation] Suspected flag: ${topSuspect.flag_key} (Changed ${timeAgo}). Remediation: ${remediationCommand}`;
+          const annotationText = `[SynapseState Alert Correlation] Suspected flag: ${alertAttributionResult.suspected_flag} (Changed ${timeAgo}). Remediation: ${alertAttributionResult.remediation_command}`;
           const annotationTags = [
             "synapse",
             "incident",
@@ -647,7 +728,7 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
           ];
 
           const grafanaRes = await grafanaClient.createAnnotation({
-            time: startsAtDate.getTime(),
+            time: alertAttributionResult.startsAtDate.getTime(),
             text: annotationText,
             tags: annotationTags,
           });
@@ -661,13 +742,22 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
       }
 
       attributions.push({
-        alertname,
-        service: service || undefined,
-        env,
-        attributed: true,
-        suspected_flag: topSuspect.flag_key,
-        score: topSuspect.score,
-        remediation_command: remediationCommand,
+        alertname: alertAttributionResult.alertname,
+        service: alertAttributionResult.service,
+        env: alertAttributionResult.env,
+        attributed: alertAttributionResult.attributed,
+        ...(alertAttributionResult.suspected_flag
+          ? { suspected_flag: alertAttributionResult.suspected_flag }
+          : {}),
+        ...(alertAttributionResult.score !== undefined
+          ? { score: alertAttributionResult.score }
+          : {}),
+        ...(alertAttributionResult.remediation_command
+          ? { remediation_command: alertAttributionResult.remediation_command }
+          : {}),
+        ...(alertAttributionResult.reason
+          ? { reason: alertAttributionResult.reason }
+          : {}),
         ...(annotationId !== undefined
           ? { grafana_annotation_id: annotationId }
           : {}),
@@ -677,6 +767,7 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
     return reply.code(200).send({
       status: "processed",
       alerts_count: firingAlerts.length,
+      ...(isTruncated ? { truncated: true } : {}),
       attributions,
     });
   });
@@ -694,6 +785,7 @@ function formatRelativeTime(
   const diffMs = Math.max(0, now - time);
   const diffSec = Math.floor(diffMs / 1000);
 
+  if (diffSec < 1) return "just now";
   if (diffSec < 60) return `${diffSec}s ago`;
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
@@ -703,17 +795,20 @@ function formatRelativeTime(
   return `${diffDays}d ago`;
 }
 
+/**
+ * Constant-time comparison using fixed 32-byte SHA-256 digests.
+ * Prevents string-length timing oracle leaks (I1).
+ */
 function isTimingSafeMatch(a: string | undefined, b: string): boolean {
   if (!a) return false;
-  const aBuf = Buffer.from(a, "utf8");
-  const bBuf = Buffer.from(b, "utf8");
-  if (aBuf.length !== bBuf.length) return false;
-  return crypto.timingSafeEqual(aBuf, bBuf);
+  const hashA = crypto.createHash("sha256").update(a, "utf8").digest();
+  const hashB = crypto.createHash("sha256").update(b, "utf8").digest();
+  return crypto.timingSafeEqual(hashA, hashB);
 }
 
 export interface AlertmanagerAlert {
   status: "firing" | "resolved" | string;
-  labels?: {
+  labels?: Record<string, string | undefined> & {
     alertname?: string;
     service?: string;
     app?: string;
@@ -721,12 +816,10 @@ export interface AlertmanagerAlert {
     repo?: string;
     env?: string;
     severity?: string;
-    [key: string]: string | undefined;
   };
-  annotations?: {
+  annotations?: Record<string, string | undefined> & {
     summary?: string;
     description?: string;
-    [key: string]: string | undefined;
   };
   startsAt?: string;
   endsAt?: string;
@@ -741,3 +834,4 @@ export interface AlertmanagerPayload {
   receiver?: string;
   alerts?: AlertmanagerAlert[];
 }
+

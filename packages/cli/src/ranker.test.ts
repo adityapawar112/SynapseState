@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   rankSuspects,
+  buildRemediationCommand,
   type ChangeEvent,
   type FlagEvaluationRecord,
 } from "./ranker.js";
@@ -459,6 +460,77 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
       expect(suspects[0].event_type).toBe("LEASE_REVOKED");
       expect(suspects[0].actor).toBe("sre-bob");
       expect(suspects[0].occurred_at).toBe(new Date(FIXED_NOW - 5 * 60 * 1000).toISOString());
+    });
+  });
+
+  describe("buildRemediationCommand (PR 26 / Review C1)", () => {
+    it("safely quotes environment and arguments containing shell metacharacters", () => {
+      const cmd = buildRemediationCommand({
+        flagKey: "checkout-v2",
+        env: "prod; rm -rf /",
+        value: "false",
+        ttl: "30m",
+        reason: "Incident: high 5xx; echo evil",
+      });
+
+      expect(cmd).toBe(
+        "synapse lease create --flag checkout-v2 --env 'prod; rm -rf /' --value false --ttl 30m --reason 'Incident: high 5xx; echo evil'",
+      );
+    });
+
+    it("quotes flags and values with single quotes using POSIX escaping", () => {
+      const cmd = buildRemediationCommand({
+        flagKey: "weird-flag",
+        env: "staging",
+        value: "test'value",
+        ttl: 1800,
+        reason: "don't fail",
+      });
+
+      expect(cmd).toBe(
+        "synapse lease create --flag weird-flag --env staging --value 'test'\\''value' --ttl 1800 --reason 'don'\\''t fail'",
+      );
+    });
+
+    it("handles boolean and numeric values cleanly without unnecessary quotes", () => {
+      const boolCmd = buildRemediationCommand({
+        flagKey: "killswitch",
+        env: "production",
+        value: false,
+        reason: "killswitch mitigation",
+      });
+      expect(boolCmd).toBe(
+        "synapse lease create --flag killswitch --env production --value false --ttl 30m --reason 'killswitch mitigation'",
+      );
+
+      const numCmd = buildRemediationCommand({
+        flagKey: "rate-limit",
+        env: "production",
+        value: 100,
+        ttl: "15m",
+        reason: "rate limit fallback",
+      });
+      expect(numCmd).toBe(
+        "synapse lease create --flag rate-limit --env production --value 100 --ttl 15m --reason 'rate limit fallback'",
+      );
+    });
+
+    it("uses buildRemediationCommand in rankSuspects ensuring env is quoted if special", () => {
+      const events: ChangeEvent[] = [
+        {
+          id: 999,
+          event_type: "GIT_MERGE",
+          env: "prod; evil$(touch /tmp/pwn)",
+          flag_key: "checkout-v2",
+          actor: "sre-alice",
+          occurred_at: new Date(FIXED_NOW - 5 * 60 * 1000).toISOString(),
+          payload: { value: true },
+        },
+      ];
+
+      const [suspect] = rankSuspects(events, [], "checkout-service", FIXED_NOW);
+      expect(suspect).toBeDefined();
+      expect(suspect.suggested_action.command).toContain("--env 'prod; evil$(touch /tmp/pwn)'");
     });
   });
 });

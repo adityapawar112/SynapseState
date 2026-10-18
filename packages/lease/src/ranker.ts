@@ -65,6 +65,33 @@ export function quoteShellArg(val: string): string {
   return `'${val.replace(/'/g, "'\\''")}'`;
 }
 
+export interface BuildRemediationCommandOptions {
+  flagKey: string;
+  env: string;
+  value: string | number | boolean;
+  ttl?: string | number;
+  reason: string;
+}
+
+/**
+ * Centrally constructs an incident remediation CLI command with strict POSIX shell quoting
+ * across all arguments (--flag, --env, --value, --ttl, --reason) to prevent shell injection (C1, I7).
+ */
+export function buildRemediationCommand(options: BuildRemediationCommandOptions): string {
+  const flagArg = quoteShellArg(options.flagKey);
+  const envArg = quoteShellArg(options.env || "production");
+  const valueArg =
+    typeof options.value === "string"
+      ? quoteShellArg(options.value)
+      : String(options.value);
+  const ttlString =
+    options.ttl !== undefined ? String(options.ttl) : "30m";
+  const ttlArg = quoteShellArg(ttlString);
+  const reasonArg = quoteShellArg(options.reason);
+
+  return `synapse lease create --flag ${flagArg} --env ${envArg} --value ${valueArg} --ttl ${ttlArg} --reason ${reasonArg}`;
+}
+
 /**
  * Derives type-aware suggested mitigation value and reason based on previous value or telemetry history.
  */
@@ -293,9 +320,13 @@ export function rankSuspects(
     const safeService = targetService.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const safeReason = `Incident mitigation for ${safeService || "service"}`;
     const envArg = latestEvent.env || "production";
-    const quotedValue =
-      typeof suggestedValue === "string" ? quoteShellArg(suggestedValue) : String(suggestedValue);
-    const command = `synapse lease create --flag ${flagKey} --env ${envArg} --value ${quotedValue} --ttl 30m --reason ${quoteShellArg(safeReason)}`;
+    const command = buildRemediationCommand({
+      flagKey,
+      env: envArg,
+      value: suggestedValue,
+      ttl: "30m",
+      reason: safeReason,
+    });
 
     suspects.push({
       flag_key: flagKey,

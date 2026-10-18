@@ -131,6 +131,8 @@ export {
   type FlagEvaluationRecord,
   type SuggestedAction,
   type RankedSuspect,
+  type BuildRemediationCommandOptions,
   quoteShellArg,
+  buildRemediationCommand,
   rankSuspects,
 } from "./ranker.js";

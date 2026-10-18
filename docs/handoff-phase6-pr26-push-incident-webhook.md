@@ -5,7 +5,7 @@
 > **Current Target:** PR 26 (`feat/push-incident-webhook`)  
 > **Repository:** `adityapawar112/SynapseState` (`synapsestate/synapsestate`)  
 > **Base PR:** PR #25 (`feat/dashboard-rbac-and-actions`) — Merged into `main` (`878c281`)  
-> **PR 26 Head Commit:** `aff0e0a` (`feat(api): optional alertmanager incident webhook and grafana annotations (PR 26)`)  
+> **PR Link:** [#26 (feat/push-incident-webhook)](https://github.com/adityapawar112/SynapseState/pull/26)  
 > **Primary Charter & Specs:**
 >
 > - System Charter & Invariants: [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md) (§1 Non-Goals, §2 Architectural Invariants 1–8, §5 SLOs, §6 Verification Guidelines)

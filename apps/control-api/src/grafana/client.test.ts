@@ -74,4 +74,30 @@ describe("DefaultGrafanaClient (PR 26)", () => {
       }),
     ).rejects.toThrow("Grafana API returned HTTP 403: Forbidden");
   });
+
+  it("aborts and throws error when request exceeds timeoutMs (M5)", async () => {
+    const hangingFetch = vi.fn().mockImplementation((_url, opts) => {
+      return new Promise((_resolve, reject) => {
+        opts.signal.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    const client = new DefaultGrafanaClient({
+      url: "https://grafana.example.com",
+      apiKey: "test-token",
+      timeoutMs: 25,
+      fetchFn: hangingFetch as unknown as typeof fetch,
+    });
+
+    await expect(
+      client.createAnnotation({
+        time: 1729261800000,
+        text: "Test annotation",
+        tags: ["synapse"],
+      }),
+    ).rejects.toThrow(/aborted/);
+  });
 });
+

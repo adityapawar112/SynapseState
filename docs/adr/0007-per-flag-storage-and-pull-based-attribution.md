@@ -56,3 +56,9 @@ We chose **per-flag directory storage with build-time merging** and a **pull-bas
 ### Negative
 * OpenFeature delegate providers requiring a single file path require a build-time merge step (`flags/<env>/*.yaml` $\to$ `dist/<env>/flags.json`).
 * Automated promotion in v1 requires a Git-backed baseline provider.
+
+---
+
+## Amendments
+
+- **2026-10-18 (Phase 6 Deliverable 6.2 / PR 26):** Implemented optional push-based Alertmanager webhook integration (`POST /v1/webhooks/alertmanager`) and Grafana annotations as an extension layer. As planned in item 2.4 ("Extension Seam"), this push integration directly consumes the shared pure ranking engine (`packages/lease/src/ranker.ts`), leaving pull-based `synapse log` as the primary, air-gap resilient SRE workflow while enabling automated timeline annotations in Grafana.
