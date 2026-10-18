@@ -299,4 +299,93 @@ describe("Phase 4 PR 19: Audit Export Routes (apps/control-api/src/routes/audit.
       expect(body.timestamp).toBeDefined();
     });
   });
+
+  describe("POST /v1/audit/events (PR 25 Dashboard Audit Logging)", () => {
+    it("returns 401 when Authorization header is missing", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/audit/events",
+        payload: {
+          actor: "sre-alice",
+          event_type: "DASHBOARD_LOGIN",
+          payload: { role: "operator" },
+        },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("returns 403 when token lacks operator or admin role (e.g. audit_reader)", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/audit/events",
+        headers: { authorization: `Bearer ${auditReaderToken}` },
+        payload: {
+          actor: "sre-alice",
+          event_type: "DASHBOARD_LOGIN",
+        },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("returns 400 when actor or event_type is missing or invalid", async () => {
+      const res1 = await app.inject({
+        method: "POST",
+        url: "/v1/audit/events",
+        headers: { authorization: `Bearer ${masterToken}` },
+        payload: { event_type: "DASHBOARD_LOGIN" },
+      });
+      expect(res1.statusCode).toBe(400);
+
+      const res2 = await app.inject({
+        method: "POST",
+        url: "/v1/audit/events",
+        headers: { authorization: `Bearer ${masterToken}` },
+        payload: { actor: "sre-alice" },
+      });
+      expect(res2.statusCode).toBe(400);
+    });
+
+    it("returns 400 INVALID_EVENT_TYPE when event_type is not in the allowed operational events list", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/audit/events",
+        headers: { authorization: `Bearer ${masterToken}` },
+        payload: {
+          actor: "sre-alice",
+          event_type: "LEASE_CREATED", // Spoofed event type attempting ledger pollution
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe("INVALID_EVENT_TYPE");
+    });
+
+    it("stages audit event to audit_pending and returns 202 Accepted", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/audit/events",
+        headers: { authorization: `Bearer ${masterToken}` },
+        payload: {
+          actor: "sre-alice",
+          event_type: "DASHBOARD_PROMOTE_TRIGGERED",
+          payload: { lease_id: "01J9X57YTRPQ8A7F4E12345678", env: "production" },
+        },
+      });
+
+      expect(res.statusCode).toBe(202);
+      const body = JSON.parse(res.body);
+      expect(body.status).toBe("staged");
+      expect(body.event_type).toBe("DASHBOARD_PROMOTE_TRIGGERED");
+      expect(body.actor).toBe("sre-alice");
+
+      const check = await leasePool.query(
+        "SELECT actor, event_type, payload FROM audit_pending WHERE event_type = $1",
+        ["DASHBOARD_PROMOTE_TRIGGERED"],
+      );
+      expect(check.rows.length).toBe(1);
+      expect(check.rows[0].actor).toBe("sre-alice");
+      expect(check.rows[0].payload.lease_id).toBe("01J9X57YTRPQ8A7F4E12345678");
+    });
+  });
 });
+

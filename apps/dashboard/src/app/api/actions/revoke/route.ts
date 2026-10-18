@@ -124,6 +124,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await controlApiClient.revokeLease(body.leaseId, revocationEnvelope);
+
+    void controlApiClient.recordAuditEvent({
+      actor: user.login,
+      eventType: "DASHBOARD_REVOKE_TRIGGERED",
+      payload: { leaseId: body.leaseId, reason: body.reason },
+    });
+
     return NextResponse.json({
       success: true,
       leaseId: body.leaseId,
@@ -135,6 +142,12 @@ export async function POST(request: NextRequest) {
       process.env.NODE_ENV !== "production" &&
       process.env.SYNAPSE_MOCK_REVOKE === "true"
     ) {
+      void controlApiClient.recordAuditEvent({
+        actor: user.login,
+        eventType: "DASHBOARD_REVOKE_TRIGGERED",
+        payload: { leaseId: body.leaseId, reason: body.reason, simulated: true },
+      });
+
       return NextResponse.json({
         success: true,
         leaseId: body.leaseId,
@@ -144,6 +157,7 @@ export async function POST(request: NextRequest) {
         note: "Simulated revocation in local development environment",
       });
     }
+
 
     return NextResponse.json(
       {

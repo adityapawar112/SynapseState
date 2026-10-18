@@ -348,9 +348,86 @@ export class ControlApiClient {
 
     return (await res.json()) as { lease_id: string; state: string };
   }
+
+  /**
+   * Promotes an emergency override to Git via Control API POST /v1/leases/:id/promote (PR 25)
+   */
+  async promoteLease(
+    leaseId: string,
+    options: { env?: string; actor?: string } = {}
+  ): Promise<{ lease_id: string; pr_url: string; branch: string }> {
+    const url = `${this.baseUrl}/v1/leases/${encodeURIComponent(leaseId)}/promote`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : {}),
+      },
+      body: JSON.stringify(options),
+    });
+
+    if (!res.ok) {
+      const err = await res
+        .json()
+        .catch(() => ({ error: "Promotion request failed", message: `Failed to promote lease: ${res.statusText}` }));
+      const error = new Error(err.message || err.error || `Failed to promote lease: ${res.statusText}`);
+      (error as unknown as { code?: string; existingPrUrl?: string }).code = err.error;
+      const prUrl = err.existing_pr_url || err.promote_pr_url;
+      if (prUrl) {
+        (error as unknown as { existingPrUrl?: string }).existingPrUrl = prUrl;
+      }
+      throw error;
+    }
+
+
+    return (await res.json()) as { lease_id: string; pr_url: string; branch: string };
+  }
+
+  /**
+   * Stages an administrative event into the Control API audit ledger (audit_pending) (PR 25)
+   */
+  async recordAuditEvent(event: {
+    actor: string;
+    eventType: string;
+    payload?: Record<string, unknown>;
+  }): Promise<boolean> {
+    try {
+      const url = `${this.baseUrl}/v1/audit/events`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : {}),
+        },
+        body: JSON.stringify({
+          actor: event.actor,
+          event_type: event.eventType,
+          payload: event.payload || {},
+        }),
+      });
+
+      if (!res.ok) {
+        console.warn(
+          `[ControlApiClient] Failed to stage audit event "${event.eventType}" for actor "${event.actor}" (HTTP ${res.status})`
+        );
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.warn(
+        `[ControlApiClient] Failed to reach Control API to stage audit event "${event.eventType}" for actor "${event.actor}":`,
+        err
+      );
+      return false;
+    }
+  }
 }
 
 /**
  * Singleton client instance for Server Components and route handlers
  */
 export const controlApiClient = new ControlApiClient();
+

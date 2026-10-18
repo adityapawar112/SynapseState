@@ -59,7 +59,11 @@ export function RevokeModal({
         "Content-Type": "application/json",
       };
       if (csrfCookie) {
-        headers["x-synapse-csrf"] = decodeURIComponent(csrfCookie);
+        try {
+          headers["x-synapse-csrf"] = decodeURIComponent(csrfCookie);
+        } catch {
+          headers["x-synapse-csrf"] = csrfCookie;
+        }
       }
 
       const res = await fetch("/api/actions/revoke", {

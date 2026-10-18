@@ -8,6 +8,7 @@ import {
   resolveUserRole,
 } from "@/lib/auth";
 import type { OidcSessionUser } from "@/lib/types";
+import { controlApiClient } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -61,17 +62,37 @@ export async function GET(request: NextRequest) {
     });
     const ghUser = await userRes.json();
 
-    // 3. Fetch user teams / org memberships
-    const teamsRes = await fetch("https://api.github.com/user/teams", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": "SynapseState-Dashboard",
-      },
-    });
-    const ghTeams = teamsRes.ok ? await teamsRes.json() : [];
+    // 3. Fetch user teams and organization memberships defensively
+    const [teamsRes, orgsRes] = await Promise.all([
+      fetch("https://api.github.com/user/teams", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": "SynapseState-Dashboard",
+        },
+      }).catch(() => null),
+      fetch("https://api.github.com/user/orgs", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": "SynapseState-Dashboard",
+        },
+      }).catch(() => null),
+    ]);
+
+    const ghTeams = teamsRes && teamsRes.ok ? await teamsRes.json().catch(() => []) : [];
     const teamSlugs: string[] = Array.isArray(ghTeams)
-      ? ghTeams.map((t: { slug?: string; name?: string }) => t.slug || t.name || "")
+      ? ghTeams.map((t: { slug?: string; name?: string }) => t.slug || t.name || "").filter(Boolean)
       : [];
+
+    if (orgsRes && orgsRes.ok) {
+      const ghOrgs = await orgsRes.json().catch(() => []);
+      if (Array.isArray(ghOrgs)) {
+        ghOrgs.forEach((o: { login?: string }) => {
+          if (o.login && !teamSlugs.includes(o.login)) {
+            teamSlugs.push(o.login);
+          }
+        });
+      }
+    }
 
     // 4. Resolve RBAC role via pinned auth config
     const config = getAuthConfigFromEnv();
@@ -84,7 +105,7 @@ export async function GET(request: NextRequest) {
       config
     );
 
-    // 5. Mint authenticated session user
+    // 5. Mint authenticated session user (accessToken is discarded immediately)
     const sessionUser: OidcSessionUser = {
       id: String(ghUser.id),
       login: ghUser.login,
@@ -101,8 +122,20 @@ export async function GET(request: NextRequest) {
     const sessionToken = await createSessionToken(sessionUser, secret);
     const csrfToken = await generateCsrfToken(sessionUser.id, secret);
 
+    // 6. Record DASHBOARD_LOGIN audit event asynchronously (fail-open)
+    void controlApiClient.recordAuditEvent({
+      actor: sessionUser.login,
+      eventType: "DASHBOARD_LOGIN",
+      payload: {
+        role: sessionUser.role,
+        teams: sessionUser.teams,
+        name: sessionUser.name,
+      },
+    });
+
     const redirectUrl = new URL("/", request.url);
     const res = NextResponse.redirect(redirectUrl);
+
 
     res.cookies.set("synapse_session", sessionToken, {
       httpOnly: true,
@@ -120,7 +153,10 @@ export async function GET(request: NextRequest) {
       maxAge: 3600 * 24,
     });
 
-    res.cookies.delete("synapse_oauth_state");
+    res.cookies.set("synapse_oauth_state", "", {
+      path: "/",
+      maxAge: 0,
+    });
     return res;
   } catch {
     const errorUrl = new URL("/login", request.url);

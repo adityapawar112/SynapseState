@@ -584,11 +584,15 @@ describe("Lease Ingestion & Revocation Routes", () => {
       });
 
       expect(res.statusCode).toBe(409);
-      expect(res.json().error).toBe("CONFLICT");
+      expect(res.json().error).toBe("STALE_PR_CONFLICT");
+      expect(res.json().existing_pr_url).toBe(
+        "https://github.com/org/repo/pull/123",
+      );
       expect(res.json().promote_pr_url).toBe(
         "https://github.com/org/repo/pull/123",
       );
     });
+
 
     it("returns 409 Conflict when lease is REVOKED", async () => {
       const leaseId = generateUlid();
@@ -680,7 +684,18 @@ describe("Lease Ingestion & Revocation Routes", () => {
       expect(checkDb.rows[0].promote_pr_url).toBe(
         "https://github.com/org/repo/pull/333",
       );
+
+      // Verify audit_pending staged LEASE_PROMOTE_REQUESTED
+      const checkAudit = await leasePool.query(
+        "SELECT actor, event_type, payload FROM audit_pending WHERE event_type = 'LEASE_PROMOTE_REQUESTED' AND payload->>'lease_id' = $1",
+        [leaseId],
+      );
+      expect(checkAudit.rows.length).toBe(1);
+      expect(checkAudit.rows[0].payload.pr_url).toBe(
+        "https://github.com/org/repo/pull/333",
+      );
     });
+
 
     it("promotes EXPIRED lease: calls reconciler and returns 202 Accepted", async () => {
       const leaseId = generateUlid();

@@ -13,6 +13,15 @@ interface AuditEventsQuery {
   limit?: string;
 }
 
+export const ALLOWED_STAGED_AUDIT_EVENTS = new Set([
+  "DASHBOARD_LOGIN",
+  "DASHBOARD_REVOKE_TRIGGERED",
+  "DASHBOARD_PROMOTE_TRIGGERED",
+  "LEASE_PROMOTE_REQUESTED",
+  "INCIDENT_ALERT_RECEIVED",
+  "INCIDENT_ATTRIBUTION_EMITTED",
+]);
+
 /**
  * Parses a string strictly as a non-negative integer.
  * Rejects floats ("1.5"), trailing alphas ("10abc"), exponentials ("10e2"), and unsafe numbers.
@@ -108,7 +117,75 @@ async function authenticateAuditReader(
   return false;
 }
 
+/**
+ * Authentication and authorization middleware verifying Bearer token for audit write/stage operations.
+ * Strictly requires operator or admin role, or master SYNAPSE_API_TOKEN (PR 25).
+ */
+async function authenticateAuditWriter(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  pool: Pool,
+): Promise<boolean> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    void reply.code(401).send({
+      error: "UNAUTHORIZED",
+      message: "Missing or malformed Authorization header",
+    });
+    return false;
+  }
+
+  const rawToken = authHeader.slice(7).trim();
+  if (!rawToken) {
+    void reply.code(401).send({
+      error: "UNAUTHORIZED",
+      message: "Empty Bearer token",
+    });
+    return false;
+  }
+
+  // Constant-time comparison against master SYNAPSE_API_TOKEN to prevent timing side-channels (I2)
+  const expectedToken = process.env.SYNAPSE_API_TOKEN ?? "";
+  const rawBuf = Buffer.from(rawToken, "utf8");
+  const expBuf = Buffer.from(expectedToken, "utf8");
+  if (
+    expBuf.length > 0 &&
+    rawBuf.length === expBuf.length &&
+    crypto.timingSafeEqual(rawBuf, expBuf)
+  ) {
+    return true;
+  }
+
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const tokenRes = await pool.query<{
+    service_name: string;
+    roles: string[];
+  }>("SELECT service_name, roles FROM api_tokens WHERE token_hash = $1 LIMIT 1", [
+    tokenHash,
+  ]);
+
+  if (tokenRes.rows.length === 0) {
+    void reply.code(401).send({
+      error: "UNAUTHORIZED",
+      message: "Invalid or unauthorized API token",
+    });
+    return false;
+  }
+
+  const roles = tokenRes.rows[0].roles || [];
+  if (roles.includes("operator") || roles.includes("admin")) {
+    return true;
+  }
+
+  void reply.code(403).send({
+    error: "FORBIDDEN",
+    message: "API token does not have operator or admin role",
+  });
+  return false;
+}
+
 export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
+
   server,
   options,
   done,
@@ -233,5 +310,59 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
     });
   });
 
+  /**
+   * POST /v1/audit/events
+   * Stages an administrative or operational event into audit_pending for asynchronous sealing (PR 25).
+   */
+  server.post<{
+    Body: {
+      actor?: string;
+      event_type?: string;
+      payload?: Record<string, unknown>;
+    };
+  }>("/v1/audit/events", async (req, reply) => {
+    const authorized = await authenticateAuditWriter(req, reply, pool);
+    if (!authorized) {
+      return;
+    }
+
+    const body = req.body;
+    if (
+      !body ||
+      typeof body !== "object" ||
+      typeof body.actor !== "string" ||
+      !body.actor.trim() ||
+      typeof body.event_type !== "string" ||
+      !body.event_type.trim()
+    ) {
+      return reply.code(400).send({
+        error: "INVALID_PARAM",
+        message: "actor and event_type are required non-empty strings",
+      });
+    }
+
+    const eventType = body.event_type.trim();
+    if (!ALLOWED_STAGED_AUDIT_EVENTS.has(eventType)) {
+      return reply.code(400).send({
+        error: "INVALID_EVENT_TYPE",
+        message: `event_type "${eventType}" is not an allowed operational audit event type`,
+      });
+    }
+
+    const payload = body.payload && typeof body.payload === "object" ? body.payload : {};
+
+    await pool.query(
+      "INSERT INTO audit_pending (actor, event_type, payload) VALUES ($1, $2, $3)",
+      [body.actor.trim(), eventType, JSON.stringify(payload)],
+    );
+
+    return reply.code(202).send({
+      status: "staged",
+      event_type: body.event_type.trim(),
+      actor: body.actor.trim(),
+    });
+  });
+
   done();
 };
+

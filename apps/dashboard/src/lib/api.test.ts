@@ -243,4 +243,100 @@ describe("Dashboard Control API Client", () => {
       expect(result.state).toBe("REVOKED");
     });
   });
+
+  describe("promoteLease (PR 25)", () => {
+    it("calls POST /v1/leases/:id/promote and returns promotion result", async () => {
+      const mockResult = {
+        lease_id: "01J9X57YTRPQ8A7F4E12345678",
+        pr_url: "https://github.com/adityapawar112/SynapseState/pull/25",
+        branch: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678",
+      };
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => mockResult,
+      } as Response);
+
+      const result = await client.promoteLease("01J9X57YTRPQ8A7F4E12345678", {
+        env: "prod",
+      });
+
+      expect(fetch).toHaveBeenCalledWith(
+        "http://control-api.internal:3000/v1/leases/01J9X57YTRPQ8A7F4E12345678/promote",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer synapse-test-token",
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({ env: "prod" }),
+        })
+      );
+      expect(result.pr_url).toBe(mockResult.pr_url);
+      expect(result.branch).toBe(mockResult.branch);
+    });
+
+    it("throws descriptive error when promote API returns an error", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        statusText: "Conflict",
+        json: async () => ({
+          error: "STALE_PR_CONFLICT",
+          message: "Conflict with existing PR",
+          existing_pr_url: "https://github.com/adityapawar112/SynapseState/pull/20",
+        }),
+      } as Response);
+
+      await expect(client.promoteLease("01J9X57YTRPQ8A7F4E12345678")).rejects.toThrow(
+        "Conflict with existing PR"
+      );
+    });
+  });
+
+  describe("recordAuditEvent (PR 25)", () => {
+    it("posts staged audit event to /v1/audit/events", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({ status: "staged" }),
+      } as Response);
+
+      const success = await client.recordAuditEvent({
+        actor: "sre-alice",
+        eventType: "DASHBOARD_LOGIN",
+        payload: { role: "operator" },
+      });
+
+      expect(fetch).toHaveBeenCalledWith(
+        "http://control-api.internal:3000/v1/audit/events",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer synapse-test-token",
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({
+            actor: "sre-alice",
+            event_type: "DASHBOARD_LOGIN",
+            payload: { role: "operator" },
+          }),
+        })
+      );
+      expect(success).toBe(true);
+    });
+
+    it("returns false gracefully if recording audit event fails or times out", async () => {
+      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Network timeout"));
+
+      const success = await client.recordAuditEvent({
+        actor: "sre-alice",
+        eventType: "DASHBOARD_LOGIN",
+      });
+
+      expect(success).toBe(false);
+    });
+  });
 });
+

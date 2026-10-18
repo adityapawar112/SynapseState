@@ -508,6 +508,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     }
 
     let authorized = false;
+    let tokenActor = "master-token";
     if (
       process.env.SYNAPSE_API_TOKEN &&
       rawToken === process.env.SYNAPSE_API_TOKEN
@@ -526,6 +527,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         [tokenHash],
       );
       if (tokenRes.rows.length > 0) {
+        tokenActor = tokenRes.rows[0].service_name;
         const roles = tokenRes.rows[0].roles || [];
         if (roles.includes("operator") || roles.includes("admin")) {
           authorized = true;
@@ -573,7 +575,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     const lease = leaseRes.rows[0];
 
     // Optional environment check from request body
-    const body = req.body as { env?: string } | undefined;
+    const body = req.body as { env?: string; actor?: string } | undefined;
     if (body && typeof body === "object" && body.env) {
       if (body.env !== lease.env) {
         return reply.code(400).send({
@@ -586,11 +588,13 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     // 3. State validation
     if (lease.state === "PROMOTED") {
       return reply.code(409).send({
-        error: "CONFLICT",
+        error: "STALE_PR_CONFLICT",
         message: `Cannot promote lease "${id}": lease is already in state "PROMOTED"`,
-        promote_pr_url: lease.promote_pr_url,
+        existing_pr_url: lease.promote_pr_url ?? undefined,
+        promote_pr_url: lease.promote_pr_url ?? undefined,
       });
     }
+
 
     if (lease.state !== "ACTIVE" && lease.state !== "EXPIRED") {
       return reply.code(409).send({
@@ -652,8 +656,25 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
           [promResult.pr_url, id],
         );
 
+        const auditActor = body?.actor || tokenActor;
+        await client.query(
+          `INSERT INTO audit_pending (actor, event_type, payload)
+           VALUES ($1, 'LEASE_PROMOTE_REQUESTED', $2)`,
+          [
+            auditActor,
+            JSON.stringify({
+              lease_id: lease.lease_id,
+              flag_key: lease.flag_key,
+              env: lease.env,
+              pr_url: promResult.pr_url,
+              branch: promResult.branch,
+            }),
+          ],
+        );
+
         return promResult;
       });
+
 
       return reply.code(202).send({
         lease_id: lease.lease_id,
