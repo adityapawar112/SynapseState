@@ -1,14 +1,15 @@
 # SynapseState Handoff: Phase 6 PR 26 Onboarding (Push Incident Automation Webhook)
 
-> **Document Status:** Active Engineering Baseline  
+> **Document Status:** Completed & Verified (Ready for Merge)  
 > **Milestone:** Phase 6 (Weeks 11 – 12: Operations Dashboard & Optional Push Automation)  
 > **Current Target:** PR 26 (`feat/push-incident-webhook`)  
 > **Repository:** `adityapawar112/SynapseState` (`synapsestate/synapsestate`)  
-> **Current Base PR:** PR #25 (`feat/dashboard-rbac-and-actions`) — Head commit `0747c57` (code-reviewed, all findings resolved, ready for merge into `main`)  
+> **Base PR:** PR #25 (`feat/dashboard-rbac-and-actions`) — Merged into `main` (`878c281`)  
+> **PR 26 Head Commit:** `aff0e0a` (`feat(api): optional alertmanager incident webhook and grafana annotations (PR 26)`)  
 > **Primary Charter & Specs:**
 >
 > - System Charter & Invariants: [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md) (§1 Non-Goals, §2 Architectural Invariants 1–8, §5 SLOs, §6 Verification Guidelines)
-> - Authoritative Architecture: [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md) (§4.3 Webhook Reconciliation, §8 Operations Dashboard, §10 Security Threat Model)
+> - Authoritative Architecture: [docs/ARCHITECTURE.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ARCHITECTURE.md) (§4.3 Webhook Reconciliation, §8 Operations Dashboard, §10 Security Threat Model, §11.4 Incident Investigation & Pure Ranker)
 > - Delivery Roadmap: [docs/ROADMAP.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/ROADMAP.md) (§5 Phase 6, Deliverable 6.2 & PR 26)
 > - Design System: [design.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/design.md)
 > - Glossary: [GLOSSARY.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/GLOSSARY.md)
@@ -105,34 +106,39 @@ PR 26 implements optional Alertmanager incident webhook integration and Grafana 
 
 ---
 
-## 4. Immediate Next Steps for Next Session
+## 4. Implementation Verification & Results (PR 26 Completed)
 
-1. **Merge PR 25 into `main`:**
-   ```bash
-   git checkout main
-   git pull origin main
-   git merge feat/dashboard-rbac-and-actions
-   git push origin main
-   ```
-2. **Branch PR 26:**
-   ```bash
-   git checkout -b feat/push-incident-webhook
-   ```
-3. **Implementation Plan for PR 26:**
-   - In `apps/control-api/src/routes/webhooks.ts`:
-     - Add `POST /v1/webhooks/alertmanager` handler.
-     - Implement Alertmanager payload validation and secret checking.
-     - Query `change_events` and rank recent flag modifications.
-     - Add Grafana client dispatcher (`POST /api/annotations`) with timeout and error handling.
-     - Stage `INCIDENT_ALERT_RECEIVED` and `INCIDENT_ATTRIBUTION_EMITTED` into `audit_pending`.
-   - In `apps/control-api/src/routes/webhooks.test.ts`:
-     - Test valid firing alert attributing recent change.
-     - Test firing alert with no recent changes (`attributed: false`).
-     - Test unauthorized alertmanager webhook request (missing/invalid secret).
-     - Test Grafana timeout handling (non-blocking).
-     - Test `audit_pending` event insertion.
-4. **Run Monorepo Quality Gates:**
-   - `pnpm run lint`
-   - `pnpm run typecheck`
-   - `pnpm -r run build`
-   - `pnpm test`
+All requirements for Deliverable 6.2 and PR 26 have been implemented, tested test-first, and verified:
+
+1. **Shared Attribution Ranker (`packages/lease/src/ranker.ts`):**
+   - Extracted deterministic, pure `rankSuspects`, `quoteShellArg`, and associated interfaces (`ChangeEvent`, `FlagEvaluationRecord`, `SuggestedAction`, `RankedSuspect`) into `@synapsestate/lease`.
+   - Maintained backward compatibility via re-exports in `@synapsestate/cli/src/ranker.ts`.
+   - Added `--variant <val>` alias for `--value <val>` in `synapse lease create`.
+
+2. **Grafana Client (`apps/control-api/src/grafana/`):**
+   - Implemented `DefaultGrafanaClient` with fail-open timeout handling via `AbortController` (default 5s timeout).
+   - Validated annotation payload tags (`["synapse", "incident", "suspected-flag", ...]`).
+   - Covered by unit tests in `apps/control-api/src/grafana/client.test.ts` (3/3 passing).
+
+3. **Alertmanager Webhook (`apps/control-api/src/routes/webhooks.ts`):**
+   - Added `POST /v1/webhooks/alertmanager` endpoint.
+   - Enforced timing-safe secret validation across `Authorization: Bearer <secret>` and `X-Alertmanager-Secret`.
+   - Handled firing alerts, queried `change_events` and `flag_usage_daily` over lookback window (default 60m), and correlated suspect changes.
+   - Formatted copy-pasteable emergency overrides:
+     `synapse lease create --flag <flag_key> --value <quoted_val> --env <env> --ttl 30m --reason "Incident attribution: <alertname>"`
+   - Staged `INCIDENT_ALERT_RECEIVED` and `INCIDENT_ATTRIBUTION_EMITTED` to `audit_pending`.
+   - Emitted Grafana annotations with fail-open protection.
+
+4. **Monorepo Quality Gate Evidence:**
+   - `pnpm run lint`: 0 errors, 0 warnings.
+   - `pnpm run typecheck`: 0 errors across all 8 workspace packages, load test, and root tsconfigs.
+   - `pnpm -r run build`: Clean build across all packages and Next.js 15 dashboard.
+   - `pnpm test`: 100% passing across all 445 tests in the monorepo:
+     - `packages/lease`: 9 suites, 126 tests.
+     - `apps/control-api`: 18 suites, 167 tests (including 22 webhooks tests, 3 Grafana tests).
+     - `packages/cli`: 8 suites, 125 tests.
+     - `packages/conformance`: 4 suites, 43 tests.
+     - `test/drills`: 3 suites, 14 tests.
+     - `apps/demo-shop`: 1 suite, 1 test.
+     - `apps/dashboard`: 10 suites, 74 tests.
+
