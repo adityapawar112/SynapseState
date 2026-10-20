@@ -126,7 +126,9 @@ describe("canonicalizeJson (RFC 8785 / JCS)", () => {
 
   describe("error handling and invalid inputs", () => {
     it("throws TypeError on undefined", () => {
-      expect(() => canonicalizeJson(undefined)).toThrow(TypeError);
+      expect(() => canonicalizeJson(undefined)).toThrowError(
+        "Cannot canonicalize undefined value into JSON",
+      );
     });
 
     it("rejects NaN and Infinity", () => {

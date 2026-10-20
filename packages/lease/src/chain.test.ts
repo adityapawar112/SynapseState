@@ -226,4 +226,121 @@ describe("Audit Ledger Chain Math & Verification (packages/lease/src/chain.ts)",
     });
     expect(partialVerification.valid).toBe(true);
   });
+
+  it("handles empty event lists in verifyAuditChain", () => {
+    expect(verifyAuditChain([])).toEqual({ valid: true });
+  });
+
+  it("rejects single event with tampered hash even if prev_hash matches", () => {
+    const event = {
+      seq: 1,
+      ts: "2026-10-11T12:00:00.000Z",
+      actor: "sre-alice",
+      event_type: "LEASE_CREATED",
+      payload: { flag_key: "checkout-v2" },
+    };
+    const validHash = computeEventHash(GENESIS_PREV_HASH, event);
+    const tamperedRecord: AuditEventRecord = {
+      ...event,
+      prev_hash: GENESIS_PREV_HASH,
+      hash: "0".repeat(63) + "1",
+    };
+    expect(verifySingleEvent(tamperedRecord, GENESIS_PREV_HASH)).toBe(false);
+  });
+
+  it("rejects genesis sequence 1 when initialPrevHash is not 64 zeros", () => {
+    const event = {
+      seq: 1,
+      ts: "2026-10-11T12:00:00.000Z",
+      actor: "sre-alice",
+      event_type: "LEASE_CREATED",
+      payload: {},
+      prev_hash: "a".repeat(64),
+      hash: "b".repeat(64),
+    };
+    const result = verifyAuditChain([event], "a".repeat(64), { requireGenesisStart: false });
+    expect(result.valid).toBe(false);
+    expect(result.failedSeq).toBe(1);
+    expect(result.error).toBe(`Genesis prev_hash must be 64 zeros, got: "${"a".repeat(64)}"`);
+  });
+
+  it("formats broken prev_hash error messages specifically for seq 1 and seq > 1", () => {
+    const event1BadPrev: AuditEventRecord = {
+      seq: 1,
+      ts: "2026-10-11T12:00:00.000Z",
+      actor: "sre-alice",
+      event_type: "LEASE_CREATED",
+      payload: {},
+      prev_hash: "wrong-prev".padEnd(64, "0"),
+      hash: "some-hash".padEnd(64, "0"),
+    };
+    const res1 = verifyAuditChain([event1BadPrev]);
+    expect(res1.valid).toBe(false);
+    expect(res1.error).toBe(`Genesis prev_hash must be 64 zeros, got: "${event1BadPrev.prev_hash}"`);
+
+    const valid1 = {
+      seq: 1,
+      ts: "2026-10-11T12:00:00.000Z",
+      actor: "sre-alice",
+      event_type: "LEASE_CREATED",
+      payload: {},
+    };
+    const hash1 = computeEventHash(GENESIS_PREV_HASH, valid1);
+    const rec1: AuditEventRecord = { ...valid1, prev_hash: GENESIS_PREV_HASH, hash: hash1 };
+
+    const rec2BadPrev: AuditEventRecord = {
+      seq: 2,
+      ts: "2026-10-11T12:00:01.000Z",
+      actor: "sre-alice",
+      event_type: "LEASE_CREATED",
+      payload: {},
+      prev_hash: "wrong-link".padEnd(64, "0"),
+      hash: "some-hash".padEnd(64, "0"),
+    };
+
+    const res2 = verifyAuditChain([rec1, rec2BadPrev]);
+    expect(res2.valid).toBe(false);
+    expect(res2.failedSeq).toBe(2);
+    expect(res2.error).toBe(`Broken prev_hash link at seq 2: expected "${hash1}", got "${rec2BadPrev.prev_hash}"`);
+  });
+
+  it("handles non-Date and non-parseable timestamps in canonicalizeAuditEvent", () => {
+    const d = new Date("2026-10-11T12:00:00.000Z");
+    const c1 = canonicalizeAuditEvent({ seq: 1, ts: d, actor: "a", event_type: "e", payload: {} });
+    const c2 = canonicalizeAuditEvent({ seq: 1, ts: "2026-10-11T12:00:00.000Z", actor: "a", event_type: "e", payload: {} });
+    expect(c1).toBe(c2);
+
+    const c3 = canonicalizeAuditEvent({ seq: 1, ts: "invalid-date", actor: "a", event_type: "e", payload: {} });
+    expect(c3).toContain('"ts":"invalid-date"');
+  });
+
+  it("verifies mid-chain segment starting from non-genesis hash when requireGenesisStart is false", () => {
+    const valid1 = {
+      seq: 1,
+      ts: "2026-10-11T12:00:00.000Z",
+      actor: "sre-alice",
+      event_type: "LEASE_CREATED",
+      payload: {},
+    };
+    const hash1 = computeEventHash(GENESIS_PREV_HASH, valid1);
+
+    const valid2 = {
+      seq: 2,
+      ts: "2026-10-11T12:00:01.000Z",
+      actor: "sre-alice",
+      event_type: "LEASE_CREATED",
+      payload: {},
+    };
+    const hash2 = computeEventHash(hash1, valid2);
+    const rec2: AuditEventRecord = { ...valid2, prev_hash: hash1, hash: hash2 };
+
+    // Valid mid-chain segment starting at seq 2 with initialPrevHash = hash1
+    const res = verifyAuditChain([rec2], hash1, { requireGenesisStart: false });
+    expect(res.valid).toBe(true);
+
+    // If requireGenesisStart is true (default) but initialPrevHash is NOT genesis,
+    // it allows mid-chain slice because initialPrevHash !== GENESIS_PREV_HASH
+    const res2 = verifyAuditChain([rec2], hash1);
+    expect(res2.valid).toBe(true);
+  });
 });

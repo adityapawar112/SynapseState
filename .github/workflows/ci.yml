@@ -82,3 +82,34 @@ jobs:
           SYNAPSE_DEV_AUTH: "true"
           SYNAPSE_MOCK_PROMOTE: "true"
         run: pnpm run test:e2e
+
+  mutation-tests:
+    name: Mutation Testing (Stryker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Run Stryker Mutation Testing (Core Invariants)
+        run: pnpm run test:mutation:fast
+
