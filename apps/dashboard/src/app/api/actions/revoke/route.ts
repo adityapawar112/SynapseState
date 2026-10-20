@@ -1,5 +1,7 @@
+import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { signRevocation } from "@synapsestate/lease";
 import {
   verifySessionToken,
   validateCsrfToken,
@@ -34,6 +36,8 @@ export async function POST(request: NextRequest) {
   // 2. CSRF Token Validation — Strictly require header for double-submit protection
   const csrfToken = request.headers.get("x-synapse-csrf");
 
+  // Note: In production or under `next start` (used in E2E), NODE_ENV is "production",
+  // which guarantees isDevAuth is false and CSRF validation is strictly enforced.
   const isDevAuth =
     process.env.NODE_ENV !== "production" &&
     process.env.SYNAPSE_DEV_AUTH === "true";
@@ -109,27 +113,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Development fallback mock envelope
-    revocationEnvelope = {
-      payload: {
-        v: 1 as const,
-        lease_id: body.leaseId,
-        reason: body.reason,
-        revoked_at: new Date().toISOString(),
-        kid: body.kid || "ops-emergency-key",
-      },
-      sig: "dashboard-dev-simulated-revocation-token",
+    // Development/Test fallback: sign revocation envelope using test operator key
+    const devKeyPem = `-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIO9uJSxND55Q+Seb6cdQZYTmYF8qsj/YtTy8AhK1kTFE\n-----END PRIVATE KEY-----`;
+    const devKey = crypto.createPrivateKey(devKeyPem);
+    const payload = {
+      v: 1 as const,
+      lease_id: body.leaseId,
+      reason: body.reason,
+      revoked_at: new Date().toISOString(),
+      kid: body.kid || "ops-emergency-key",
     };
+    revocationEnvelope = signRevocation(payload, devKey);
   }
 
   try {
     const result = await controlApiClient.revokeLease(body.leaseId, revocationEnvelope);
 
-    void controlApiClient.recordAuditEvent({
-      actor: user.login,
-      eventType: "DASHBOARD_REVOKE_TRIGGERED",
-      payload: { leaseId: body.leaseId, reason: body.reason },
-    });
+    await controlApiClient
+      .recordAuditEvent({
+        actor: user.login,
+        eventType: "DASHBOARD_REVOKE_TRIGGERED",
+        payload: { leaseId: body.leaseId, reason: body.reason },
+      })
+      .catch((err) =>
+        console.warn("[revoke/route] Failed to record audit event:", err)
+      );
 
     return NextResponse.json({
       success: true,

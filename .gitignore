@@ -44,6 +44,8 @@ coverage.html
 scratch/
 tmp/
 .temp/
+playwright-report/
+test-results/
 
 # Environment and Secrets
 .env

@@ -119,7 +119,10 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
             <LuHash size={13} />
             Checkpoint Sequence
           </div>
-          <div style={{ fontSize: "24px", fontWeight: 500, fontFamily: "var(--font-mono)", color: "var(--color-ink)", marginTop: "4px" }}>
+          <div
+            id="audit-checkpoint-seq"
+            style={{ fontSize: "24px", fontWeight: 500, fontFamily: "var(--font-mono)", color: "var(--color-ink)", marginTop: "4px" }}
+          >
             #{latestCheckpoint?.checkpointSeq ?? 0}
           </div>
         </div>
@@ -129,7 +132,10 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
             <LuFileCheck2 size={13} color="var(--color-sase)" />
             Sealed Records Count
           </div>
-          <div style={{ fontSize: "24px", fontWeight: 500, color: "var(--color-sase)", marginTop: "4px" }}>
+          <div
+            id="audit-checkpoint-events"
+            style={{ fontSize: "24px", fontWeight: 500, color: "var(--color-sase)", marginTop: "4px" }}
+          >
             {(latestCheckpoint?.sealedCount ?? 0).toLocaleString()}{" "}
             <span style={{ fontSize: "14px", color: "var(--color-muted)" }}>events</span>
           </div>
@@ -205,6 +211,8 @@ export default async function AuditLedgerPage({ searchParams }: AuditPageProps) 
                   return (
                     <tr
                       key={event.seq}
+                      data-testid={`audit-row-${event.seq}`}
+                      id={`audit-row-${event.seq}`}
                       style={{
                         borderBottom: "1px solid var(--color-hairline)",
                         transition: "background-color 0.1s ease",

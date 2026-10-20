@@ -22,10 +22,13 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: synapsestate
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: synapsestate
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d synapsestate"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
@@ -34,6 +37,12 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/synapsestate
       LEASE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/synapsestate
       TELEMETRY_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/synapsestate
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: synapsestate
+      PGHOST: localhost
+      PGPORT: 5432
+      SYNAPSE_API_TOKEN: "synapse-e2e-master-token-value-2026"
 
     steps:
       - name: Checkout repository
@@ -64,3 +73,12 @@ jobs:
 
       - name: Test & Coverage
         run: pnpm run test:coverage
+
+      - name: Install Playwright Browsers
+        run: pnpm --filter @synapsestate/dashboard exec playwright install chromium --with-deps
+
+      - name: E2E Browser Tests
+        env:
+          SYNAPSE_DEV_AUTH: "true"
+          SYNAPSE_MOCK_PROMOTE: "true"
+        run: pnpm run test:e2e

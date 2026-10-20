@@ -152,6 +152,32 @@ describe("API Route: /api/actions/revoke", () => {
     expect(data.cliCommand).toContain("synapse lease revoke lease-1");
   });
 
+  it("strictly rejects revocation in production without envelope even if SYNAPSE_DEV_AUTH=true", async () => {
+    setNodeEnv("production");
+    process.env.SYNAPSE_DEV_AUTH = "true";
+    const operator = getDevSessionUser("operator");
+    const sessionToken = await createSessionToken(operator, testSecret);
+    const csrfToken = await generateCsrfToken(operator.id, testSecret);
+
+    const req = new NextRequest("http://localhost:3000/api/actions/revoke", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: `synapse_session=${sessionToken}`,
+        "x-synapse-csrf": csrfToken,
+      },
+      body: JSON.stringify({
+        leaseId: "lease-1",
+        reason: "Incident mitigation",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe("WORKSTATION_SIGNATURE_REQUIRED");
+  });
+
   it("executes revocation when workstation-signed envelope is provided in production", async () => {
     setNodeEnv("production");
     const operator = getDevSessionUser("operator");

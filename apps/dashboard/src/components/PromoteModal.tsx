@@ -220,10 +220,50 @@ export function PromoteModal({
           </div>
         </div>
 
+        {/* Generated Git Diff Preview */}
+        {!promotedResult && (
+          <div
+            id="promote-diff-preview"
+            style={{
+              padding: "12px 14px",
+              borderRadius: "var(--radius-xs)",
+              backgroundColor: "var(--color-cream)",
+              border: "1px solid var(--color-hairline)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+            }}
+          >
+            <span className="mono-caption" style={{ color: "var(--color-muted)" }}>
+              Generated YAML Reconciliation Diff (flags/{lease.env}/{lease.flagKey}.yaml) — Illustrative preview; actual diff created in Draft PR:
+            </span>
+            <pre
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-mono)",
+                fontSize: "12px",
+                lineHeight: 1.5,
+                overflowX: "auto",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              <span style={{ color: "var(--color-muted)" }}>--- a/flags/{lease.env}/{lease.flagKey}.yaml{"\n"}</span>
+              <span style={{ color: "var(--color-muted)" }}>+++ b/flags/{lease.env}/{lease.flagKey}.yaml{"\n"}</span>
+              <span style={{ color: "var(--color-muted)" }}>@@ -1,5 +1,5 @@{"\n"}</span>
+              <span style={{ color: "var(--color-ink-soft)" }}> state: ENABLED{"\n"}</span>
+              <span style={{ color: "var(--color-under-attack)" }}>-defaultVariant: off{"\n"}</span>
+              <span style={{ color: "var(--color-ai)" }}>+defaultVariant: {typeof lease.value === "string" ? lease.value : JSON.stringify(lease.value)}</span>
+            </pre>
+          </div>
+        )}
+
         {/* Success State */}
         {promotedResult && (
           <div
             id="promote-success-banner"
+            role="alert"
+            data-testid="promote-toast"
+            className="toast-alert"
             style={{
               padding: "14px 16px",
               borderRadius: "var(--radius-xs)",

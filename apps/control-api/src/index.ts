@@ -14,12 +14,18 @@ export * from "./routes/changes.js";
 export { buildServer, type ServerOptions };
 
 export const server = buildServer({
-  enableAuditSealer: process.env.NODE_ENV !== "test",
+  enableAuditSealer:
+    process.env.ENABLE_AUDIT_SEALER === "true" ||
+    process.env.NODE_ENV !== "test",
 });
 
 // Start server if executed directly as entrypoint
 const argvPath = process.argv[1] ?? "";
-const isMainModule = argvPath.endsWith("dist/index.js") || argvPath.endsWith("src/index.ts");
+const isMainModule =
+  /dist[\\/]index\.js$/.test(argvPath) ||
+  /src[\\/]index\.ts$/.test(argvPath) ||
+  argvPath.endsWith("dist/index.js") ||
+  argvPath.endsWith("src/index.ts");
 
 if (isMainModule) {
   const startServer = async () => {
