@@ -2,10 +2,13 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e/tests",
-  fullyParallel: true,
+  fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: [["html", { outputFolder: "playwright-report" }], ["list"]],
+  workers: 1, // Deterministic single-worker execution to prevent cross-spec state pollution
+  reporter: [
+    ["html", { outputFolder: "playwright-report", open: "never" }],
+    ["list"],
+  ],
   use: {
     baseURL: "http://localhost:3010",
     viewport: { width: 1440, height: 900 },
@@ -42,7 +45,6 @@ export default defineConfig({
         SESSION_SECRET:
           process.env.SESSION_SECRET ||
           "development-only-session-secret-min-32-chars-long",
-        SYNAPSE_MOCK_PROMOTE: "true",
         CONTROL_API_URL: "http://localhost:3000",
       },
     },

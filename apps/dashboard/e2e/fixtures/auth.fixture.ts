@@ -25,13 +25,14 @@ export const TEST_SESSION_SECRET =
  */
 export async function authenticateContext(
   context: BrowserContext,
-  role: UserRole,
-  _baseURL: string = "http://localhost:3010"
+  role: UserRole
 ): Promise<{ token: string; csrfToken: string }> {
   const user = getDevSessionUser(role);
   const token = await createSessionToken(user, TEST_SESSION_SECRET);
   const csrfToken = await generateCsrfToken(user.id, TEST_SESSION_SECRET);
 
+  // Playwright requires either url or domain+path (mutually exclusive)
+  // httpOnly: true for session cookie, false for csrf cookie readable by client
   await context.addCookies([
     {
       name: "synapse_session",
@@ -55,23 +56,23 @@ export async function authenticateContext(
 }
 
 export const test = base.extend<AuthFixtures>({
-  viewerContext: async ({ browser, baseURL }, use) => {
+  viewerContext: async ({ browser }, use) => {
     const context = await browser.newContext();
-    await authenticateContext(context, "viewer", baseURL || "http://localhost:3010");
+    await authenticateContext(context, "viewer");
     await use(context);
     await context.close();
   },
 
-  operatorContext: async ({ browser, baseURL }, use) => {
+  operatorContext: async ({ browser }, use) => {
     const context = await browser.newContext();
-    await authenticateContext(context, "operator", baseURL || "http://localhost:3010");
+    await authenticateContext(context, "operator");
     await use(context);
     await context.close();
   },
 
-  adminContext: async ({ browser, baseURL }, use) => {
+  adminContext: async ({ browser }, use) => {
     const context = await browser.newContext();
-    await authenticateContext(context, "admin", baseURL || "http://localhost:3010");
+    await authenticateContext(context, "admin");
     await use(context);
     await context.close();
   },
@@ -91,12 +92,12 @@ export const test = base.extend<AuthFixtures>({
     await use(page);
   },
 
-  createRolePage: async ({ browser, baseURL }, use) => {
+  createRolePage: async ({ browser }, use) => {
     const contexts: BrowserContext[] = [];
     await use(async (role: UserRole) => {
       const context = await browser.newContext();
       contexts.push(context);
-      await authenticateContext(context, role, baseURL || "http://localhost:3010");
+      await authenticateContext(context, role);
       return context.newPage();
     });
     for (const ctx of contexts) {

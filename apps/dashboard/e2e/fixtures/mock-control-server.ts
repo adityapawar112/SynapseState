@@ -1,14 +1,18 @@
 import http from "node:http";
 import {
-  ALL_SEEDED_LEASES,
-  SEEDED_FLAG_EVALUATIONS,
-  SEEDED_AUDIT_EVENTS,
-  SEEDED_CHECKPOINT,
+  refreshSeedData,
+  getCurrentSeed,
 } from "./seed-data.js";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
-const leasesStore = [...ALL_SEEDED_LEASES];
+let currentData = getCurrentSeed();
+let leasesStore = [...currentData.allLeases];
+
+function resetStore() {
+  currentData = refreshSeedData();
+  leasesStore = [...currentData.allLeases];
+}
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost:3000"}`);
@@ -32,17 +36,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Test state reset endpoint (PR 27 test isolation)
+  if (pathname === "/__test/reset" && method === "POST") {
+    resetStore();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "reset", active_leases_count: leasesStore.length }));
+    return;
+  }
+
   // SDK State Delivery
   if (pathname === "/v1/sdk/state") {
     const env = url.searchParams.get("env") || "prod";
     const filtered = leasesStore.filter((l) => l.payload.env === env);
     res.writeHead(200, {
       "Content-Type": "application/json",
-      ETag: `"etag-seed-${Date.now()}"`,
+      ETag: '"mock-seed-etag-v1"',
     });
     res.end(
       JSON.stringify({
-        etag: "mock-seed-etag",
+        etag: "mock-seed-etag-v1",
         server_time: new Date().toISOString(),
         registry_version: 1,
         active_leases: filtered,
@@ -51,13 +63,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Audit Events
-  if (pathname === "/v1/audit/events") {
+  // Ingest or Record Audit Event (POST) - Evaluated before GET to avoid route shadowing
+  if (pathname === "/v1/audit/events" && method === "POST") {
+    res.writeHead(202, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ success: true, staged: true }));
+    return;
+  }
+
+  // Audit Events list (GET)
+  if (pathname === "/v1/audit/events" && (method === "GET" || method === "HEAD")) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
-        events: SEEDED_AUDIT_EVENTS,
-        total: SEEDED_AUDIT_EVENTS.length,
+        events: currentData.auditEvents,
+        total: currentData.auditEvents.length,
         has_more: false,
       })
     );
@@ -67,7 +86,7 @@ const server = http.createServer((req, res) => {
   // Latest Checkpoint
   if (pathname === "/v1/audit/checkpoint/latest") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(SEEDED_CHECKPOINT));
+    res.end(JSON.stringify(currentData.checkpoint));
     return;
   }
 
@@ -75,7 +94,7 @@ const server = http.createServer((req, res) => {
   if (pathname === "/v1/changes") {
     const env = url.searchParams.get("env") || "prod";
     const flagKey = url.searchParams.get("flag_key");
-    let evals = env === "prod" ? SEEDED_FLAG_EVALUATIONS : [];
+    let evals = env === "prod" ? currentData.flagEvaluations : [];
     if (flagKey) {
       evals = evals.filter((e) => e.flag_key === flagKey);
     }
@@ -90,19 +109,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Ingest or Record Audit Event
-  if (pathname === "/v1/audit/events" && method === "POST") {
-    res.writeHead(202, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ success: true, staged: true }));
-    return;
-  }
-
   // Revoke Lease
   if (pathname.startsWith("/v1/leases/") && pathname.endsWith("/revoke") && method === "POST") {
     const leaseId = pathname.split("/")[3];
     const idx = leasesStore.findIndex((l) => l.payload.lease_id === leaseId);
     if (idx !== -1) {
-      // Mark as revoked
       leasesStore.splice(idx, 1);
     }
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -137,6 +148,3 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[MockControlServer] Listening on http://localhost:${PORT}`);
 });
-
-process.on("SIGTERM", () => server.close());
-process.on("SIGINT", () => server.close());

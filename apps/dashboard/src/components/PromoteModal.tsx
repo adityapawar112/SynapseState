@@ -235,7 +235,7 @@ export function PromoteModal({
             }}
           >
             <span className="mono-caption" style={{ color: "var(--color-muted)" }}>
-              Generated YAML Reconciliation Diff (flags/{lease.env}/{lease.flagKey}.yaml):
+              Generated YAML Reconciliation Diff (flags/{lease.env}/{lease.flagKey}.yaml) — Illustrative preview; actual diff created in Draft PR:
             </span>
             <pre
               style={{

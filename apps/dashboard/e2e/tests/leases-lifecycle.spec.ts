@@ -1,6 +1,11 @@
 import { test, expect } from "../fixtures/auth.fixture.js";
 
 test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () => {
+  test.beforeEach(async ({ request }) => {
+    // Reset test state before each run to guarantee strict isolation
+    await request.post("http://localhost:3000/__test/reset").catch(() => {});
+  });
+
   test("renders active leases and updates monotonic countdown timers without page refresh", async ({
     operatorPage,
   }) => {
@@ -11,10 +16,6 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
     );
     await expect(activeCountdown).toBeVisible();
 
-    // Verify initial countdown contains time duration (e.g. "28m 0s" or similar)
-    const initialText = (await activeCountdown.textContent())?.trim() || "";
-    expect(initialText).toMatch(/\d+m\s+\d+s|\d+s/);
-
     // Parse seconds from formatDuration string
     const parseSeconds = (str: string): number => {
       const minMatch = str.match(/(\d+)m/);
@@ -24,37 +25,59 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
       return minutes * 60 + seconds;
     };
 
+    // Grab initial countdown seconds
+    const initialText = (await activeCountdown.textContent())?.trim() || "";
+    expect(initialText).toMatch(/\d+m\s+\d+s|\d+s/);
     const initialSeconds = parseSeconds(initialText);
 
-    // Wait 2.2 seconds to verify monotonic decrement without page reload
-    await operatorPage.waitForTimeout(2200);
-
-    const updatedText = (await activeCountdown.textContent())?.trim() || "";
-    const updatedSeconds = parseSeconds(updatedText);
-
-    // Countdown should have decremented
-    expect(updatedSeconds).toBeLessThan(initialSeconds);
+    // Assert monotonic decrement using auto-retrying expect.poll (no flaky waitForTimeout)
+    await expect
+      .poll(
+        async () => {
+          const text = (await activeCountdown.textContent())?.trim() || "";
+          return parseSeconds(text);
+        },
+        { timeout: 8000, intervals: [500, 1000] }
+      )
+      .toBeLessThan(initialSeconds);
   });
 
-  test("allows switching environment and status filter tabs", async ({
+  test("allows switching environment and status filter tabs with content verification", async ({
     operatorPage,
   }) => {
     await operatorPage.goto("/leases");
+
+    // Default "all" tab should display all 3 seeded leases
+    const allCards = operatorPage.locator("[id^='lease-card-']");
+    await expect(allCards).toHaveCount(3);
 
     // Click "Near Expiry (< 5m)" tab
     const nearExpiryTab = operatorPage.locator("#lease-filter-tab-near-expiry");
     await nearExpiryTab.click();
     await expect(operatorPage).toHaveURL(/filter=near-expiry/);
 
+    // Content assertion: only the near-expiry lease card should be displayed
+    await expect(
+      operatorPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00445566")
+    ).toBeVisible();
+    await expect(operatorPage.locator("[id^='lease-card-']")).toHaveCount(1);
+
     // Click "Expired" tab
     const expiredTab = operatorPage.locator("#lease-filter-tab-expired");
     await expiredTab.click();
     await expect(operatorPage).toHaveURL(/filter=expired/);
 
-    // Click "All Leases" tab
+    // Content assertion: only the expired lease card should be displayed
+    await expect(
+      operatorPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00778899")
+    ).toBeVisible();
+    await expect(operatorPage.locator("[id^='lease-card-']")).toHaveCount(1);
+
+    // Click "All Leases" tab and assert all 3 cards reappear
     const allTab = operatorPage.locator("#lease-filter-tab-all");
     await allTab.click();
     await expect(operatorPage).toHaveURL(/filter=all/);
+    await expect(operatorPage.locator("[id^='lease-card-']")).toHaveCount(3);
   });
 
   test("operator can revoke active lease, commit to audit ledger, and receive success alert", async ({

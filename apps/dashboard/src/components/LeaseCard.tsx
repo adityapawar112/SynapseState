@@ -43,6 +43,9 @@ export function LeaseCard({
     setRemainingSeconds(lease.remainingSeconds);
     if (lease.remainingSeconds <= 0) return;
 
+    // Display-only monotonic countdown. Note: Cryptographic dual-clock expiry bounds
+    // (monotonic per process and wall-clock deadline) are strictly enforced in-process by the SDK,
+    // not by this browser visual interval.
     const timer = setInterval(() => {
       setRemainingSeconds((prev) => Math.max(0, prev - 1));
     }, 1000);

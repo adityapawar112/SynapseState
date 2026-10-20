@@ -111,4 +111,48 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
     });
     expect(viewerPromote.status()).toBe(403);
   });
+
+  test("API route guards strictly reject mutations with missing or invalid CSRF header", async ({
+    request,
+    operatorContext,
+  }) => {
+    const operatorCookies = await operatorContext.cookies();
+    const cookieHeader = operatorCookies.map((c) => `${c.name}=${c.value}`).join("; ");
+
+    // Valid operator session, but omitting x-synapse-csrf header
+    const noCsrfRevoke = await request.post("/api/actions/revoke", {
+      headers: {
+        cookie: cookieHeader,
+      },
+      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "missing csrf" },
+    });
+    expect(noCsrfRevoke.status()).toBe(403);
+    const revokeData = await noCsrfRevoke.json();
+    expect(revokeData.error).toBe("CSRF_FORBIDDEN");
+
+    const noCsrfPromote = await request.post("/api/actions/promote", {
+      headers: {
+        cookie: cookieHeader,
+      },
+      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod" },
+    });
+    expect(noCsrfPromote.status()).toBe(403);
+    const promoteData = await noCsrfPromote.json();
+    expect(promoteData.error).toBe("CSRF_FORBIDDEN");
+  });
+
+  test("Control API audit staging endpoint accepts POST /v1/audit/events with 202 without route shadowing", async ({
+    request,
+  }) => {
+    const res = await request.post("http://localhost:3000/v1/audit/events", {
+      data: {
+        actor: "e2e-operator",
+        event_type: "DASHBOARD_TEST_EVENT",
+        payload: { test: true },
+      },
+    });
+    expect(res.status()).toBe(202);
+    const body = await res.json();
+    expect(body.staged).toBe(true);
+  });
 });

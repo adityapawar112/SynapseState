@@ -1,6 +1,10 @@
 import { test, expect } from "../fixtures/auth.fixture.js";
 
 test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => {
+  test.beforeEach(async ({ request }) => {
+    await request.post("http://localhost:3000/__test/reset").catch(() => {});
+  });
+
   test("displays generated YAML diff preview, submits Draft PR, and renders success toast with PR link", async ({
     operatorPage,
   }) => {
@@ -23,6 +27,7 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
 
     const diffText = await diffPreview.textContent();
     expect(diffText).toContain("flags/prod/checkout-v2-optimization.yaml");
+    expect(diffText).toContain("Illustrative preview; actual diff created in Draft PR");
     expect(diffText).toContain("-defaultVariant: off");
     expect(diffText).toContain("+defaultVariant: pipeline-b");
 

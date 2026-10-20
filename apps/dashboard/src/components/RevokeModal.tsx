@@ -308,7 +308,11 @@ export function RevokeModal({
             </div>
 
             {error && (
-              <div style={{ color: "#ffffff", fontSize: "13px", padding: "10px 14px", borderRadius: "var(--radius-xs)", backgroundColor: "var(--color-under-attack)" }}>
+              <div
+                id="revoke-error-banner"
+                role="alert"
+                style={{ color: "#ffffff", fontSize: "13px", padding: "10px 14px", borderRadius: "var(--radius-xs)", backgroundColor: "var(--color-under-attack)" }}
+              >
                 {error}
               </div>
             )}

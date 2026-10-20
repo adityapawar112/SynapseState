@@ -218,4 +218,37 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     expect(data.simulated).toBe(true);
     expect(data.prUrl).toContain("github.com");
   });
+
+  it("strictly refuses simulated promotion in production even if SYNAPSE_MOCK_PROMOTE=true", async () => {
+    setNodeEnv("production");
+    process.env.SYNAPSE_MOCK_PROMOTE = "true";
+    const operator = getDevSessionUser("operator");
+    const sessionToken = await createSessionToken(operator, testSecret);
+    const csrfToken = await generateCsrfToken(operator.id, testSecret);
+
+    const promoteSpy = vi.spyOn(controlApiClient, "promoteLease").mockResolvedValueOnce({
+      lease_id: "01J9X57YTRPQ8A7F4E12345678",
+      pr_url: "https://github.com/adityapawar112/SynapseState/pull/42",
+      branch: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678",
+    });
+
+    const req = new NextRequest("http://localhost:3000/api/actions/promote", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: `synapse_session=${sessionToken}`,
+        "x-synapse-csrf": csrfToken,
+      },
+      body: JSON.stringify({
+        leaseId: "01J9X57YTRPQ8A7F4E12345678",
+        env: "production",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.simulated).toBeUndefined();
+    expect(promoteSpy).toHaveBeenCalled();
+  });
 });
