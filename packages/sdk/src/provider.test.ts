@@ -6,6 +6,7 @@ import {
   type Provider,
   type EvaluationContext,
   type Logger,
+  type Hook,
 } from "@openfeature/server-sdk";
 import {
   signLease,
@@ -15,6 +16,7 @@ import {
 } from "@synapsestate/lease";
 import { LeaseStore } from "./lease-store.js";
 import { OverrideProvider } from "./provider.js";
+import { InMemoryMetricsCollector } from "./metrics.js";
 
 describe("OverrideProvider", () => {
   const alicePair = crypto.generateKeyPairSync("ed25519");
@@ -406,6 +408,273 @@ describe("OverrideProvider", () => {
 
     await p.onClose();
     expect(stateClient?.isRunning()).toBe(false);
+  });
+
+  it("exposes expected provider metadata and handles SDK metrics snapshots", () => {
+    expect(provider.metadata.name).toBe("SynapseStateOverrideProvider");
+    expect(provider.runsOn).toBe("server");
+
+    // Without attached InMemoryMetricsCollector
+    expect(provider.getSdkMetricsSnapshot()).toBeUndefined();
+
+    // With attached InMemoryMetricsCollector
+    const metrics = new InMemoryMetricsCollector();
+    metrics.onStateAge?.(250);
+    const pWithMetrics = new OverrideProvider(delegate, {
+      leaseStore,
+      metrics,
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+    const snapshot = pWithMetrics.getSdkMetricsSnapshot();
+    expect(snapshot).toBeDefined();
+    expect(snapshot?.stateAgeSeconds).toBe(250);
+  });
+
+  it("falls back to delegate on type mismatches and internal exceptions across all evaluation types", async () => {
+    const dummyLogger: Logger = {
+      error: vi.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+    };
+    const ctx: EvaluationContext = {};
+
+    // 1. String evaluation: override with boolean value -> falls back to delegate ("blue")
+    const boolLease = signTestLease({ flag_key: "feature.string", value: true });
+    leaseStore.addLease(boolLease, trustedKeyset);
+    const strRes1 = await provider.resolveStringEvaluation("feature.string", "fallback", ctx, dummyLogger);
+    expect(strRes1.value).toBe("blue");
+
+    // Now override with string value -> returns OVERRIDE details
+    const strLease = signTestLease({ flag_key: "feature.string", value: "emergency-red" });
+    leaseStore.addLease(strLease, trustedKeyset);
+    const strRes2 = await provider.resolveStringEvaluation("feature.string", "fallback", ctx, dummyLogger);
+    expect(strRes2.value).toBe("emergency-red");
+    expect(strRes2.reason).toBe("OVERRIDE");
+
+    // 2. Number evaluation: non-finite number or string -> falls back to delegate
+    const strLeaseForNum = signTestLease({ flag_key: "feature.num", value: "not-a-number" });
+    leaseStore.addLease(strLeaseForNum, trustedKeyset);
+    const numRes1 = await provider.resolveNumberEvaluation("feature.num", 999, ctx, dummyLogger);
+    expect(numRes1.value).toBe(10); // delegate default
+
+    const validNumLease = signTestLease({ flag_key: "feature.num", value: 42 });
+    leaseStore.addLease(validNumLease, trustedKeyset);
+    const numRes2 = await provider.resolveNumberEvaluation("feature.num", 999, ctx, dummyLogger);
+    expect(numRes2.value).toBe(42);
+    expect(numRes2.reason).toBe("OVERRIDE");
+
+    // 3. Object evaluation: null or primitive -> falls back to delegate
+    const nullLeaseForObj = signTestLease({ flag_key: "feature.obj", value: null as any });
+    leaseStore.addLease(nullLeaseForObj, trustedKeyset);
+    const objRes1 = await provider.resolveObjectEvaluation("feature.obj", { rateLimit: 1, tier: "t" }, ctx, dummyLogger);
+    expect(objRes1.value).toEqual({ rateLimit: 60, tier: "standard" });
+
+    const validObjLease = signTestLease({
+      flag_key: "feature.obj",
+      value: { rateLimit: 1200, tier: "enterprise" },
+    });
+    leaseStore.addLease(validObjLease, trustedKeyset);
+    const objRes2 = await provider.resolveObjectEvaluation("feature.obj", { rateLimit: 1, tier: "t" }, ctx, dummyLogger);
+    expect(objRes2.value).toEqual({ rateLimit: 1200, tier: "enterprise" });
+    expect(objRes2.reason).toBe("OVERRIDE");
+    expect(objRes2.variant).toBe(JSON.stringify({ rateLimit: 1200, tier: "enterprise" }));
+  });
+
+  it("handles exception thrown during store lookup in resolveString, resolveNumber, and resolveObject", async () => {
+    const dummyLogger: Logger = {
+      error: vi.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+    };
+    const ctx: EvaluationContext = {};
+
+    vi.spyOn(leaseStore, "getActiveLease").mockImplementation(() => {
+      throw new Error("Simulated transient memory fault");
+    });
+
+    const strRes = await provider.resolveStringEvaluation("feature.string", "fallback", ctx, dummyLogger);
+    expect(strRes.value).toBe("blue");
+
+    const numRes = await provider.resolveNumberEvaluation("feature.num", 0, ctx, dummyLogger);
+    expect(numRes.value).toBe(10);
+
+    const objRes = await provider.resolveObjectEvaluation("feature.obj", {} as any, ctx, dummyLogger);
+    expect(objRes.value).toEqual({ rateLimit: 60, tier: "standard" });
+
+    expect(provider.getMetrics().internalErrorsCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("catches and logs errors during initialize and onClose", async () => {
+    const warnFn = vi.fn();
+    const failingDelegate: Provider = {
+      metadata: { name: "failing-delegate" },
+      initialize: vi.fn().mockRejectedValue(new Error("Init boom")),
+      onClose: vi.fn().mockRejectedValue(new Error("Close boom")),
+      resolveBooleanEvaluation: vi.fn(),
+      resolveStringEvaluation: vi.fn(),
+      resolveNumberEvaluation: vi.fn(),
+      resolveObjectEvaluation: vi.fn(),
+    };
+
+    const p = new OverrideProvider(failingDelegate, {
+      leaseStore,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: warnFn, error: vi.fn() },
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+
+    await expect(p.initialize()).rejects.toThrow("Init boom");
+    expect(warnFn).toHaveBeenCalledWith(expect.stringContaining("OverrideProvider failed during initialize"));
+
+    await expect(p.onClose()).resolves.toBeUndefined();
+    expect(warnFn).toHaveBeenCalledWith(expect.stringContaining("OverrideProvider failed during onClose"));
+    expect(p.getMetrics().internalErrorsCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("safely resolves hooks across all combinations of delegate and telemetry hook presence and errors", () => {
+    const dummyHook: Hook = {};
+
+    // 1. Delegate has no hooks, telemetry disabled -> undefined
+    const pNoHooks = new OverrideProvider(delegate, {
+      leaseStore,
+      enableTelemetry: false,
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+    expect(pNoHooks.hooks).toBeUndefined();
+
+    // 2. Delegate has hooks, telemetry disabled -> delegateHooks
+    const delegateWithHooks: Provider = {
+      metadata: { name: "test-delegate" },
+      resolveBooleanEvaluation: vi.fn(),
+      resolveStringEvaluation: vi.fn(),
+      resolveNumberEvaluation: vi.fn(),
+      resolveObjectEvaluation: vi.fn(),
+      hooks: [dummyHook],
+    };
+    const pWithDelegateHooks = new OverrideProvider(delegateWithHooks, {
+      leaseStore,
+      enableTelemetry: false,
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+    expect(pWithDelegateHooks.hooks).toEqual([dummyHook]);
+
+    // 3. Delegate has hooks, telemetry enabled -> [telemetryHook, dummyHook]
+    const pWithBoth = new OverrideProvider(delegateWithHooks, {
+      leaseStore,
+      enableTelemetry: true,
+      controlApiUrl: "http://localhost:3000",
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+    expect(pWithBoth.hooks?.length).toBe(2);
+
+    // 4. Delegate throws on hooks getter, telemetry enabled -> [telemetryHook]
+    const throwingHooksDelegate: Provider = {
+      metadata: { name: "throwing-hooks-delegate" },
+      resolveBooleanEvaluation: vi.fn(),
+      resolveStringEvaluation: vi.fn(),
+      resolveNumberEvaluation: vi.fn(),
+      resolveObjectEvaluation: vi.fn(),
+      get hooks(): Hook[] {
+        throw new Error("Corrupted hooks getter");
+      },
+    };
+    const pThrowingWithTelemetry = new OverrideProvider(throwingHooksDelegate, {
+      leaseStore,
+      enableTelemetry: true,
+      controlApiUrl: "http://localhost:3000",
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+    expect(pThrowingWithTelemetry.hooks?.length).toBe(1);
+
+    // 5. Delegate throws on hooks getter, telemetry disabled -> undefined
+    const pThrowingWithoutTelemetry = new OverrideProvider(throwingHooksDelegate, {
+      leaseStore,
+      enableTelemetry: false,
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+    expect(pThrowingWithoutTelemetry.hooks).toBeUndefined();
+  });
+
+  it("safely delegates events and status getters including when delegate throws", () => {
+    // Normal getters
+    expect(provider.events).toBe(delegate.events);
+    expect(provider.status).toBe((delegate as any).status);
+
+    // Throwing getters
+    const throwingDelegate: Provider = {
+      metadata: { name: "throwing-delegate" },
+      resolveBooleanEvaluation: vi.fn(),
+      resolveStringEvaluation: vi.fn(),
+      resolveNumberEvaluation: vi.fn(),
+      resolveObjectEvaluation: vi.fn(),
+      get events(): never {
+        throw new Error("events fault");
+      },
+      get status(): never {
+        throw new Error("status fault");
+      },
+    };
+    const p = new OverrideProvider(throwingDelegate, {
+      leaseStore,
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+    expect(p.events).toBeUndefined();
+    expect(p.status).toBeUndefined();
+  });
+
+  it("links getPropagationLagMs from stateClient to telemetryHook and manages lifecycle start/stop", async () => {
+    const p = new OverrideProvider(delegate, {
+      leaseStore,
+      controlApiUrl: "http://localhost:3000",
+      enableKeysetWatcher: false,
+      enableEmergencyScanner: false,
+    });
+
+    const stateClient = (p as any).stateClient;
+    const telemetryHook = (p as any).telemetryHook;
+    expect(stateClient).toBeDefined();
+    expect(telemetryHook).toBeDefined();
+
+    // Verify propagation lag linkage
+    vi.spyOn(stateClient, "getLastPropagationLagMs").mockReturnValue(42);
+    const getLag = (telemetryHook as any).getPropagationLagMs;
+    expect(getLag()).toBe(42);
+
+    // Test lifecycle calls
+    const startScannerSpy = vi.fn().mockResolvedValue(undefined);
+    const stopScannerSpy = vi.fn().mockResolvedValue(undefined);
+    (p as any).emergencyScanner = { start: startScannerSpy, stop: stopScannerSpy };
+
+    const startClientSpy = vi.fn().mockResolvedValue(undefined);
+    const stopClientSpy = vi.fn().mockResolvedValue(undefined);
+    (p as any).stateClient = {
+      start: startClientSpy,
+      stop: stopClientSpy,
+      getLastPropagationLagMs: () => 42,
+    };
+
+    const startHookSpy = vi.fn();
+    const stopHookSpy = vi.fn().mockResolvedValue(undefined);
+    (p as any).telemetryHook = { start: startHookSpy, stop: stopHookSpy };
+
+    await p.initialize();
+    expect(startScannerSpy).toHaveBeenCalled();
+    expect(startClientSpy).toHaveBeenCalled();
+    expect(startHookSpy).toHaveBeenCalled();
+
+    await p.onClose();
+    expect(stopScannerSpy).toHaveBeenCalled();
+    expect(stopClientSpy).toHaveBeenCalled();
+    expect(stopHookSpy).toHaveBeenCalled();
   });
 });
 

@@ -20,6 +20,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/.next/**", "**/coverage/**", "**/next-env.d.ts"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/.next/**", "**/coverage/**", "**/next-env.d.ts", "**/.stryker-tmp/**", "**/reports/**"],
   }
 );

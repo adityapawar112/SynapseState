@@ -27,6 +27,19 @@ describe("Keyset Parser & Validator", () => {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
   const hexPublicKey = formatPublicKeyToHex(publicKey);
 
+  const validLeasePayload: LeasePayload = {
+    v: 1,
+    lease_id: "01J9X57YTRPQ8A7F4E12345678",
+    env: "prod",
+    flag_key: "checkout-v2",
+    value: true,
+    reason: "Emergency test",
+    issued_at: "2026-10-06T02:00:00.000Z",
+    ttl_seconds: 1800,
+    kid: "sre-alice",
+    nonce: "nonce123",
+  };
+
   it("parses valid keyset JSON with operator and admin roles", () => {
     const rawJson = JSON.stringify({
       "sre-alice": {
@@ -235,19 +248,6 @@ describe("Keyset Parser & Validator", () => {
   });
 
   describe("Keyset Policy-Enforcing Verification", () => {
-    const validLeasePayload: LeasePayload = {
-      v: 1,
-      lease_id: "01J9X57YTRPQ8A7F4E12345678",
-      env: "prod",
-      flag_key: "checkout-v2",
-      value: true,
-      reason: "Emergency test",
-      issued_at: "2026-10-06T02:00:00.000Z",
-      ttl_seconds: 1800,
-      kid: "sre-alice",
-      nonce: "nonce123",
-    };
-
     it("verifies lease when kid has lease_signer authorization within max_ttl_seconds", () => {
       const keyset = parseKeysetJson(
         JSON.stringify({
@@ -369,6 +369,212 @@ describe("Keyset Parser & Validator", () => {
     it("returns false when key is not in revocation list", () => {
       expect(isKeyRevoked("sre-alice", revocations)).toBe(false);
       expect(isKeyRevoked("other-key", [])).toBe(false);
+    });
+  });
+
+  describe("KeysetParser Error Invariants & Edge Cases", () => {
+    it("preserves custom Error class names and error causes", () => {
+      const parseErr = new KeysetParseError("bad json", { cause: new Error("inner") });
+      expect(parseErr.name).toBe("KeysetParseError");
+      expect(parseErr.message).toBe("bad json");
+      expect(parseErr.cause).toBeDefined();
+
+      const valErr = new KeysetValidationError("bad schema", { cause: new Error("inner") });
+      expect(valErr.name).toBe("KeysetValidationError");
+      expect(valErr.message).toBe("bad schema");
+      expect(valErr.cause).toBeDefined();
+    });
+
+    it("enforces type check and exact error message for non-string, non-buffer inputs", () => {
+      expect(() => parseKeysetJson(null as any)).toThrowError(
+        "Expected string or Buffer for keyset, received null",
+      );
+      expect(() => parseKeysetJson(12345 as any)).toThrowError(
+        "Expected string or Buffer for keyset, received number",
+      );
+      expect(() => parseKeysetJson(undefined as any)).toThrowError(
+        "Expected string or Buffer for keyset, received undefined",
+      );
+    });
+
+    it("enforces non-empty content check on trimmed input", () => {
+      expect(() => parseKeysetJson("   \n\t  ")).toThrowError(KeysetParseError);
+      expect(() => parseKeysetJson("   \n\t  ")).toThrowError(
+        "Keyset content cannot be empty",
+      );
+      expect(() => parseKeysetJson(Buffer.from("   "))).toThrowError(
+        "Keyset content cannot be empty",
+      );
+    });
+
+    it("rejects reserved prototype identifiers lexically and via JSON reviver", () => {
+      const lexicalPayload = '{"__proto__": {"polluted": true}}';
+      expect(() => parseKeysetJson(lexicalPayload)).toThrowError(KeysetValidationError);
+      expect(() => parseKeysetJson(lexicalPayload)).toThrowError(
+        "Keyset JSON contains forbidden reserved prototype identifier (__proto__, constructor, or prototype)",
+      );
+
+      const constructorPayload = '{"constructor": {}}';
+      expect(() => parseKeysetJson(constructorPayload)).toThrowError(
+        "Keyset JSON contains forbidden reserved prototype identifier (__proto__, constructor, or prototype)",
+      );
+    });
+
+    it("wraps syntax error with KeysetParseError and preserves cause", () => {
+      try {
+        parseKeysetJson("{ not valid json }");
+        expect.unreachable("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(KeysetParseError);
+        expect((err as KeysetParseError).message).toContain("Failed to parse keyset JSON");
+        expect((err as KeysetParseError).cause).toBeDefined();
+      }
+    });
+
+    it("rejects non-object root JSON values", () => {
+      expect(() => parseKeysetJson("[]")).toThrowError(
+        "Keyset JSON root must be an object",
+      );
+      expect(() => parseKeysetJson("123")).toThrowError(
+        "Keyset JSON root must be an object",
+      );
+      expect(() => parseKeysetJson('"string"')).toThrowError(
+        "Keyset JSON root must be an object",
+      );
+      expect(() => parseKeysetJson("true")).toThrowError(
+        "Keyset JSON root must be an object",
+      );
+    });
+
+    it("rejects reserved kid names via reviver and invalid kid patterns", () => {
+      // Unicode-escaped constructor bypasses lexical check and hits reviver
+      const unicodeConstructor = '{"\\u0063onstructor": {"public_key": "' + hexPublicKey + '", "role": "operator"}}';
+      expect(() => parseKeysetJson(unicodeConstructor)).toThrowError(
+        'Keyset JSON contains forbidden reserved identifier: "constructor"',
+      );
+
+      const invalidKid = JSON.stringify({
+        "bad kid with spaces!": { public_key: hexPublicKey, role: "operator" },
+      });
+      expect(() => parseKeysetJson(invalidKid)).toThrowError(
+        /violates kid format requirements/,
+      );
+    });
+
+    it("includes path and detail in schema validation errors", () => {
+      const badSchema = JSON.stringify({
+        "alice-key": { public_key: hexPublicKey, role: "invalid_role_name" },
+      });
+      try {
+        parseKeysetJson(badSchema);
+        expect.unreachable("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(KeysetValidationError);
+        expect((err as Error).message).toContain("Keyset failed schema validation: alice-key");
+      }
+    });
+
+    it("rejects invalid Ed25519 public key and sets cause", () => {
+      const invalidKeyJson = JSON.stringify({
+        "alice-key": { public_key: "not-a-valid-ed25519-key", role: "operator" },
+      });
+      try {
+        parseKeysetJson(invalidKeyJson);
+        expect.unreachable("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(KeysetValidationError);
+        expect((err as Error).message).toContain('Invalid Ed25519 public key for kid "alice-key"');
+        expect((err as KeysetValidationError).cause).toBeDefined();
+      }
+    });
+
+    it("allows boundary ttl_seconds exactly equal to key.max_ttl_seconds", () => {
+      const keyset = parseKeysetJson(
+        JSON.stringify({
+          "sre-alice": {
+            public_key: hexPublicKey,
+            role: "operator",
+            max_ttl_seconds: 1800, // Exactly matches payload.ttl_seconds
+          },
+        }),
+      );
+      const envelope = signLease(validLeasePayload, privateKey);
+      expect(verifyLeaseWithKeyset(envelope, keyset)).toBe(true);
+    });
+
+    it("fails closed in verifyLeaseWithKeyset when kid is missing or verification throws", () => {
+      const keyset = parseKeysetJson(
+        JSON.stringify({
+          "other-key": {
+            public_key: hexPublicKey,
+            role: "operator",
+          },
+        }),
+      );
+      const envelope = signLease(validLeasePayload, privateKey);
+      // kid is sre-alice, not other-key
+      expect(verifyLeaseWithKeyset(envelope, keyset)).toBe(false);
+      // Malformed envelope causing throw
+      expect(verifyLeaseWithKeyset(null as any, keyset)).toBe(false);
+    });
+
+    it("fails closed in verifyRevocationWithKeyset on unknown kid, unauthorized role, or error", () => {
+      const keyset = parseKeysetJson(
+        JSON.stringify({
+          "sre-alice": {
+            public_key: hexPublicKey,
+            roles: ["key_revoker"], // Not a lease_signer
+          },
+        }),
+      );
+      const revPayload = {
+        v: 1 as const,
+        lease_id: validLeasePayload.lease_id,
+        revoked_at: "2026-10-06T02:15:00.000Z",
+        kid: "sre-alice",
+        reason: "early",
+      };
+      const envelope = signRevocation(revPayload, privateKey);
+      expect(verifyRevocationWithKeyset(envelope, keyset)).toBe(false);
+
+      // Unknown kid
+      const unknownEnv = signRevocation({ ...revPayload, kid: "unknown-kid" }, privateKey);
+      expect(verifyRevocationWithKeyset(unknownEnv, keyset)).toBe(false);
+
+      // Null envelope
+      expect(verifyRevocationWithKeyset(null as any, keyset)).toBe(false);
+    });
+
+    it("fails closed in verifyKeyRevocationWithKeyset on missing kid, unknown kid, unauthorized role, or error", () => {
+      const keyset = parseKeysetJson(
+        JSON.stringify({
+          "sre-alice": {
+            public_key: hexPublicKey,
+            roles: ["lease_signer"], // Not a key_revoker
+          },
+        }),
+      );
+      const keyRevPayload = {
+        v: 1 as const,
+        kid: "compromised-key",
+        revoked_at: "2026-10-06T02:30:00.000Z",
+        revoked_by_kid: "sre-alice",
+        reason: "Lost",
+      };
+      const envelope = signKeyRevocation(keyRevPayload, privateKey);
+      // sre-alice lacks key_revoker role
+      expect(verifyKeyRevocationWithKeyset(envelope, keyset)).toBe(false);
+
+      // Unknown kid
+      const unknownEnv = signKeyRevocation({ ...keyRevPayload, revoked_by_kid: "unknown-admin" }, privateKey);
+      expect(verifyKeyRevocationWithKeyset(unknownEnv, keyset)).toBe(false);
+
+      // Missing revoked_by_kid and no signerKid passed
+      const missingKidEnv = signKeyRevocation({ ...keyRevPayload, revoked_by_kid: "" }, privateKey);
+      expect(verifyKeyRevocationWithKeyset(missingKidEnv, keyset)).toBe(false);
+
+      // Null envelope
+      expect(verifyKeyRevocationWithKeyset(null as any, keyset)).toBe(false);
     });
   });
 });

@@ -46,6 +46,8 @@ tmp/
 .temp/
 playwright-report/
 test-results/
+.stryker-tmp/
+reports/
 
 # Environment and Secrets
 .env

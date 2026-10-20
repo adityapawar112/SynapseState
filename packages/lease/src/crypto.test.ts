@@ -12,6 +12,8 @@ import {
   signRevocationWithSigner,
   formatPublicKeyToHex,
   formatPublicKeyToBase64Url,
+  resolvePublicKey,
+  resolvePrivateKey,
 } from "./crypto.js";
 import type {
   LeasePayload,
@@ -281,6 +283,142 @@ describe("Ed25519 Cryptographic Sign & Verify", () => {
         ),
         { numRuns: 50 },
       );
+    });
+  });
+
+  describe("resolvePublicKey and resolvePrivateKey normalization & errors", () => {
+    it("normalizes public keys across formats: 88-char hex, 44-byte base64url, and 44-byte buffer", () => {
+      const der = publicKey.export({ type: "spki", format: "der" });
+      expect(der.length).toBe(44);
+
+      const derHex88 = der.toString("hex");
+      expect(derHex88.length).toBe(88);
+      const kHex = resolvePublicKey(derHex88);
+      expect(kHex.asymmetricKeyType).toBe("ed25519");
+
+      const derB64u = der.toString("base64url");
+      const kB64u = resolvePublicKey(derB64u);
+      expect(kB64u.asymmetricKeyType).toBe("ed25519");
+
+      const kDerBuf = resolvePublicKey(der);
+      expect(kDerBuf.asymmetricKeyType).toBe("ed25519");
+    });
+
+    it("normalizes private keys across formats: KeyObject, PEM, raw hex 64, PKCS8 hex 96, base64url 43, PKCS8 base64url 48, buffer 32, buffer 48", () => {
+      // KeyObject
+      expect(resolvePrivateKey(privateKey).asymmetricKeyType).toBe("ed25519");
+
+      // PEM
+      const pem = privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+      expect(resolvePrivateKey(pem).asymmetricKeyType).toBe("ed25519");
+
+      // PKCS8 DER
+      const pkcs8Der = privateKey.export({ type: "pkcs8", format: "der" });
+      expect(pkcs8Der.length).toBe(48);
+
+      // PKCS8 hex (96 chars)
+      const pkcs8Hex96 = pkcs8Der.toString("hex");
+      expect(pkcs8Hex96.length).toBe(96);
+      expect(resolvePrivateKey(pkcs8Hex96).asymmetricKeyType).toBe("ed25519");
+
+      // Raw hex (64 chars, 32 bytes)
+      const rawPrivBytes = pkcs8Der.subarray(16);
+      expect(rawPrivBytes.length).toBe(32);
+      const rawHex64 = rawPrivBytes.toString("hex");
+      expect(rawHex64.length).toBe(64);
+      expect(resolvePrivateKey(rawHex64).asymmetricKeyType).toBe("ed25519");
+
+      // Raw base64url (43 chars)
+      const rawB64u43 = rawPrivBytes.toString("base64url");
+      expect(rawB64u43.length).toBe(43);
+      expect(resolvePrivateKey(rawB64u43).asymmetricKeyType).toBe("ed25519");
+
+      // PKCS8 base64url (48 raw bytes)
+      const pkcs8B64u = pkcs8Der.toString("base64url");
+      expect(resolvePrivateKey(pkcs8B64u).asymmetricKeyType).toBe("ed25519");
+
+      // Buffer 32
+      expect(resolvePrivateKey(rawPrivBytes).asymmetricKeyType).toBe("ed25519");
+
+      // Buffer 48
+      expect(resolvePrivateKey(pkcs8Der).asymmetricKeyType).toBe("ed25519");
+    });
+
+    it("rejects non-ed25519 keys or invalid types", () => {
+      // RSA Keypair
+      const rsaPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+
+      expect(() => resolvePublicKey(rsaPair.publicKey)).toThrowError(
+        /Expected ed25519 public key, got rsa/,
+      );
+      expect(() => resolvePrivateKey(rsaPair.privateKey)).toThrowError(
+        /Expected ed25519 private key, got rsa/,
+      );
+
+      const rsaPubPem = rsaPair.publicKey.export({ type: "spki", format: "pem" }) as string;
+      expect(() => resolvePublicKey(rsaPubPem)).toThrowError(
+        /Expected ed25519 PEM key, got rsa/,
+      );
+
+      const rsaPrivPem = rsaPair.privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+      expect(() => resolvePrivateKey(rsaPrivPem)).toThrowError(
+        /Expected ed25519 PEM key, got rsa/,
+      );
+
+      // Unsupported types
+      expect(() => resolvePublicKey(12345 as any)).toThrowError(
+        "Unsupported public key input type",
+      );
+      expect(() => resolvePrivateKey(12345 as any)).toThrowError(
+        "Unsupported private key input type",
+      );
+
+      // Generic string / buffer invalid
+      expect(() => resolvePublicKey("invalid-key-string")).toThrow();
+      expect(() => resolvePrivateKey("invalid-key-string")).toThrow();
+
+      // DER buffer for non-ed25519 keys
+      const rsaSpkiDer = rsaPair.publicKey.export({ type: "spki", format: "der" });
+      const rsaPkcs8Der = rsaPair.privateKey.export({ type: "pkcs8", format: "der" });
+      expect(() => resolvePublicKey(rsaSpkiDer)).toThrowError(/Expected ed25519 key, got rsa/);
+      expect(() => resolvePrivateKey(rsaPkcs8Der)).toThrowError(/Expected ed25519 key, got rsa/);
+
+      // Generic string (PKCS#1) for non-ed25519
+      const rsaPkcs1Pem = rsaPair.publicKey.export({ type: "pkcs1", format: "pem" }) as string;
+      expect(() => resolvePublicKey(rsaPkcs1Pem)).toThrowError(/Expected ed25519/);
+    });
+
+    it("fails closed in verifyEnvelope on malformed envelopes and signatures", () => {
+      expect(verifyLease(null as any, publicKey)).toBe(false);
+      expect(verifyLease(undefined as any, publicKey)).toBe(false);
+      expect(verifyLease("string" as any, publicKey)).toBe(false);
+      expect(verifyLease({ payload: sampleLease } as any, publicKey)).toBe(false);
+      expect(verifyLease({ payload: sampleLease, sig: 1234 } as any, publicKey)).toBe(false);
+
+      // Non-canonical base64url (padding or invalid chars)
+      expect(verifyLease({ payload: sampleLease, sig: "ABCDEF==" }, publicKey)).toBe(false);
+
+      // Signature not exactly 64 bytes
+      const shortSig = Buffer.from("short").toString("base64url");
+      expect(verifyLease({ payload: sampleLease, sig: shortSig }, publicKey)).toBe(false);
+
+      // Non-matching base64url roundtrip (malleable representation)
+      const validEnvelope = signLease(sampleLease, privateKey);
+      const rawSig = Buffer.from(validEnvelope.sig, "base64url");
+      // Add extra padding or non-canonical characters
+      const nonCanonical = rawSig.toString("base64url") + "%";
+      expect(verifyLease({ payload: sampleLease, sig: nonCanonical }, publicKey)).toBe(false);
+
+      // Standard base64 with padding (fails BASE64URL_REGEX and roundtrip check)
+      const standardBase64WithPadding = rawSig.toString("base64");
+      expect(verifyLease({ payload: sampleLease, sig: standardBase64WithPadding }, publicKey)).toBe(false);
+
+      // Signature buffer of wrong length (e.g. 63 bytes or 65 bytes)
+      const wrongLenSig = Buffer.alloc(63, 0xaa).toString("base64url");
+      expect(verifyLease({ payload: sampleLease, sig: wrongLenSig }, publicKey)).toBe(false);
+
+      const wrongLenSig65 = Buffer.alloc(65, 0xaa).toString("base64url");
+      expect(verifyLease({ payload: sampleLease, sig: wrongLenSig65 }, publicKey)).toBe(false);
     });
   });
 });

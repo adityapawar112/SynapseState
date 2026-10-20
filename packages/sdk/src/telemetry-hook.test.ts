@@ -334,4 +334,218 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
       },
     ]);
   });
+
+  it("normalizes controlApiUrl by stripping trailing slashes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const hook = new TelemetryHook({
+      controlApiUrl: "https://control-api.synapse.internal///",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    hook.after(createMockHookContext("test-flag"), {
+      flagKey: "test-flag",
+      value: true,
+      variant: "true",
+      reason: "OVERRIDE",
+      flagMetadata: {},
+    });
+
+    await hook.flush();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://control-api.synapse.internal/v1/telemetry/batches",
+      expect.anything(),
+    );
+  });
+
+  it("falls back to default instanceId and default variants/reasons on missing details", () => {
+    const hook = new TelemetryHook();
+    expect(hook.getInstanceId()).toBeTruthy();
+
+    // after with undefined variant and undefined value
+    hook.after(createMockHookContext("no-variant-flag"), {
+      flagKey: "no-variant-flag",
+      value: undefined as any,
+      variant: undefined as any,
+      reason: undefined as any,
+      flagMetadata: {},
+    });
+
+    expect(hook.getDistinctCount()).toBe(1);
+  });
+
+  it("handles empty flush cleanly and resets window", async () => {
+    const hook = new TelemetryHook();
+    const result = await hook.flush();
+    expect(result).toBeUndefined();
+    expect(hook.getDistinctCount()).toBe(0);
+    expect(hook.getDroppedCount()).toBe(0);
+  });
+
+  it("omits propagation_lag_ms and dropped_count when absent or 0", async () => {
+    const hook = new TelemetryHook({
+      instanceId: "clean-batch-inst",
+    });
+
+    hook.after(createMockHookContext("sample-flag"), {
+      flagKey: "sample-flag",
+      value: true,
+      variant: "true",
+      reason: "OVERRIDE",
+      flagMetadata: {},
+    });
+
+    const batch = await hook.flush();
+    expect(batch).toBeDefined();
+    expect("propagation_lag_ms" in (batch ?? {})).toBe(false);
+    expect("dropped_count" in (batch ?? {})).toBe(false);
+  });
+
+  it("sorts metrics strictly across flag_key, variant, and reason", async () => {
+    const hook = new TelemetryHook();
+
+    // Add combinations in reverse order
+    hook.after(createMockHookContext("b-flag"), { flagKey: "b-flag", variant: "v1", reason: "OVERRIDE", value: "v1", flagMetadata: {} });
+    hook.after(createMockHookContext("a-flag"), { flagKey: "a-flag", variant: "v2", reason: "DEFAULT", value: "v2", flagMetadata: {} });
+    hook.after(createMockHookContext("a-flag"), { flagKey: "a-flag", variant: "v1", reason: "TARGETING_MATCH", value: "v1", flagMetadata: {} });
+    hook.after(createMockHookContext("a-flag"), { flagKey: "a-flag", variant: "v1", reason: "DEFAULT", value: "v1", flagMetadata: {} });
+
+    const batch = await hook.flush();
+    expect(batch?.metrics).toEqual([
+      { flag_key: "a-flag", variant: "v1", reason: "DEFAULT", count: 1 },
+      { flag_key: "a-flag", variant: "v1", reason: "TARGETING_MATCH", count: 1 },
+      { flag_key: "a-flag", variant: "v2", reason: "DEFAULT", count: 1 },
+      { flag_key: "b-flag", variant: "v1", reason: "OVERRIDE", count: 1 },
+    ]);
+  });
+
+  it("handles error in onFlush callback gracefully without throwing", async () => {
+    const warnFn = vi.fn();
+    const hook = new TelemetryHook({
+      onFlush: () => {
+        throw new Error("Custom flush error");
+      },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: warnFn, error: vi.fn() },
+    });
+
+    hook.after(createMockHookContext("sample-flag"), {
+      flagKey: "sample-flag",
+      value: true,
+      variant: "true",
+      reason: "OVERRIDE",
+      flagMetadata: {},
+    });
+
+    const batch = await hook.flush();
+    expect(batch).toBeDefined();
+    expect(warnFn).toHaveBeenCalledWith(expect.stringContaining("Error in custom telemetry onFlush callback"));
+  });
+
+  it("idempotently handles start() when timer is already active and stops cleanly", async () => {
+    vi.useFakeTimers();
+    try {
+      const flushSpy = vi.fn();
+      const hook = new TelemetryHook({ flushIntervalMs: 10_000, onFlush: flushSpy });
+      hook.start();
+      // Second start should be a no-op
+      expect(() => hook.start()).not.toThrow();
+
+      // Advancing timer triggers flush
+      vi.advanceTimersByTime(10_000);
+      expect(flushSpy).toHaveBeenCalledTimes(0); // empty map doesn't trigger onFlush
+
+      hook.after(createMockHookContext("test"), { flagKey: "test", value: true, variant: "on", reason: "OVERRIDE", flagMetadata: {} });
+      vi.advanceTimersByTime(10_000);
+      expect(flushSpy).toHaveBeenCalledTimes(1);
+
+      // Stop hook: clears interval and flushes
+      await hook.stop();
+      expect(flushSpy).toHaveBeenCalledTimes(1); // empty now
+
+      // Further timer advances should do nothing
+      vi.advanceTimersByTime(20_000);
+      expect(flushSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs warning on bulkhead drop when droppedCount > 0, and does not log when droppedCount === 0", async () => {
+    const warnFn = vi.fn();
+    const hook = new TelemetryHook({
+      maxDistinctMetrics: 2,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: warnFn, error: vi.fn() },
+    });
+
+    // 1. Flush when droppedCount is 0: must not log bulkhead warning
+    hook.after(createMockHookContext("f1"), { flagKey: "f1", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    await hook.flush();
+    expect(warnFn).not.toHaveBeenCalled();
+
+    // 2. Drop 3 tuples beyond capacity 2: must log warning with count 3
+    hook.after(createMockHookContext("k1"), { flagKey: "k1", value: 1, variant: "1", reason: "DEFAULT", flagMetadata: {} });
+    hook.after(createMockHookContext("k2"), { flagKey: "k2", value: 2, variant: "2", reason: "DEFAULT", flagMetadata: {} });
+    hook.after(createMockHookContext("k3"), { flagKey: "k3", value: 3, variant: "3", reason: "DEFAULT", flagMetadata: {} });
+    hook.after(createMockHookContext("k4"), { flagKey: "k4", value: 4, variant: "4", reason: "DEFAULT", flagMetadata: {} });
+    hook.after(createMockHookContext("k5"), { flagKey: "k5", value: 5, variant: "5", reason: "DEFAULT", flagMetadata: {} });
+
+    await hook.flush();
+    expect(warnFn).toHaveBeenCalledWith(
+      expect.stringContaining("[SynapseState] Telemetry bulkhead limit reached: dropped 3 distinct metric tuples in window"),
+    );
+  });
+
+  it("manages HTTP export behavior with and without serviceToken and controlApiUrl", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({ status: "accepted" }),
+    });
+
+    // 1. Without controlApiUrl, fetch is never called
+    const hookNoUrl = new TelemetryHook({
+      fetch: fetchMock as any,
+    });
+    hookNoUrl.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    await hookNoUrl.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // 2. With controlApiUrl but WITHOUT serviceToken: no Authorization header
+    const hookNoToken = new TelemetryHook({
+      controlApiUrl: "http://localhost:3000",
+      fetch: fetchMock as any,
+    });
+    hookNoToken.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    await hookNoToken.flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const lastCall = fetchMock.mock.calls[0];
+    expect(lastCall[0]).toBe("http://localhost:3000/v1/telemetry/batches");
+    expect(lastCall[1].headers["Authorization"]).toBeUndefined();
+    expect(lastCall[1].headers["Content-Type"]).toBe("application/json");
+
+    // 3. With serviceToken: includes Authorization header
+    fetchMock.mockClear();
+    const hookWithToken = new TelemetryHook({
+      controlApiUrl: "http://localhost:3000",
+      serviceToken: "secret-token-xyz",
+      fetch: fetchMock as any,
+    });
+    hookWithToken.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    await hookWithToken.flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].headers["Authorization"]).toBe("Bearer secret-token-xyz");
+
+    // 4. When fetch throws network error: logs warning with exact message
+    const warnFn = vi.fn();
+    const throwingFetch = vi.fn().mockRejectedValue(new Error("Network ECONNREFUSED"));
+    const hookThrowing = new TelemetryHook({
+      controlApiUrl: "http://localhost:3000",
+      fetch: throwingFetch as any,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: warnFn, error: vi.fn() },
+    });
+    hookThrowing.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    await hookThrowing.flush();
+    expect(warnFn).toHaveBeenCalledWith(
+      expect.stringContaining("[SynapseState] Failed to export telemetry batch to http://localhost:3000: Network ECONNREFUSED"),
+    );
+  });
 });

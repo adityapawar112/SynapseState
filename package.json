@@ -11,6 +11,8 @@
     "test:e2e": "pnpm --filter @synapsestate/dashboard test:e2e",
     "test:coverage": "vitest run --coverage",
     "test:drills": "vitest run test/drills",
+    "test:mutation": "pnpm --filter @synapsestate/lease run test:mutation && pnpm --filter @synapsestate/sdk run test:mutation",
+    "test:mutation:fast": "pnpm --filter @synapsestate/lease run test:mutation:fast && pnpm --filter @synapsestate/sdk run test:mutation:fast",
     "typecheck": "pnpm -r run typecheck && tsc -p load/tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit",
     "bench": "pnpm --filter @synapsestate/sdk run bench",
     "test:load": "k6 run -e PROFILE=smoke -e DURATION=10s load/k6/mixed-stress.js",
