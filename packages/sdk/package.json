@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:mutation": "stryker run",
-    "test:mutation:fast": "stryker run --since origin/main",
+    "test:mutation:fast": "stryker run --incremental",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.bench.json --noEmit"
   },
   "dependencies": {
