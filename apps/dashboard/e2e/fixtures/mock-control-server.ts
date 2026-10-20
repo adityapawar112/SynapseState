@@ -1,5 +1,9 @@
 import http from "node:http";
-import { computeEventHash } from "@synapsestate/lease";
+import {
+  computeEventHash,
+  ULID_REGEX,
+  type LeasePayload,
+} from "@synapsestate/lease";
 import {
   refreshSeedData,
   getCurrentSeed,
@@ -9,7 +13,7 @@ import {
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 interface MockLeaseItem {
-  payload: any;
+  payload: LeasePayload;
   sig: string;
   state: string;
 }
@@ -165,7 +169,32 @@ const server = http.createServer((req, res) => {
 
   // Revoke Lease
   if (pathname.startsWith("/v1/leases/") && pathname.endsWith("/revoke") && method === "POST") {
+    const authHeader = req.headers["authorization"] || "";
+    const expectedToken =
+      process.env.SYNAPSE_API_TOKEN || "synapse-e2e-master-token-value-2026";
+    if (!authHeader.startsWith("Bearer ") || authHeader.slice(7) !== expectedToken) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid Bearer token",
+        })
+      );
+      return;
+    }
+
     const leaseId = pathname.split("/")[3];
+    if (!ULID_REGEX.test(leaseId)) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "INVALID_LEASE_ID",
+          message: "Invalid ULID format",
+        })
+      );
+      return;
+    }
+
     const target = leasesStore.find((l) => l.payload.lease_id === leaseId);
     if (!target) {
       res.writeHead(404, { "Content-Type": "application/json" });
@@ -209,7 +238,32 @@ const server = http.createServer((req, res) => {
 
   // Promote Lease
   if (pathname.startsWith("/v1/leases/") && pathname.endsWith("/promote") && method === "POST") {
+    const authHeader = req.headers["authorization"] || "";
+    const expectedToken =
+      process.env.SYNAPSE_API_TOKEN || "synapse-e2e-master-token-value-2026";
+    if (!authHeader.startsWith("Bearer ") || authHeader.slice(7) !== expectedToken) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "UNAUTHORIZED",
+          message: "Missing or invalid Bearer token",
+        })
+      );
+      return;
+    }
+
     const leaseId = pathname.split("/")[3];
+    if (!ULID_REGEX.test(leaseId)) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "INVALID_LEASE_ID",
+          message: "Invalid ULID format",
+        })
+      );
+      return;
+    }
+
     const target = leasesStore.find((l) => l.payload.lease_id === leaseId);
     if (!target) {
       res.writeHead(404, { "Content-Type": "application/json" });

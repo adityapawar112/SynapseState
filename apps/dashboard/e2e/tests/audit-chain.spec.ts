@@ -1,4 +1,5 @@
 import { test, expect } from "../fixtures/auth.fixture.js";
+import { computeEventHash, GENESIS_PREV_HASH } from "@synapsestate/lease";
 
 test.describe("Tamper-Evident Audit Ledger & Cryptographic Chain (PR 27)", () => {
   test.beforeEach(async ({ request }) => {
@@ -72,12 +73,23 @@ test.describe("Tamper-Evident Audit Ledger & Cryptographic Chain (PR 27)", () =>
     // Assert cryptographic chaining invariants across the retrieved events
     for (let i = 0; i < events.length; i++) {
       const curr = events[i];
+      const prevHash = i === 0 ? GENESIS_PREV_HASH : events[i - 1].hash;
       if (i > 0) {
         const prev = events[i - 1];
         expect(curr.prev_hash).toBe(prev.hash);
         expect(curr.seq).toBe(prev.seq + 1);
       }
       expect(curr.hash).toMatch(/^[a-f0-9]{64}$/);
+
+      // Cryptographic re-computation of SHA-256 hash across canonical event payload (B2 hardening)
+      const expectedHash = computeEventHash(prevHash, {
+        seq: curr.seq,
+        ts: curr.ts,
+        actor: curr.actor,
+        event_type: curr.event_type,
+        payload: curr.payload,
+      });
+      expect(curr.hash).toBe(expectedHash);
     }
 
     // Assert checkpoint matches the sealed audit hash

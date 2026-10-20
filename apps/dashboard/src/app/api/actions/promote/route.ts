@@ -34,6 +34,8 @@ export async function POST(request: NextRequest) {
   // 2. CSRF Token Validation — Strictly require x-synapse-csrf header
   const csrfToken = request.headers.get("x-synapse-csrf");
 
+  // Note: In production or under `next start` (used in E2E), NODE_ENV is "production",
+  // which guarantees isDevAuth is false and CSRF validation is strictly enforced.
   const isDevAuth =
     process.env.NODE_ENV !== "production" &&
     process.env.SYNAPSE_DEV_AUTH === "true";
