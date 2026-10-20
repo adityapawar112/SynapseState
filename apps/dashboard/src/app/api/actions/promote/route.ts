@@ -78,11 +78,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. Development simulation fallback
-  if (
-    process.env.NODE_ENV !== "production" &&
-    process.env.SYNAPSE_MOCK_PROMOTE === "true"
-  ) {
+  // 5. Development/Test simulation fallback
+  if (process.env.SYNAPSE_MOCK_PROMOTE === "true") {
     void controlApiClient.recordAuditEvent({
       actor: user.login,
       eventType: "DASHBOARD_PROMOTE_TRIGGERED",

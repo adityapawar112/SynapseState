@@ -1,0 +1,50 @@
+import { defineConfig, devices } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./e2e/tests",
+  fullyParallel: true,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: [["html", { outputFolder: "playwright-report" }], ["list"]],
+  use: {
+    baseURL: "http://localhost:3010",
+    viewport: { width: 1440, height: 900 },
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
+  },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+  webServer: [
+    {
+      command:
+        process.env.CONTROL_API_CMD ||
+        "pnpm exec tsx e2e/fixtures/start-control-server.ts",
+      url: "http://localhost:3000/healthz",
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+      env: {
+        PORT: "3000",
+        AUTO_MIGRATE: "true",
+      },
+    },
+    {
+      command: "pnpm exec next start -p 3010",
+      url: "http://localhost:3010/login",
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+      env: {
+        SYNAPSE_DEV_AUTH: "true",
+        PORT: "3010",
+        SESSION_SECRET:
+          process.env.SESSION_SECRET ||
+          "development-only-session-secret-min-32-chars-long",
+        SYNAPSE_MOCK_PROMOTE: "true",
+        CONTROL_API_URL: "http://localhost:3000",
+      },
+    },
+  ],
+});

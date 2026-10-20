@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   test: {
     fileParallelism: false,
+    exclude: ["**/e2e/**", "node_modules/**"],
     coverage: {
       provider: "v8",
     },

@@ -242,9 +242,11 @@ export function LeaseCard({
         <RevokeModal
           lease={lease}
           userRole={userRole}
-          onClose={() => setShowRevokeModal(false)}
-          onRevoked={() => {
+          onClose={() => {
             setShowRevokeModal(false);
+            if (onRefresh) onRefresh();
+          }}
+          onRevoked={() => {
             if (onRefresh) onRefresh();
           }}
         />
@@ -254,10 +256,12 @@ export function LeaseCard({
         <PromoteModal
           lease={lease}
           userRole={userRole}
-          onClose={() => setShowPromoteModal(false)}
+          onClose={() => {
+            setShowPromoteModal(false);
+            if (onRefresh) onRefresh();
+          }}
           onPromoted={(prUrl) => {
             setPromotePrUrl(prUrl);
-            setShowPromoteModal(false);
             if (onRefresh) onRefresh();
           }}
         />

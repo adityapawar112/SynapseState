@@ -170,7 +170,13 @@ export function RevokeModal({
         </div>
 
         {revokedSuccess ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px", textAlign: "center", padding: "16px 0" }}>
+          <div
+            id="revoke-toast-alert"
+            role="alert"
+            data-testid="revoke-toast"
+            className="toast-alert"
+            style={{ display: "flex", flexDirection: "column", gap: "14px", textAlign: "center", padding: "16px 0" }}
+          >
             <div style={{ display: "flex", justifyContent: "center", color: "var(--color-ai)" }}>
               <LuCircleCheck size={42} />
             </div>

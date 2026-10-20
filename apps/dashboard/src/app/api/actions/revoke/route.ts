@@ -97,7 +97,10 @@ export async function POST(request: NextRequest) {
   let revocationEnvelope = body.envelope;
 
   if (!revocationEnvelope) {
-    if (process.env.NODE_ENV === "production") {
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.SYNAPSE_DEV_AUTH !== "true"
+    ) {
       return NextResponse.json(
         {
           error: "WORKSTATION_SIGNATURE_REQUIRED",

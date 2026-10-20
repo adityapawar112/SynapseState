@@ -8,6 +8,7 @@
   "scripts": {
     "build": "pnpm -r run build",
     "test": "pnpm -r run test && vitest run test/drills",
+    "test:e2e": "pnpm --filter @synapsestate/dashboard test:e2e",
     "test:coverage": "vitest run --coverage",
     "test:drills": "vitest run test/drills",
     "typecheck": "pnpm -r run typecheck && tsc -p load/tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit",
