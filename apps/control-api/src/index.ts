@@ -14,7 +14,9 @@ export * from "./routes/changes.js";
 export { buildServer, type ServerOptions };
 
 export const server = buildServer({
-  enableAuditSealer: process.env.NODE_ENV !== "test",
+  enableAuditSealer:
+    process.env.ENABLE_AUDIT_SEALER === "true" ||
+    process.env.NODE_ENV !== "test",
 });
 
 // Start server if executed directly as entrypoint

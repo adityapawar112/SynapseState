@@ -139,6 +139,64 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
     expect(noCsrfPromote.status()).toBe(403);
     const promoteData = await noCsrfPromote.json();
     expect(promoteData.error).toBe("CSRF_FORBIDDEN");
+
+    // With invalid/tampered x-synapse-csrf header
+    const badCsrfRevoke = await request.post("/api/actions/revoke", {
+      headers: {
+        cookie: cookieHeader,
+        "x-synapse-csrf": "tampered-forged-csrf-token-12345",
+      },
+      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "bad csrf" },
+    });
+    expect(badCsrfRevoke.status()).toBe(403);
+    const badCsrfData = await badCsrfRevoke.json();
+    expect(badCsrfData.error).toBe("CSRF_FORBIDDEN");
+  });
+
+  test("API route guards strictly reject mutations with tampered session cookie", async ({
+    request,
+  }) => {
+    const tamperedRes = await request.post("/api/actions/revoke", {
+      headers: {
+        cookie: "synapse_session=tampered.unsigned.jwt.token",
+        "x-synapse-csrf": "any-token",
+      },
+      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "tampered" },
+    });
+    expect(tamperedRes.status()).toBe(401);
+  });
+
+  test("Control API inventory GET /v1/leases is public read-only whereas unknown leases return 404", async ({
+    request,
+  }) => {
+    // 1. Unauthenticated GET /v1/leases succeeds (open inventory per Invariants 1 & 2)
+    const publicInventory = await request.get("http://localhost:3000/v1/leases?env=prod");
+    expect(publicInventory.status()).toBe(200);
+    const invData = await publicInventory.json();
+    expect(Array.isArray(invData.leases)).toBe(true);
+
+    // 2. Unknown Crockford ULID returns 404 on promote with valid operator token
+    const authHeaders = {
+      Authorization: `Bearer ${process.env.SYNAPSE_API_TOKEN || "synapse-e2e-master-token-value-2026"}`,
+    };
+    const unknownPromote = await request.post(
+      "http://localhost:3000/v1/leases/01J9X57YTRPQ8A7F4E99999999/promote",
+      { headers: authHeaders }
+    );
+    expect(unknownPromote.status()).toBe(404);
+
+    // 3. Malformed lease ID returns 400 INVALID_LEASE_ID
+    const malformedPromote = await request.post(
+      "http://localhost:3000/v1/leases/NOT_A_VALID_ULID/promote",
+      { headers: authHeaders }
+    );
+    expect(malformedPromote.status()).toBe(400);
+
+    // 4. Missing authentication on promote returns 401 UNAUTHORIZED
+    const unauthPromote = await request.post(
+      "http://localhost:3000/v1/leases/01J9X57YTRPQ8A7F4E99999999/promote"
+    );
+    expect(unauthPromote.status()).toBe(401);
   });
 
   test("Control API audit staging endpoint accepts POST /v1/audit/events with 202 without route shadowing", async ({

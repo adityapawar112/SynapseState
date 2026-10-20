@@ -2,7 +2,8 @@ import { test, expect } from "../fixtures/auth.fixture.js";
 
 test.describe("Flag Inventory, Variant Quiescence & Purger Candidates (PR 27)", () => {
   test.beforeEach(async ({ request }) => {
-    await request.post("http://localhost:3000/__test/reset").catch(() => {});
+    const res = await request.post("http://localhost:3000/__test/reset");
+    expect(res.ok()).toBe(true);
   });
 
   test("displays 30-day evaluation tables, variant distribution, and identifies stale purger candidates", async ({

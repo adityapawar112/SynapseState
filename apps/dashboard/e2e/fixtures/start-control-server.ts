@@ -50,13 +50,14 @@ async function main() {
     console.log(
       `[start-control-server] PostgreSQL detected at ${host}:${port}. Seeding and starting real control-api...`
     );
+    const pool = new pg.Pool({ connectionString: dbUrl });
     try {
-      const pool = new pg.Pool({ connectionString: dbUrl });
       await seedPostgresDatabase(pool);
-      await pool.end();
       console.log(`[start-control-server] Database seeded successfully.`);
     } catch (err) {
       console.warn(`[start-control-server] Warning during seeding:`, err);
+    } finally {
+      await pool.end().catch(() => {});
     }
 
     const testKeysetPath = path.resolve(__dirname, "test-keyset.json");
@@ -75,6 +76,9 @@ async function main() {
           TELEMETRY_DATABASE_URL: dbUrl,
           KEYSET_PATH: testKeysetPath,
           AUTO_MIGRATE: "true",
+          ENABLE_AUDIT_SEALER: "true",
+          SYNAPSE_MOCK_GITHUB: "true",
+          ENABLE_TEST_RESET: "true",
           SYNAPSE_API_TOKEN:
             process.env.SYNAPSE_API_TOKEN ||
             "synapse-e2e-master-token-value-2026",

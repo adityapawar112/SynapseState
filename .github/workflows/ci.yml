@@ -43,7 +43,6 @@ jobs:
       PGHOST: localhost
       PGPORT: 5432
       SYNAPSE_API_TOKEN: "synapse-e2e-master-token-value-2026"
-      SYNAPSE_DEV_AUTH: "true"
 
     steps:
       - name: Checkout repository
@@ -79,4 +78,7 @@ jobs:
         run: pnpm --filter @synapsestate/dashboard exec playwright install chromium --with-deps
 
       - name: E2E Browser Tests
+        env:
+          SYNAPSE_DEV_AUTH: "true"
+          SYNAPSE_MOCK_PROMOTE: "true"
         run: pnpm run test:e2e

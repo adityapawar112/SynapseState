@@ -219,9 +219,10 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     expect(data.prUrl).toContain("github.com");
   });
 
-  it("strictly refuses simulated promotion in production even if SYNAPSE_MOCK_PROMOTE=true", async () => {
+  it("strictly refuses simulated promotion in production even if SYNAPSE_MOCK_PROMOTE=true and SYNAPSE_DEV_AUTH=true", async () => {
     setNodeEnv("production");
     process.env.SYNAPSE_MOCK_PROMOTE = "true";
+    process.env.SYNAPSE_DEV_AUTH = "true";
     const operator = getDevSessionUser("operator");
     const sessionToken = await createSessionToken(operator, testSecret);
     const csrfToken = await generateCsrfToken(operator.id, testSecret);

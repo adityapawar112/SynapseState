@@ -1,17 +1,35 @@
 import http from "node:http";
+import { computeEventHash } from "@synapsestate/lease";
 import {
   refreshSeedData,
   getCurrentSeed,
+  type SeedDataResult,
 } from "./seed-data.js";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
+interface MockLeaseItem {
+  payload: any;
+  sig: string;
+  state: string;
+}
+
 let currentData = getCurrentSeed();
-let leasesStore = [...currentData.allLeases];
+function initLeasesStore(seed: SeedDataResult): MockLeaseItem[] {
+  return [
+    { ...JSON.parse(JSON.stringify(seed.activeLeaseEnvelope)), state: "ACTIVE" },
+    { ...JSON.parse(JSON.stringify(seed.nearExpiryLeaseEnvelope)), state: "ACTIVE" },
+    { ...JSON.parse(JSON.stringify(seed.expiredLeaseEnvelope)), state: "EXPIRED" },
+  ];
+}
+
+let leasesStore = initLeasesStore(currentData);
+const promotedLeases = new Set<string>();
 
 function resetStore() {
   currentData = refreshSeedData();
-  leasesStore = [...currentData.allLeases];
+  leasesStore = initLeasesStore(currentData);
+  promotedLeases.clear();
 }
 
 const server = http.createServer((req, res) => {
@@ -47,7 +65,7 @@ const server = http.createServer((req, res) => {
   // SDK State Delivery
   if (pathname === "/v1/sdk/state") {
     const env = url.searchParams.get("env") || "prod";
-    const filtered = leasesStore.filter((l) => l.payload.env === env);
+    const filtered = leasesStore.filter((l) => l.payload.env === env && l.state === "ACTIVE");
     res.writeHead(200, {
       "Content-Type": "application/json",
       ETag: '"mock-seed-etag-v1"',
@@ -57,7 +75,7 @@ const server = http.createServer((req, res) => {
         etag: "mock-seed-etag-v1",
         server_time: new Date().toISOString(),
         registry_version: 1,
-        active_leases: filtered,
+        active_leases: filtered.map(({ payload, sig }) => ({ payload, sig })),
       })
     );
     return;
@@ -74,8 +92,35 @@ const server = http.createServer((req, res) => {
 
   // Ingest or Record Audit Event (POST) - Evaluated before GET to avoid route shadowing
   if (pathname === "/v1/audit/events" && method === "POST") {
-    res.writeHead(202, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ success: true, status: "staged", staged: true }));
+    let bodyStr = "";
+    req.on("data", (chunk) => {
+      bodyStr += chunk;
+    });
+    req.on("end", () => {
+      try {
+        const parsed = JSON.parse(bodyStr || "{}");
+        const prev = currentData.auditEvents[currentData.auditEvents.length - 1];
+        const seq = currentData.auditEvents.length + 1;
+        const prevHash = prev?.hash || "0".repeat(64);
+        const eventRecord = {
+          seq,
+          event_type: parsed.eventType || "DASHBOARD_AUDIT_STAGED",
+          actor: parsed.actor || "ops-sre-lead",
+          ts: new Date().toISOString(),
+          payload: parsed.payload || {},
+        };
+        const hash = computeEventHash(prevHash, eventRecord);
+        currentData.auditEvents.push({
+          ...eventRecord,
+          prev_hash: prevHash,
+          hash,
+        });
+      } catch {
+        // Ignore json parse error in mock server
+      }
+      res.writeHead(202, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true, status: "staged", staged: true }));
+    });
     return;
   }
 
@@ -121,10 +166,36 @@ const server = http.createServer((req, res) => {
   // Revoke Lease
   if (pathname.startsWith("/v1/leases/") && pathname.endsWith("/revoke") && method === "POST") {
     const leaseId = pathname.split("/")[3];
-    const idx = leasesStore.findIndex((l) => l.payload.lease_id === leaseId);
-    if (idx !== -1) {
-      leasesStore.splice(idx, 1);
+    const target = leasesStore.find((l) => l.payload.lease_id === leaseId);
+    if (!target) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "NOT_FOUND",
+          message: `Lease "${leaseId}" not found`,
+        })
+      );
+      return;
     }
+
+    target.state = "REVOKED";
+    const prev = currentData.auditEvents[currentData.auditEvents.length - 1];
+    const seq = currentData.auditEvents.length + 1;
+    const prevHash = prev?.hash || "0".repeat(64);
+    const eventRecord = {
+      seq,
+      event_type: "LEASE_REVOKED",
+      actor: "ops-sre-lead",
+      ts: new Date().toISOString(),
+      payload: { lease_id: leaseId },
+    };
+    const hash = computeEventHash(prevHash, eventRecord);
+    currentData.auditEvents.push({
+      ...eventRecord,
+      prev_hash: prevHash,
+      hash,
+    });
+
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -139,6 +210,49 @@ const server = http.createServer((req, res) => {
   // Promote Lease
   if (pathname.startsWith("/v1/leases/") && pathname.endsWith("/promote") && method === "POST") {
     const leaseId = pathname.split("/")[3];
+    const target = leasesStore.find((l) => l.payload.lease_id === leaseId);
+    if (!target) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "NOT_FOUND",
+          message: `Lease "${leaseId}" not found`,
+        })
+      );
+      return;
+    }
+
+    if (promotedLeases.has(leaseId)) {
+      res.writeHead(409, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "STALE_PR_CONFLICT",
+          message: `Cannot promote lease "${leaseId}": lease is already in state "PROMOTED"`,
+          existing_pr_url: `https://github.com/adityapawar112/SynapseState/pull/123`,
+          promote_pr_url: `https://github.com/adityapawar112/SynapseState/pull/123`,
+        })
+      );
+      return;
+    }
+
+    promotedLeases.add(leaseId);
+    const prev = currentData.auditEvents[currentData.auditEvents.length - 1];
+    const seq = currentData.auditEvents.length + 1;
+    const prevHash = prev?.hash || "0".repeat(64);
+    const eventRecord = {
+      seq,
+      event_type: "LEASE_PROMOTED",
+      actor: "ops-sre-lead",
+      ts: new Date().toISOString(),
+      payload: { lease_id: leaseId },
+    };
+    const hash = computeEventHash(prevHash, eventRecord);
+    currentData.auditEvents.push({
+      ...eventRecord,
+      prev_hash: prevHash,
+      hash,
+    });
+
     res.writeHead(202, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({

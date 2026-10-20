@@ -78,16 +78,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. Development simulation fallback (strictly blocked in production unless dev auth is active)
+  // 5. Development simulation fallback (strictly blocked in production under all circumstances)
   if (
-    (process.env.NODE_ENV !== "production" || process.env.SYNAPSE_DEV_AUTH === "true") &&
+    process.env.NODE_ENV !== "production" &&
     process.env.SYNAPSE_MOCK_PROMOTE === "true"
   ) {
-    void controlApiClient.recordAuditEvent({
-      actor: user.login,
-      eventType: "DASHBOARD_PROMOTE_TRIGGERED",
-      payload: { leaseId: body.leaseId, env: body.env, simulated: true },
-    });
+    await controlApiClient
+      .recordAuditEvent({
+        actor: user.login,
+        eventType: "DASHBOARD_PROMOTE_TRIGGERED",
+        payload: { leaseId: body.leaseId, env: body.env, simulated: true },
+      })
+      .catch((err) =>
+        console.warn("[promote/route] Failed to record audit event:", err)
+      );
 
     return NextResponse.json({
       success: true,
@@ -107,16 +111,20 @@ export async function POST(request: NextRequest) {
       actor: user.login,
     });
 
-    void controlApiClient.recordAuditEvent({
-      actor: user.login,
-      eventType: "DASHBOARD_PROMOTE_TRIGGERED",
-      payload: {
-        leaseId: body.leaseId,
-        env: body.env,
-        prUrl: result.pr_url,
-        branch: result.branch,
-      },
-    });
+    await controlApiClient
+      .recordAuditEvent({
+        actor: user.login,
+        eventType: "DASHBOARD_PROMOTE_TRIGGERED",
+        payload: {
+          leaseId: body.leaseId,
+          env: body.env,
+          prUrl: result.pr_url,
+          branch: result.branch,
+        },
+      })
+      .catch((err) =>
+        console.warn("[promote/route] Failed to record audit event:", err)
+      );
 
     return NextResponse.json({
       success: true,

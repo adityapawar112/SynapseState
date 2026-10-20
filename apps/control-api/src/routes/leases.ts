@@ -52,6 +52,9 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
   const { leasePool, keysetProvider, stateManager, metrics } = options;
 
   // GET /v1/leases
+  // Architectural Design (Charter Invariants 1 & 2): Unauthenticated read-only inventory endpoint
+  // returning public Ed25519-signed envelopes. Emergency leases contain signed flag overrides and zero user context.
+  // SDKs and Dashboard view read-only inventory without egressing credentials. Mutations strictly require Bearer auth or signature.
   fastify.get("/v1/leases", async (req, reply) => {
     const query = req.query as { env?: string };
     const env = query.env || "prod";
@@ -62,6 +65,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
     const leases = res.rows.map((r) => ({
       payload: (typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload) as LeaseEnvelope["payload"],
       sig: r.sig,
+      state: r.state,
     }));
     return reply.send({ leases });
   });
@@ -655,7 +659,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         }>("SELECT state, promote_pr_url FROM leases WHERE lease_id = $1", [
           id,
         ]);
-        if (currentRes.rows[0]?.state === "PROMOTED") {
+        if (currentRes.rows[0]?.state === "PROMOTED" || currentRes.rows[0]?.promote_pr_url) {
           throw new StalePrConflictError(
             `Cannot promote lease "${id}": lease is already in state "PROMOTED"`,
             currentRes.rows[0].promote_pr_url ?? undefined,
@@ -668,7 +672,7 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         });
 
         await client.query(
-          "UPDATE leases SET promote_pr_url = $1 WHERE lease_id = $2",
+          "UPDATE leases SET promote_pr_url = $1, state = 'PROMOTED' WHERE lease_id = $2",
           [promResult.pr_url, id],
         );
 

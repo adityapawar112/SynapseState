@@ -99,10 +99,7 @@ export async function POST(request: NextRequest) {
   let revocationEnvelope = body.envelope;
 
   if (!revocationEnvelope) {
-    if (
-      process.env.NODE_ENV === "production" &&
-      process.env.SYNAPSE_DEV_AUTH !== "true"
-    ) {
+    if (process.env.NODE_ENV === "production") {
       return NextResponse.json(
         {
           error: "WORKSTATION_SIGNATURE_REQUIRED",
@@ -130,11 +127,15 @@ export async function POST(request: NextRequest) {
   try {
     const result = await controlApiClient.revokeLease(body.leaseId, revocationEnvelope);
 
-    void controlApiClient.recordAuditEvent({
-      actor: user.login,
-      eventType: "DASHBOARD_REVOKE_TRIGGERED",
-      payload: { leaseId: body.leaseId, reason: body.reason },
-    });
+    await controlApiClient
+      .recordAuditEvent({
+        actor: user.login,
+        eventType: "DASHBOARD_REVOKE_TRIGGERED",
+        payload: { leaseId: body.leaseId, reason: body.reason },
+      })
+      .catch((err) =>
+        console.warn("[revoke/route] Failed to record audit event:", err)
+      );
 
     return NextResponse.json({
       success: true,

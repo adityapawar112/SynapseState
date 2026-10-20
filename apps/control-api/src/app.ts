@@ -4,7 +4,11 @@ import Fastify, {
 } from "fastify";
 import cors from "@fastify/cors";
 import type { Pool } from "pg";
-import type { Keyset } from "@synapsestate/lease";
+import {
+  type Keyset,
+  computeEventHash,
+  GENESIS_PREV_HASH,
+} from "@synapsestate/lease";
 import { leasePool, telemetryPool } from "./db/pool.js";
 import { createKeysetProvider, type KeysetProvider } from "./keyset.js";
 import { StateManager } from "./services/state-manager.js";
@@ -89,6 +93,15 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       repo: githubRepo || "flags",
       baseBranch: githubBaseBranch || "main",
     });
+  } else if (!activeReconciler && process.env.SYNAPSE_MOCK_GITHUB === "true") {
+    activeReconciler = {
+      async promoteLease(lease: { lease_id: string; flag_key: string; env: string }) {
+        return {
+          pr_url: `https://github.com/adityapawar112/SynapseState/pull/123`,
+          branch: `synapse/promote-lease-${lease.lease_id}`,
+        };
+      },
+    } as unknown as GitHubReconciler;
   }
 
   const grafanaUrl = options.grafanaUrl ?? process.env.GRAFANA_URL;
@@ -196,7 +209,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
   }
 
-  if (process.env.NODE_ENV !== "production") {
+  if (
+    process.env.NODE_ENV !== "production" ||
+    process.env.ENABLE_TEST_RESET === "true"
+  ) {
     server.post("/__test/reset", async (_req, reply) => {
       try {
         const now = Date.now();
@@ -206,11 +222,80 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
         await activePool.query("DELETE FROM revocations");
         await activePool.query("DELETE FROM audit_pending");
+        await activePool.query("DELETE FROM audit_events");
+
+        const auditEvent1 = {
+          seq: 1,
+          ts: new Date(now - 900_000).toISOString(),
+          actor: "ops-sre-lead",
+          event_type: "LEASE_INGESTED",
+          payload: {
+            leaseId: "01J9X57YTRPQ8A7F4E00112233",
+            flagKey: "checkout-v2-optimization",
+            env: "prod",
+            ttl: 1800,
+          },
+        };
+        const hash1 = computeEventHash(GENESIS_PREV_HASH, auditEvent1);
+
+        const auditEvent2 = {
+          seq: 2,
+          ts: new Date(now - 600_000).toISOString(),
+          actor: "ops-sre-lead",
+          event_type: "LEASE_REVOKE_REQUESTED",
+          payload: {
+            leaseId: "01J9X57YTRPQ8A7F4E00445566",
+            flagKey: "payment-gateway-timeout",
+            env: "prod",
+            reason: "Mitigation rolled back",
+          },
+        };
+        const hash2 = computeEventHash(hash1, auditEvent2);
+
+        const auditEvent3 = {
+          seq: 3,
+          ts: new Date(now - 300_000).toISOString(),
+          actor: "platform-admin",
+          event_type: "CHECKPOINT_SEALED",
+          payload: {
+            checkpointSeq: 1,
+            sealedCount: 3,
+          },
+        };
+        const hash3 = computeEventHash(hash2, auditEvent3);
+
+        await activePool.query(
+          `INSERT INTO audit_events (seq, ts, actor, event_type, payload, prev_hash, hash)
+           VALUES 
+             (1, $1, $2, $3, $4::jsonb, $5, $6),
+             (2, $7, $8, $9, $10::jsonb, $11, $12),
+             (3, $13, $14, $15, $16::jsonb, $17, $18)`,
+          [
+            auditEvent1.ts,
+            auditEvent1.actor,
+            auditEvent1.event_type,
+            JSON.stringify(auditEvent1.payload),
+            GENESIS_PREV_HASH,
+            hash1,
+            auditEvent2.ts,
+            auditEvent2.actor,
+            auditEvent2.event_type,
+            JSON.stringify(auditEvent2.payload),
+            hash1,
+            hash2,
+            auditEvent3.ts,
+            auditEvent3.actor,
+            auditEvent3.event_type,
+            JSON.stringify(auditEvent3.payload),
+            hash2,
+            hash3,
+          ]
+        );
 
         await activePool.query(
           `UPDATE leases 
            SET state = 'ACTIVE', 
-               issued_at = $1, 
+               issued_at = $1::timestamptz, 
                expires_at = NOW() + INTERVAL '28 minutes', 
                payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text)),
                promote_pr_url = NULL 
@@ -221,9 +306,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         await activePool.query(
           `UPDATE leases 
            SET state = 'ACTIVE', 
-               issued_at = $1, 
+               issued_at = $1::timestamptz, 
                expires_at = NOW() + INTERVAL '4 minutes', 
-               payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text))
+               payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text)),
+               promote_pr_url = NULL 
            WHERE lease_id = '01J9X57YTRPQ8A7F4E00445566'`,
           [nearIssuedAt]
         );
@@ -231,7 +317,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         await activePool.query(
           `UPDATE leases 
            SET state = 'EXPIRED', 
-               issued_at = $1, 
+               issued_at = $1::timestamptz, 
                expires_at = NOW() - INTERVAL '9 minutes', 
                payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text))
            WHERE lease_id = '01J9X57YTRPQ8A7F4E00778899'`,
@@ -240,7 +326,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
         await activeStateManager.notifyChange();
       } catch (err) {
-        server.log.warn({ err }, "[/__test/reset] Error during test reset query");
+        server.log.error({ err }, "[/__test/reset] Error during test reset query");
+        return reply.code(500).send({ error: "RESET_FAILED", message: String(err) });
       }
       return reply.code(200).send({ status: "reset" });
     });

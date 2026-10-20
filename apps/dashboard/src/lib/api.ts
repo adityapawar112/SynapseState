@@ -108,8 +108,8 @@ export class ControlApiClient {
     }
 
     const referenceTime = data.server_time ? new Date(data.server_time) : new Date();
-    return data.active_leases.map((env) =>
-      calculateLeaseExpiryView(env, referenceTime)
+    return data.active_leases.map((envelope) =>
+      calculateLeaseExpiryView(envelope, referenceTime)
     );
   }
 
@@ -128,9 +128,10 @@ export class ControlApiClient {
 
     if (data && Array.isArray(data.leases)) {
       const referenceTime = data.server_time ? new Date(data.server_time) : new Date();
-      return data.leases.map((env) => calculateLeaseExpiryView(env, referenceTime));
+      return data.leases.map((envelope) => calculateLeaseExpiryView(envelope, referenceTime));
     }
 
+    console.warn(`[ControlApiClient] Failed to fetch inventory from /v1/leases?env=${env}, falling back to /v1/sdk/state`);
     return this.fetchActiveLeases(env);
   }
 

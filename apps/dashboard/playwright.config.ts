@@ -35,6 +35,9 @@ export default defineConfig({
       env: {
         PORT: "3000",
         AUTO_MIGRATE: "true",
+        ENABLE_AUDIT_SEALER: "true",
+        SYNAPSE_MOCK_GITHUB: "true",
+        ENABLE_TEST_RESET: "true",
         SYNAPSE_API_TOKEN: process.env.SYNAPSE_API_TOKEN,
       },
     },
@@ -44,6 +47,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       env: {
+        NODE_ENV: "test",
         SYNAPSE_DEV_AUTH: "true",
         SYNAPSE_MOCK_PROMOTE: "true",
         PORT: "3010",
