@@ -638,9 +638,13 @@ describe("LeaseStore", () => {
     notifyFn.mockClear();
 
     // Advance clock to expire
-    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 50_000);
-    expect(s.evictExpiredLeases()).toBe(1);
-    expect(notifyFn).toHaveBeenCalledWith(0);
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 50_000);
+    try {
+      expect(s.evictExpiredLeases()).toBe(1);
+      expect(notifyFn).toHaveBeenCalledWith(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("notifies active overrides on revokeLease only when a lease was actually revoked", () => {

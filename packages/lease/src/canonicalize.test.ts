@@ -30,7 +30,7 @@ describe("canonicalizeJson (RFC 8785 / JCS)", () => {
       expect(canonicalizeJson({ "\u20ac": 1, a: 2 })).toBe(
         '{"a":2,"\u20ac":1}',
       );
-      // '€' (0x20AC) < 'é' (0x00E9 in standard sorting: wait, 0x00E9 < 0x20AC)
+      // 'é' (0x00E9) < '€' (0x20AC) by UTF-16 code unit ordering
       expect(canonicalizeJson({ "\u20ac": 1, "\u00e9": 2 })).toBe(
         '{"\u00e9":2,"\u20ac":1}',
       );
