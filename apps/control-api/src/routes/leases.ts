@@ -11,6 +11,7 @@ import {
   canRevokeLease,
   verifyLease,
   verifyRevocationWithKeyset,
+  type LeaseEnvelope,
 } from "@synapsestate/lease";
 import { withTransaction } from "../db/transaction.js";
 import type { KeysetProvider } from "../keyset.js";
@@ -49,6 +50,21 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
   options,
 ) => {
   const { leasePool, keysetProvider, stateManager, metrics } = options;
+
+  // GET /v1/leases
+  fastify.get("/v1/leases", async (req, reply) => {
+    const query = req.query as { env?: string };
+    const env = query.env || "prod";
+    const res = await leasePool.query<{ payload: unknown; sig: string; state: string }>(
+      `SELECT payload, sig, state FROM leases WHERE env = $1 ORDER BY issued_at DESC LIMIT 100`,
+      [env],
+    );
+    const leases = res.rows.map((r) => ({
+      payload: (typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload) as LeaseEnvelope["payload"],
+      sig: r.sig,
+    }));
+    return reply.send({ leases });
+  });
 
   // POST /v1/leases
   fastify.post("/v1/leases", async (req, reply) => {

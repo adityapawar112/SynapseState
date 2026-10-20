@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+process.env.SYNAPSE_API_TOKEN =
+  process.env.SYNAPSE_API_TOKEN || "synapse-e2e-master-token-value-2026";
+
 export default defineConfig({
   testDir: "./e2e/tests",
   fullyParallel: false,
@@ -32,6 +35,7 @@ export default defineConfig({
       env: {
         PORT: "3000",
         AUTO_MIGRATE: "true",
+        SYNAPSE_API_TOKEN: process.env.SYNAPSE_API_TOKEN,
       },
     },
     {
@@ -41,11 +45,13 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         SYNAPSE_DEV_AUTH: "true",
+        SYNAPSE_MOCK_PROMOTE: "true",
         PORT: "3010",
         SESSION_SECRET:
           process.env.SESSION_SECRET ||
           "development-only-session-secret-min-32-chars-long",
         CONTROL_API_URL: "http://localhost:3000",
+        SYNAPSE_API_TOKEN: process.env.SYNAPSE_API_TOKEN,
       },
     },
   ],

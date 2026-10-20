@@ -1,7 +1,11 @@
 import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { seedPostgresDatabase } from "./seed-data.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function isPortOpen(host: string, port: number, timeoutMs = 1000): Promise<boolean> {
   return new Promise((resolve) => {
@@ -55,6 +59,8 @@ async function main() {
       console.warn(`[start-control-server] Warning during seeding:`, err);
     }
 
+    const testKeysetPath = path.resolve(__dirname, "test-keyset.json");
+
     const proc = spawn(
       "pnpm",
       ["--filter", "@synapsestate/control-api", "start"],
@@ -64,7 +70,14 @@ async function main() {
         env: {
           ...process.env,
           PORT: process.env.PORT || "3000",
+          DATABASE_URL: dbUrl,
+          LEASE_DATABASE_URL: dbUrl,
+          TELEMETRY_DATABASE_URL: dbUrl,
+          KEYSET_PATH: testKeysetPath,
           AUTO_MIGRATE: "true",
+          SYNAPSE_API_TOKEN:
+            process.env.SYNAPSE_API_TOKEN ||
+            "synapse-e2e-master-token-value-2026",
         },
       }
     );

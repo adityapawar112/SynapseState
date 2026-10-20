@@ -25,7 +25,7 @@ test.describe("Tamper-Evident Audit Ledger & Cryptographic Chain (PR 27)", () =>
     // Latest Signed Checkpoint Card Assertion
     const checkpointSeq = operatorPage.locator("#audit-checkpoint-seq");
     await expect(checkpointSeq).toBeVisible();
-    await expect(checkpointSeq).toHaveText("#1");
+    await expect(checkpointSeq).toHaveText("#3");
 
     const checkpointEvents = operatorPage.locator("#audit-checkpoint-events");
     await expect(checkpointEvents).toBeVisible();

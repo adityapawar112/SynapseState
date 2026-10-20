@@ -63,10 +63,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Leases list for Dashboard
+  if (pathname === "/v1/leases" && (method === "GET" || method === "HEAD")) {
+    const env = url.searchParams.get("env") || "prod";
+    const filtered = leasesStore.filter((l) => l.payload.env === env);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ leases: filtered }));
+    return;
+  }
+
   // Ingest or Record Audit Event (POST) - Evaluated before GET to avoid route shadowing
   if (pathname === "/v1/audit/events" && method === "POST") {
     res.writeHead(202, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ success: true, staged: true }));
+    res.end(JSON.stringify({ success: true, status: "staged", staged: true }));
     return;
   }
 

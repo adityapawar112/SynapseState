@@ -157,7 +157,7 @@ export function buildSeedData(baseTime = new Date()): SeedDataResult {
   ];
 
   const checkpoint = {
-    checkpoint_seq: 1,
+    checkpoint_seq: 3,
     checkpoint_hash: hash3,
     sealed_count: 3,
     timestamp: auditEvent3.ts,
@@ -227,10 +227,17 @@ export async function seedPostgresDatabase(clientOrPool: {
   }
 
   // 2. Seed Leases
+  await clientOrPool.query(`DELETE FROM revocations;`);
   await clientOrPool.query(
     `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
      VALUES ($1, $2, $3, $4::jsonb, $5, 'ACTIVE', $6, $7, $8, $9)
-     ON CONFLICT (lease_id) DO UPDATE SET state = 'ACTIVE', expires_at = $8`,
+     ON CONFLICT (lease_id) DO UPDATE SET 
+       state = 'ACTIVE', 
+       payload = $4::jsonb, 
+       issued_at = $6, 
+       expires_at = $8, 
+       sig = $5,
+       promote_pr_url = NULL`,
     [
       seed.activeLeasePayload.lease_id,
       seed.activeLeasePayload.flag_key,
@@ -247,7 +254,12 @@ export async function seedPostgresDatabase(clientOrPool: {
   await clientOrPool.query(
     `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
      VALUES ($1, $2, $3, $4::jsonb, $5, 'ACTIVE', $6, $7, $8, $9)
-     ON CONFLICT (lease_id) DO UPDATE SET state = 'ACTIVE', expires_at = $8`,
+     ON CONFLICT (lease_id) DO UPDATE SET 
+       state = 'ACTIVE', 
+       payload = $4::jsonb, 
+       issued_at = $6, 
+       expires_at = $8, 
+       sig = $5`,
     [
       seed.nearExpiryLeasePayload.lease_id,
       seed.nearExpiryLeasePayload.flag_key,
@@ -264,7 +276,12 @@ export async function seedPostgresDatabase(clientOrPool: {
   await clientOrPool.query(
     `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
      VALUES ($1, $2, $3, $4::jsonb, $5, 'EXPIRED', $6, $7, $8, $9)
-     ON CONFLICT (lease_id) DO UPDATE SET state = 'EXPIRED'`,
+     ON CONFLICT (lease_id) DO UPDATE SET 
+       state = 'EXPIRED', 
+       payload = $4::jsonb, 
+       issued_at = $6, 
+       expires_at = $8, 
+       sig = $5`,
     [
       seed.expiredLeasePayload.lease_id,
       seed.expiredLeasePayload.flag_key,
@@ -290,12 +307,13 @@ export async function seedPostgresDatabase(clientOrPool: {
     );
   }
 
-  // 4. Seed Audit Events
+  // 4. Seed Audit Events - Clean slate to ensure unbroken cryptographic hash chain
+  await clientOrPool.query(`DELETE FROM audit_events;`);
+  await clientOrPool.query(`DELETE FROM audit_pending;`);
   for (const ev of seed.auditEvents) {
     await clientOrPool.query(
       `INSERT INTO audit_events (seq, ts, actor, event_type, payload, prev_hash, hash)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
-       ON CONFLICT (seq) DO NOTHING`,
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
       [ev.seq, ev.ts, ev.actor, ev.event_type, JSON.stringify(ev.payload), ev.prev_hash, ev.hash]
     );
   }

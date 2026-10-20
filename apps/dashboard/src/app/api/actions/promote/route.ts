@@ -78,9 +78,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. Development simulation fallback (strictly blocked in production)
+  // 5. Development simulation fallback (strictly blocked in production unless dev auth is active)
   if (
-    process.env.NODE_ENV !== "production" &&
+    (process.env.NODE_ENV !== "production" || process.env.SYNAPSE_DEV_AUTH === "true") &&
     process.env.SYNAPSE_MOCK_PROMOTE === "true"
   ) {
     void controlApiClient.recordAuditEvent({

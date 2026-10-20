@@ -1,0 +1,7 @@
+{
+  "ops-emergency-key": {
+    "public_key": "NqRFq_DnoHIMLK_hmD0d_OI_uuYyY2QblHyZZLEyiU4",
+    "role": "operator",
+    "max_ttl_seconds": 86400
+  }
+}

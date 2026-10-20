@@ -114,6 +114,27 @@ export class ControlApiClient {
   }
 
   /**
+   * Fetches full emergency lease inventory from GET /v1/leases with fallback to GET /v1/sdk/state
+   */
+  async fetchLeasesInventory(env: string = "prod"): Promise<ActiveLeaseView[]> {
+    interface LeasesPayload {
+      leases?: LeaseEnvelope[];
+      server_time?: string;
+    }
+
+    const data = await this.fetchJson<LeasesPayload>(
+      `/v1/leases?env=${encodeURIComponent(env)}`
+    );
+
+    if (data && Array.isArray(data.leases)) {
+      const referenceTime = data.server_time ? new Date(data.server_time) : new Date();
+      return data.leases.map((env) => calculateLeaseExpiryView(env, referenceTime));
+    }
+
+    return this.fetchActiveLeases(env);
+  }
+
+  /**
    * Fetches audit trail events from GET /v1/audit/events
    */
   async fetchAuditEvents(

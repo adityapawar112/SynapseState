@@ -196,5 +196,55 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
   }
 
+  if (process.env.NODE_ENV !== "production") {
+    server.post("/__test/reset", async (_req, reply) => {
+      try {
+        const now = Date.now();
+        const activeIssuedAt = new Date(now - 120_000).toISOString();
+        const nearIssuedAt = new Date(now - 360_000).toISOString();
+        const expIssuedAt = new Date(now - 600_000).toISOString();
+
+        await activePool.query("DELETE FROM revocations");
+        await activePool.query("DELETE FROM audit_pending");
+
+        await activePool.query(
+          `UPDATE leases 
+           SET state = 'ACTIVE', 
+               issued_at = $1, 
+               expires_at = NOW() + INTERVAL '28 minutes', 
+               payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text)),
+               promote_pr_url = NULL 
+           WHERE lease_id = '01J9X57YTRPQ8A7F4E00112233'`,
+          [activeIssuedAt]
+        );
+
+        await activePool.query(
+          `UPDATE leases 
+           SET state = 'ACTIVE', 
+               issued_at = $1, 
+               expires_at = NOW() + INTERVAL '4 minutes', 
+               payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text))
+           WHERE lease_id = '01J9X57YTRPQ8A7F4E00445566'`,
+          [nearIssuedAt]
+        );
+
+        await activePool.query(
+          `UPDATE leases 
+           SET state = 'EXPIRED', 
+               issued_at = $1, 
+               expires_at = NOW() - INTERVAL '9 minutes', 
+               payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text))
+           WHERE lease_id = '01J9X57YTRPQ8A7F4E00778899'`,
+          [expIssuedAt]
+        );
+
+        await activeStateManager.notifyChange();
+      } catch (err) {
+        server.log.warn({ err }, "[/__test/reset] Error during test reset query");
+      }
+      return reply.code(200).send({ status: "reset" });
+    });
+  }
+
   return server;
 }

@@ -27,8 +27,8 @@ export default async function LeasesPage({ searchParams }: LeasesPageProps) {
   }
   const role: UserRole = user?.role || "viewer";
 
-  // Fetch active leases
-  const allLeases = await controlApiClient.fetchActiveLeases(currentEnv);
+  // Fetch lease inventory
+  const allLeases = await controlApiClient.fetchLeasesInventory(currentEnv);
 
   const filteredLeases = allLeases.filter((lease) => {
     if (filter === "active") return lease.remainingSeconds > 300;
