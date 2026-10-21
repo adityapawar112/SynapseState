@@ -141,3 +141,58 @@ jobs:
       - name: Run Chaos Failure Drills
         run: pnpm run test:drills
 
+  load-benchmarks:
+    name: k6 Load & Saturation Regression Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Start Mock Control API
+        run: |
+          pnpm exec tsx load/k6/mock-server.ts &
+          sleep 3
+          curl --fail http://127.0.0.1:3000/health
+
+      - name: Run k6 Mixed-Stress Smoke Benchmark (Regression Enforcement)
+        env:
+          CONTROL_API_URL: "http://127.0.0.1:3000"
+          SUMMARY_PATH: "load/summary.json"
+        run: pnpm run test:load
+
+      - name: Run k6 4-Phase Story Arc Benchmark
+        env:
+          CONTROL_API_URL: "http://127.0.0.1:3000"
+          SUMMARY_PATH: "load/summary.json"
+          DURATION: "30s"
+          VUS: "20"
+          TELEMETRY_VUS: "20"
+          WAIT_TIME: "5s"
+        run: pnpm run test:load:story-arc
+
+      - name: Upload k6 Benchmark Summary Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-benchmark-summary
+          path: load/summary.json
+          retention-days: 30
+

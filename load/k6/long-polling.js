@@ -5,6 +5,7 @@ import {
   TARGET_ENV,
   DEFAULT_WAIT_SECONDS,
   createEmergencyLease,
+  createEmergencyRevocation,
   getStandardHeaders,
   propagationLagTrend,
   longPoll200Counter,
@@ -12,6 +13,7 @@ import {
   longPollErrorRate,
   longPollDurationTrend,
   invalidationWakeupLagTrend,
+  handleSummary,
 } from "./common.js";
 
 /**
@@ -180,25 +182,48 @@ export function pollState() {
   sleep(Math.random() * 0.4 + 0.1);
 }
 
+let activeLeaseId = null;
+
 /**
  * Live Emergency Lease Mutator for invalidation wakeup benchmarking.
+ * Cycles between emergency override injection and revocation to exercise bidirectional invalidations.
  */
 export function mutateLease() {
-  const lease = createEmergencyLease(
-    TARGET_ENV,
-    "killswitch-payment-v2",
-    true,
-    "INC-991: Automated load test override injection",
-  );
-  const url = `${BASE_URL}/v1/leases`;
-  const res = http.post(url, JSON.stringify(lease), {
-    headers: getStandardHeaders(),
-    timeout: "10s",
-  });
+  if (!activeLeaseId) {
+    const lease = createEmergencyLease(
+      TARGET_ENV,
+      "killswitch-payment-v2",
+      true,
+      "INC-991: Automated load test override injection",
+    );
+    activeLeaseId = lease.payload.lease_id;
+    const url = `${BASE_URL}/v1/leases`;
+    const res = http.post(url, JSON.stringify(lease), {
+      headers: getStandardHeaders(),
+      timeout: "10s",
+    });
 
-  check(res, {
-    "lease mutation accepted": (r) => r.status === 201 || r.status === 200,
-  });
+    check(res, {
+      "lease mutation accepted": (r) => r.status === 201 || r.status === 200,
+    });
+  } else {
+    const revocation = createEmergencyRevocation(
+      activeLeaseId,
+      TARGET_ENV,
+      "INC-991: Automated load test override revocation",
+    );
+    const url = `${BASE_URL}/v1/leases/${encodeURIComponent(activeLeaseId)}/revoke`;
+    const res = http.post(url, JSON.stringify(revocation), {
+      headers: getStandardHeaders(),
+      timeout: "10s",
+    });
+
+    check(res, {
+      "lease revocation accepted": (r) => r.status === 200 || r.status === 204,
+    });
+
+    activeLeaseId = null;
+  }
 
   sleep(15);
 }
@@ -206,3 +231,5 @@ export function mutateLease() {
 export default function () {
   pollState();
 }
+
+export { handleSummary };

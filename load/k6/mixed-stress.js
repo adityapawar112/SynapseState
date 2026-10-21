@@ -8,6 +8,7 @@ import {
   SAMPLE_SERVICES,
   generateTelemetryBatch,
   createEmergencyLease,
+  createEmergencyRevocation,
   getStandardHeaders,
   propagationLagTrend,
   longPoll200Counter,
@@ -22,7 +23,27 @@ import {
   telemetryEvaluationsCounter,
   bulkheadIsolationViolations,
   bulkheadStateDeliveriesUnderShedding,
+  handleSummary,
 } from "./common.js";
+
+/**
+ * Parses duration strings like "10m", "30s", "1m30s" into total seconds.
+ */
+function parseDurationToSeconds(str) {
+  if (!str) return 0;
+  let total = 0;
+  const matches = str.matchAll(/(\d+)(h|m|s)/g);
+  let matched = false;
+  for (const m of matches) {
+    matched = true;
+    const val = parseInt(m[1], 10);
+    const unit = m[2];
+    if (unit === "h") total += val * 3600;
+    else if (unit === "m") total += val * 60;
+    else if (unit === "s") total += val;
+  }
+  return matched ? total : parseInt(str, 10) || 0;
+}
 
 /**
  * k6 Mixed Traffic & Stress Scenarios for SynapseState Control API.
@@ -49,9 +70,26 @@ function getScenarios() {
 
   // Allow command-line DURATION override if provided
   if (__ENV.DURATION) {
+    const targetSeconds = parseDurationToSeconds(__ENV.DURATION);
     for (const key of Object.keys(result)) {
       if (result[key].duration) {
         result[key].duration = __ENV.DURATION;
+      } else if (Array.isArray(result[key].stages) && targetSeconds > 0) {
+        // Calculate original total seconds across stages
+        let originalSec = 0;
+        for (const stage of result[key].stages) {
+          originalSec += parseDurationToSeconds(stage.duration);
+        }
+        if (originalSec > 0) {
+          const ratio = targetSeconds / originalSec;
+          for (const stage of result[key].stages) {
+            const sec = Math.max(
+              1,
+              Math.round(parseDurationToSeconds(stage.duration) * ratio),
+            );
+            stage.duration = `${sec}s`;
+          }
+        }
       }
     }
   }
@@ -218,27 +256,50 @@ export function flushTelemetry() {
   sleep(Math.random() * 0.3 + 0.1);
 }
 
+let stressActiveLeaseId = null;
+
 /**
  * Scenario Function: Live Emergency Lease Mutator.
- * Regularly injects break-glass leases to measure active invalidation wakeups.
+ * Regularly injects and revokes break-glass leases to measure active invalidation wakeups.
  */
 export function mutateLease() {
-  const lease = createEmergencyLease(
-    TARGET_ENV,
-    "checkout-redesign",
-    true,
-    "INC-991: Test emergency override injection",
-  );
-  const url = `${BASE_URL}/v1/leases`;
-  const res = http.post(url, JSON.stringify(lease), {
-    headers: getStandardHeaders(),
-    timeout: "10s",
-  });
+  if (!stressActiveLeaseId) {
+    const lease = createEmergencyLease(
+      TARGET_ENV,
+      "checkout-redesign",
+      true,
+      "INC-991: Test emergency override injection",
+    );
+    stressActiveLeaseId = lease.payload.lease_id;
+    const url = `${BASE_URL}/v1/leases`;
+    const res = http.post(url, JSON.stringify(lease), {
+      headers: getStandardHeaders(),
+      timeout: "10s",
+    });
 
-  check(res, {
-    "lease mutation status is 201 or 200": (r) =>
-      r.status === 201 || r.status === 200,
-  });
+    check(res, {
+      "lease mutation status is 201 or 200": (r) =>
+        r.status === 201 || r.status === 200,
+    });
+  } else {
+    const revocation = createEmergencyRevocation(
+      stressActiveLeaseId,
+      TARGET_ENV,
+      "INC-991: Test emergency override revocation",
+    );
+    const url = `${BASE_URL}/v1/leases/${encodeURIComponent(stressActiveLeaseId)}/revoke`;
+    const res = http.post(url, JSON.stringify(revocation), {
+      headers: getStandardHeaders(),
+      timeout: "10s",
+    });
+
+    check(res, {
+      "lease revocation status is 200 or 204": (r) =>
+        r.status === 200 || r.status === 204,
+    });
+
+    stressActiveLeaseId = null;
+  }
 
   sleep(15);
 }
@@ -254,3 +315,5 @@ export default function () {
     flushTelemetry();
   }
 }
+
+export { handleSummary };

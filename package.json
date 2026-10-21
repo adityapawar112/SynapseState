@@ -19,6 +19,9 @@
     "test:load:long-polling": "k6 run load/k6/long-polling.js",
     "test:load:telemetry": "k6 run load/k6/telemetry.js",
     "test:load:stress": "k6 run -e PROFILE=stress load/k6/mixed-stress.js",
+    "test:load:soak": "k6 run -e PROFILE=soak load/k6/mixed-stress.js",
+    "test:load:story-arc": "k6 run load/k6/story-arc.js",
+    "test:load:mock": "tsx load/k6/mock-server.ts",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,json,md,yaml}\""
   },
