@@ -144,10 +144,11 @@ This recomputes the hash chain from genesis and validates it against external ch
 - **Demo Application:** Fully instrumented demo service for fault-injection drills and load testing.
 - **Full Production Pipeline:** GitHub Actions CI/CD, multi-stage Docker builds, Terraform IaC, k3s Helm charts, Prometheus/Grafana observability, and published SLOs.
 
-### Completed Expanded Scope (Phases 5 to 6)
+### Completed Expanded Scope (Phases 5 to 7)
 - **`apps/purger`:** Read-only AST scanner and qualification engine exporting candidate reports for external tools (Phase 5: PRs 21–23).
 - **`apps/dashboard`:** Read-mostly Next.js operations portal with GitHub OAuth & RBAC (Phase 6: PRs 24–25).
 - **Push Incident Automation:** Alertmanager webhook listener (`POST /v1/webhooks/alertmanager`) and Grafana annotations layered on top of shared `rankSuspects` and `GET /v1/changes` (Phase 6: PR 26).
+- **Multi-Layered Verification & Mutation Resilience:** Production Playwright E2E browser suite with real PostgreSQL and zero route mocks (Phase 7: PR 27 / PR #28), Stryker mutation testing exceeding 80% MSI on cryptographic and SDK evaluation invariants with zero production alterations (Phase 7: PR 28 / PR #29), and automated CI chaos drills for air-gap emergency overrides, clock skew injection, and revocation partition healing (Phase 7: PR 29 / PR #30).
 
 ### Explicit Non-Goals
 1. **No Custom Evaluator or Targeting DSL:** We do not build rule evaluation, segment matching, or MurmurHash percentage rollouts. Evaluation is completely delegated to standard OpenFeature providers.

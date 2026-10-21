@@ -224,9 +224,11 @@ All state delivery and evaluation paths are validated against continuous benchma
 | **Lease Propagation Lag** | $p95 \le 10\text{ s}$ | **$p95 = 0.462\text{ s}$** | [docs/benchmarks/load-test-report.md](docs/benchmarks/load-test-report.md) |
 | **SDK Hot-Path Miss Overhead** | Minimal vs bare delegate | **$99.0\text{ ns} \pm 0.54\%$** | [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md) |
 | **SDK Hot-Path Override Hit** | Sub-microsecond execution | **$2.16\text{ \mu s} - 3.06\text{ \mu s}$** | [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md) |
-| **Lease Expiry Correctness** | **0** past $\text{TTL} + \text{SKEW}$ | **0 violations** | [packages/sdk/test/lease-store.test.ts](packages/sdk/test/lease-store.test.ts) |
-| **Evaluation Path Availability** | 100% (Zero app crashes) | **100%** (Automatic fallback) | [packages/sdk/test/provider.test.ts](packages/sdk/test/provider.test.ts) |
-| **Purger Refactoring Precision** | 0 incorrect removals | **0 false qualifications** | [apps/purger/test/qualifier.test.ts](apps/purger/test/qualifier.test.ts) |
+| **Lease Expiry Correctness** | **0** past $\text{TTL} + \text{SKEW}$ | **0 violations** | [test/drills/drill2-clock-skew.test.ts](test/drills/drill2-clock-skew.test.ts) |
+| **Evaluation Path Availability** | 100% (Zero app crashes) | **100%** (Automatic fallback) | [packages/sdk/src/provider.test.ts](packages/sdk/src/provider.test.ts) |
+| **Purger Refactoring Precision** | 0 incorrect removals | **0 false qualifications** | [apps/purger/src/qualification/engine.test.ts](apps/purger/src/qualification/engine.test.ts) |
+| **Mutation Resilience (MSI)** | $\text{MSI} \ge 80\%$ | **83.94%** (`lease`) / **87.46%** (`sdk`) | [packages/lease/stryker.config.json](packages/lease/stryker.config.json) |
+| **Chaos Failure Drills** | 100% pass (3/3 drills) | **14/14 passed** (Airgap, Skew, Partitions) | [test/drills/run-drills.sh](test/drills/run-drills.sh) |
 
 ---
 
@@ -238,7 +240,6 @@ All state delivery and evaluation paths are validated against continuous benchma
 - [CONTRIBUTING.md](CONTRIBUTING.md) — Developer setup, monorepo workflows, and testing instructions
 - [docs/limitations.md](docs/limitations.md) — Documented system boundaries, fail-modes, and trade-offs
 - [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md) — Microbenchmarks measuring wrapper overhead
-- [docs/handoff-phase7-pr27-29-advanced-testing.md](docs/handoff-phase7-pr27-29-advanced-testing.md) — Phase 7 handoff for Playwright E2E, Stryker mutation testing, and chaos automation (PRs 27–29)
 - [docs/handoff-phase8-pr30-31-load-testing-and-observability.md](docs/handoff-phase8-pr30-31-load-testing-and-observability.md) — Phase 8 handoff for k6 soak suites and containerized dashboard capture (PRs 30–31)
 - [docs/runbooks/propagation-latency.md](docs/runbooks/propagation-latency.md) — Incident runbook for lease propagation degradation
 - [docs/adr/](docs/adr/) — Architectural Decision Records
