@@ -30,7 +30,7 @@ To guarantee incident-safety without compromising application hot paths, Synapse
 | ------------------ | ---------------------------------- | ------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | **PR 27 (PR #28)** | `test/dashboard-playwright-e2e`    | Production E2E Browser Testing       | **COMPLETED & APPROVED**               | 16/16 tests pass, 0 route mocks, live PG + mock dual-mode                                         |
 | **PR 28 (PR #29)** | `test/mutation-stryker-invariants` | Cryptographic & SDK Mutation Testing | **COMPLETED & APPROVED (PR #29)**      | MSI **83.94%** (`lease`) & **87.46%** (`sdk`) $\ge 80\%$, zero production code modifications      |
-| **PR 29**          | `test/chaos-drill-automation`      | CI Chaos Drills & Fault Injection    | **READY FOR IMPLEMENTATION (NEXT PR)** | 3/3 chaos drills automated in GitHub Actions, zero post-deadline leaks, zero unhandled exceptions |
+| **PR 29**          | `test/chaos-drill-automation`      | CI Chaos Drills & Fault Injection    | **COMPLETED & VERIFIED**               | 3/3 chaos drills automated in GitHub Actions (14/14 tests pass), zero post-deadline leaks, zero unhandled exceptions |
 
 ---
 
@@ -136,10 +136,11 @@ pnpm test
 
 ---
 
-## 4. PR 29: Automated Chaos & Fault-Injection Pipeline — [NEXT UP: READY FOR IMPLEMENTATION]
+## 4. PR 29: Automated Chaos & Fault-Injection Pipeline — [COMPLETED & VERIFIED]
 
 > **Branch:** `test/chaos-drill-automation`  
-> **Base Branch:** `main` (after merging PR #29)  
+> **Base Branch:** `main`  
+> **Status:** **Completed & Verified**  
 > **Mission:** Elevate the 3 existing chaos failure drills in [`test/drills/`](file:///c:/Users/adity/Desktop/Projects/SynapseState/test/drills/) into a dedicated, isolated continuous integration workflow and verification harness.  
 > **Charter Alignment:** AGENTS.md §2 (Invariants 1, 2, 3), docs/ARCHITECTURE.md §10 (Threat Model & Disaster Recovery), docs/ROADMAP.md §5 Deliverable 4.4 & §7.3.
 
@@ -312,5 +313,5 @@ All Phase 7 pull requests must satisfy these quantitative kill criteria prior to
 | **E2E Pass Rate (PR 27 / PR #28)**          | 100% (16/16 tests passing)          | Any flake, route-interception mock, or unasserted reset failure.          | **MET (16/16 Passed)**                |
 | **Mutation Score - Lease (PR 28 / PR #29)** | $\text{MSI} \ge 80\%$               | $\text{MSI} < 80\%$ or surviving mutant in Ed25519 verification.          | **MET (83.94% MSI / 86.13% Covered)** |
 | **Mutation Score - SDK (PR 28 / PR #29)**   | $\text{MSI} \ge 80\%$               | $\text{MSI} < 80\%$ or surviving mutant in dual-clock expiry calculation. | **MET (87.46% MSI / 87.72% Covered)** |
-| **Chaos Failure Drills (PR 29)**            | 100% pass (3/3 drills, 14/14 tests) | Single unhandled exception or lease surviving past TTL bound.             | **READY FOR IMPLEMENTATION**          |
+| **Chaos Failure Drills (PR 29)**            | 100% pass (3/3 drills, 14/14 tests) | Single unhandled exception or lease surviving past TTL bound.             | **MET (14/14 Passed, 0 Leaks)**       |
 | **Hot-Path Overhead Impact**                | 0 ns added to `OverrideProvider`    | Any regression in hot-path benchmark resolution.                          | **MET (Zero Hot-Path Changes)**       |
