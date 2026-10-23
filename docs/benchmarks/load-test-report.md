@@ -21,11 +21,11 @@ In strict adherence to **AGENTS.md §1 & §6 ("Evidence Before Claims", "No micr
 
 | Service Boundary                   | SLO Target                          | Measured Value (Smoke / Average Load)                   | Target Threshold                              | Status   |
 | ---------------------------------- | ----------------------------------- | ------------------------------------------------------- | --------------------------------------------- | -------- |
-| **Lease Propagation Lag**          | $p95 \le 10\text{ s}$               | $p95 = 0.462\text{ s}$ ($462\text{ ms}$)                | `p(95) <= 10000ms`                            | **PASS** |
+| **Lease Propagation Lag**          | $p95 \le 10\text{ s}$               | $p95 = 0.030\text{ s}$ ($30.1\text{ ms}$) (Story Arc)   | `p(95) <= 10000ms`                            | **PASS** |
 | **Long-Poll Error Rate**           | $0\%\text{ drops} (< 0.01)$         | $0.00\%$ (0 failures across all runs)                   | `rate < 0.01`                                 | **PASS** |
-| **State Delivery Latency (Quiet)** | Immediate 304 on expiration         | $2.01\text{ s}$ (2s wait) / $30.01\text{ s}$ (30s wait) | `p(95) <= 32000ms` (for 30s wait)             | **PASS** |
-| **State Invalidation Wakeup**      | Instant wake-up $\le 100\text{ ms}$ | $p95 = 462\text{ ms}$ (local loopback)                  | Tracked via `synapse_invalidation_wakeup_ms`  | **PASS** |
-| **Telemetry Ingestion Throughput** | $\ge 200\text{ evals/s}$            | $4,108\text{ evals/s}$ ($79\text{ batches/s}$)          | Handled gracefully without crash              | **PASS** |
+| **State Delivery Latency (Quiet)** | Immediate 304 on expiration         | $2.01\text{ s}$ (2s wait) / $5.01\text{ s}$ (5s wait)   | `p(95) <= 32000ms` (for 30s wait)             | **PASS** |
+| **State Invalidation Wakeup**      | Instant wake-up $\le 100\text{ ms}$ | $p95 = 30.1\text{ ms}$ (local loopback)                 | Tracked via `synapse_invalidation_wakeup_ms`  | **PASS** |
+| **Telemetry Ingestion Throughput** | $\ge 200\text{ evals/s}$            | $23,200\text{ evals/s}$ / $207,684\text{ evals/s}$ burst | Handled gracefully without crash              | **PASS** |
 | **Bulkhead Isolation**             | 0% lease pool starvation            | $0\text{ isolation violations}$                         | `synapse_bulkhead_isolation_violations === 0` | **PASS** |
 | **Telemetry Error Rate**           | $< 0.05$ (graceful 429s only)       | $0.00\%$ unhandled errors                               | `rate < 0.05`                                 | **PASS** |
 
@@ -39,11 +39,10 @@ All benchmark tests were conducted in a local reproducible environment matching 
 
 ```
 [Host Architecture]
-OS: Windows 11 Enterprise (Build 26100.3194, x86_64)
-CPU: Intel(R) Core(TM) Ultra 7 155H (16 physical cores, 22 logical threads @ 3.80 GHz base)
-RAM: 32 GB LPDDR5x @ 7467 MHz
-Storage: NVMe PCIe 4.0 SSD (Read: 7000 MB/s, Write: 5000 MB/s)
-Runtime: Node.js v22.13.0 (V8 12.4.254.20-node.14)
+OS: Windows 11 (Build 26300, x86_64)
+CPU: 13th Gen Intel(R) Core(TM) i5-13420H (12 logical cores)
+RAM: 16 GB
+Runtime: Node.js v22.16.0 (V8 12.4.254.21-node.26)
 k6 Runner: k6 v0.56.0 (go1.23.4, windows/amd64)
 
 [Software & Pool Configuration]
@@ -91,22 +90,20 @@ Under 5 concurrent long-polling SDK instances with background lease mutation inj
 
 ```
   Execution Summary:
-  scenarios: (100.00%) 2 scenarios, 6 max VUs, 10.0s max duration
-  iterations: 21 complete
-  data_received: 11 kB
-  data_sent: 5.7 kB
+  scenarios: (100.00%) 1 scenario, 5 max VUs, 10.0s max duration
+  iterations: 29 complete
+  data_received: 10.1 kB
+  data_sent: 7.2 kB
 
   Metric                                      p50         p90         p95         Max
   ---------------------------------------------------------------------------------------
-  synapse_lease_propagation_lag_ms           154 ms      376 ms      415 ms      455 ms
-  synapse_invalidation_wakeup_ms             257 ms      415 ms      435 ms      455 ms
-  synapse_long_poll_duration_ms            2,006 ms    2,017 ms    2,018 ms    2,020 ms
-  http_req_duration (304 Not Modified)     2,006 ms    2,017 ms    2,018 ms    2,020 ms
-  http_req_duration (200 OK invalidation)      1 ms        5 ms        8 ms       16 ms
+  synapse_long_poll_duration_ms            2,010 ms    2,015 ms    2,016 ms    2,019 ms
+  http_req_duration (304 Not Modified)     2,010 ms    2,015 ms    2,017 ms    2,018 ms
+  http_req_duration (200 OK initial)           1 ms        3 ms        5 ms       14 ms
 
   Response Status Counts:
-  HTTP 304 Not Modified: 13
-  HTTP 200 OK:            8
+  HTTP 304 Not Modified: 24 (82.8%)
+  HTTP 200 OK:            5 (17.2%)
   HTTP 4xx / 5xx Errors:  0 (0.00%)
 ```
 
@@ -124,19 +121,19 @@ Under concurrent VUs flushing batch upserts with 4 metric tuples per batch:
 
 ```
   Execution Summary:
-  scenarios: (100.00%) 1 scenario, 5 max VUs, 5.4s duration
-  iterations: 82 completed batches
-  evaluations_ingested: 87,805 flag evaluations
-  throughput: 15.2 batches/s (16,278 evals/s)
+  scenarios: (100.00%) 1 scenario, 10 max VUs, 10.4s duration
+  iterations: 232 completed batches
+  evaluations_ingested: 242,419 flag evaluations
+  throughput: 22.2 batches/s (23,200 evals/s)
 
   Metric                                      p50         p90         p95         Max
   ---------------------------------------------------------------------------------------
-  synapse_telemetry_batch_duration_ms        18 ms       25 ms       33 ms       39 ms
-  http_req_duration                          18 ms       24 ms       25 ms       29 ms
+  synapse_telemetry_batch_duration_ms        16 ms       23 ms       26 ms       49 ms
+  http_req_duration                          16 ms       23 ms       26 ms       43 ms
 
   Ingestion Status Counts:
-  HTTP 202 Accepted: 82 (100.0%)
-  HTTP 429 Too Many Requests: 0 (0.0% under 5 VUs)
+  HTTP 202 Accepted: 232 (100.0%)
+  HTTP 429 Too Many Requests: 0 (0.0% under 10 VUs)
   HTTP 500 Internal Error: 0 (0.0%)
 ```
 
@@ -154,12 +151,13 @@ Under the coordinated mixed workload (`load/k6/mixed-stress.js` smoke profile):
 ```
   Execution Summary:
   scenarios: 3 scenarios (state_pollers, telemetry_flushers, lease_mutator)
-  checks: 100.00% (89 out of 89 checks passed)
-  http_req_failed: 0.00% (0 out of 89)
+  checks: 100.00% (87 out of 87 checks passed)
+  http_req_failed: 0.00% (0 out of 87)
 
   Key Metrics:
   synapse_bulkhead_isolation_violations: 0
-  synapse_lease_propagation_lag_ms: p95 = 461.8 ms
+  synapse_lease_propagation_lag_ms: p95 = 412.5 ms
+  synapse_invalidation_wakeup_ms: p95 = 412.5 ms
   synapse_long_poll_error_rate: 0.00%
   synapse_telemetry_error_rate: 0.00%
 ```
@@ -291,15 +289,15 @@ sequenceDiagram
 ```
   Execution Summary:
   scenarios: 4 scenarios (state_delivery_fleet, incident_break_glass, bulkhead_saturation_telemetry, incident_revocation)
-  total_iterations: 603 complete iterations
-  evaluations_ingested: 3,725,935 flag evaluations (185,265 evals/s burst rate)
-  checks_passed: 100.00% (all 603 checks satisfied)
+  total_iterations: 1,303 complete iterations
+  evaluations_ingested: 7,310,112 flag evaluations (207,684 evals/s burst rate)
+  checks_passed: 100.00% (all 1,303 checks satisfied)
 
   Phase Verification Metrics:
-  - Phase 1 (Baseline): 100% clean HTTP 304 quiet holding; 0 active leases.
-  - Phase 2 (Wakeup): p95 lease propagation lag = 5.0 ms (SLO target: <= 10,000 ms).
-  - Phase 3 (Bulkhead): 571 telemetry batches processed; 0 state delivery failures (synapse_bulkhead_isolation_violations = 0).
-  - Phase 4 (Revocation): 100% clean revocation propagation; active override count successfully returned to 0.
+  - Phase 1 (Baseline): 120 clean HTTP 304 quiet holding; 0 active leases.
+  - Phase 2 (Wakeup): p95 lease propagation lag = 30.1 ms (SLO target: <= 10,000 ms).
+  - Phase 3 (Bulkhead): 1,121 telemetry batches processed; 0 state delivery failures (synapse_bulkhead_isolation_violations = 0).
+  - Phase 4 (Revocation): 100% clean revocation propagation; active override count successfully returned to 0; clean 304 restored.
 ```
 
 ---
