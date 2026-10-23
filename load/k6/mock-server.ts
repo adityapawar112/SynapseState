@@ -35,6 +35,7 @@ interface EnvState {
   activeLeases: Map<string, ActiveLease>;
   etag: string;
   waiters: Set<() => void>;
+  revocations: Array<{ lease_id: string; revoked_at: string; reason: string }>;
 }
 
 const envStates = new Map<string, EnvState>();
@@ -64,6 +65,7 @@ function computeEtagForState(state: EnvState): string {
   const content = canonicalize({
     version: state.version,
     leases: Array.from(state.activeLeases.values()),
+    revocations: state.revocations,
   });
   return crypto.createHash("sha256").update(content).digest("hex");
 }
@@ -76,6 +78,7 @@ function getOrCreateEnvState(env: string): EnvState {
       activeLeases: new Map<string, ActiveLease>(),
       etag: "",
       waiters: new Set<() => void>(),
+      revocations: [],
     };
     state.etag = computeEtagForState(state);
     envStates.set(env, state);
@@ -251,6 +254,45 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET /metrics (Prometheus-compatible exposition format)
+  if (req.method === "GET" && pathname === "/metrics") {
+    const mem = process.memoryUsage();
+    const prodState = getOrCreateEnvState("production");
+    const body = [
+      "# HELP process_resident_memory_bytes Resident memory size in bytes.",
+      "# TYPE process_resident_memory_bytes gauge",
+      `process_resident_memory_bytes ${mem.rss}`,
+      "# HELP process_heap_used_bytes Process heap used in bytes.",
+      "# TYPE process_heap_used_bytes gauge",
+      `process_heap_used_bytes ${mem.heapUsed}`,
+      "# HELP synapse_leases_active Number of currently active signed emergency leases.",
+      "# TYPE synapse_leases_active gauge",
+      `synapse_leases_active{env="production"} ${prodState.activeLeases.size}`,
+      "# HELP synapse_waiters_active Number of long-polling clients currently suspended.",
+      "# TYPE synapse_waiters_active gauge",
+      `synapse_waiters_active{env="production"} ${prodState.waiters.size}`,
+    ].join("\n") + "\n";
+
+    res.writeHead(200, {
+      "Content-Type": "text/plain; version=0.0.4",
+      "Content-Length": Buffer.byteLength(body),
+    });
+    res.end(body);
+    return;
+  }
+
+  // GET /v1/leases (Dashboard and SRE inventory query)
+  if (req.method === "GET" && pathname === "/v1/leases") {
+    const env = parsedUrl.searchParams.get("env") || "production";
+    const envState = getOrCreateEnvState(env);
+    sendJson(res, 200, {
+      leases: Array.from(envState.activeLeases.values()),
+      revocations: envState.revocations,
+      total: envState.activeLeases.size,
+    });
+    return;
+  }
+
   // GET /v1/sdk/state
   if (req.method === "GET" && pathname === "/v1/sdk/state") {
     const env = parsedUrl.searchParams.get("env") || "production";
@@ -282,7 +324,7 @@ const server = http.createServer(async (req, res) => {
           server_time: new Date().toISOString(),
           registry_version: envState.version,
           active_leases: Array.from(envState.activeLeases.values()),
-          revocations: [],
+          revocations: envState.revocations,
           key_revocations: [],
         },
         {
@@ -331,7 +373,7 @@ const server = http.createServer(async (req, res) => {
             server_time: new Date().toISOString(),
             registry_version: envState.version,
             active_leases: Array.from(envState.activeLeases.values()),
-            revocations: [],
+            revocations: envState.revocations,
             key_revocations: [],
           },
           {
@@ -469,6 +511,51 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 201, {
       status: "ACTIVE",
       lease_id: body.payload.lease_id,
+      etag: envState.etag,
+    });
+    return;
+  }
+
+  // POST /v1/leases/:id/revoke (Emergency Break-Glass Revocation)
+  const revokeMatch = pathname.match(/^\/v1\/leases\/([^/]+)\/revoke$/);
+  if (req.method === "POST" && revokeMatch) {
+    const id = revokeMatch[1];
+    const rawBody = await readBody(req);
+    let body: {
+      payload?: { env?: string; revoked_at?: string; reason?: string };
+    } | null = null;
+    if (rawBody.trim().length > 0) {
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        sendJson(res, 400, { error: "Invalid JSON" });
+        return;
+      }
+    }
+
+    const env = body?.payload?.env || "production";
+    const envState = getOrCreateEnvState(env);
+
+    if (!envState.activeLeases.has(id)) {
+      sendJson(res, 404, {
+        error: `Lease "${id}" not found or already revoked`,
+      });
+      return;
+    }
+
+    envState.activeLeases.delete(id);
+    envState.revocations.push({
+      lease_id: id,
+      revoked_at: body?.payload?.revoked_at || new Date().toISOString(),
+      reason: body?.payload?.reason || "INC-991: Test override revoked",
+    });
+
+    notifyStateMutation(env);
+
+    sendJson(res, 200, {
+      status: "REVOKED",
+      lease_id: id,
+      state: "REVOKED",
       etag: envState.etag,
     });
     return;

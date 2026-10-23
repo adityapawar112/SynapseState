@@ -24,12 +24,13 @@ load/
 ├── README.md                 # This operational and architectural guide
 ├── tsconfig.json             # TypeScript configuration for mock server compilation
 └── k6/
-    ├── common.js             # Shared helpers, zero-context generator, and custom metrics
-    ├── config.json           # Standardized execution profiles (smoke, average_load, stress, spike)
-    ├── long-polling.js       # 100 concurrent SDK long-polling instances with ETag validation
-    ├── telemetry.js          # High-throughput batch upsert ingestion harness
-    ├── mixed-stress.js       # Combined multi-scenario reader/writer stress test
-    └── mock-server.ts        # Zero-dependency pure Node.js mock Control API for isolated local benchmarking
+    ├── common.js             # Shared helpers, zero-context generator, custom metrics & summary export
+    ├── config.json           # Standardized execution profiles (smoke, average_load, stress, spike, soak)
+    ├── long-polling.js       # 100 concurrent SDK long-polling instances with ETag validation & live mutations
+    ├── telemetry.js          # High-throughput batch upsert ingestion harness (configurable BATCH_SIZE)
+    ├── mixed-stress.js       # Combined multi-scenario reader/writer stress test (supports DURATION scaling)
+    ├── story-arc.js          # Standardized 4-phase operational story arc traffic orchestration
+    └── mock-server.ts        # Zero-dependency pure Node.js mock Control API with /metrics & revocation support
 ```
 
 ---
@@ -54,6 +55,8 @@ load/
 
    # Option B: Start standalone zero-dependency Mock Control API
    pnpm exec tsx load/k6/mock-server.ts
+   # or
+   pnpm run test:load:mock
    ```
 
 ---
@@ -81,16 +84,17 @@ k6 run -e VUS=200 -e WAIT_TIME=15s -e SYNAPSE_ENV=staging -e INJECT_MUTATIONS=tr
 
 Simulates concurrent microservices flushing evaluation metrics batches via `POST /v1/telemetry/batches`.
 
-- Bounded payload: only canonical `(flag_key, variant, reason, count)` tuples.
+- Bounded payload: only canonical `(flag_key, variant, reason, count)` tuples adhering strictly to Invariant 5.
 - Measures batch upsert throughput and verifies graceful bulkhead 429 load shedding.
 - Target endpoint configurable via `TELEMETRY_PATH` (defaults to `/v1/telemetry/batches`).
+- Batch size configurable via `BATCH_SIZE` (defaults to 4; supports 50+ for saturation).
 
 ```bash
 # Standard 20 VU flusher run
 k6 run load/k6/telemetry.js
 
-# Stress telemetry ingestion with 50 VUs
-k6 run -e VUS=50 load/k6/telemetry.js
+# Stress telemetry ingestion with 50 VUs and 50 metrics per batch (>5,000 evals/s)
+k6 run -e VUS=50 -e DURATION=1m -e BATCH_SIZE=50 load/k6/telemetry.js
 ```
 
 ### 4.3 Mixed Traffic & Stress Scenarios (`load/k6/mixed-stress.js`)
@@ -107,8 +111,31 @@ k6 run -e PROFILE=smoke load/k6/mixed-stress.js
 # Stress profile ramping up to 250 pollers + 150 flushers
 k6 run -e PROFILE=stress load/k6/mixed-stress.js
 
+# 10-Minute Sustained Soak Benchmark (validates Node.js RSS memory stability)
+k6 run -e PROFILE=soak load/k6/mixed-stress.js
+# or with stress profile scaled to 10 minutes:
+k6 run -e PROFILE=stress -e DURATION=10m load/k6/mixed-stress.js
+
 # Sudden traffic spike profile (surges from 10 to 300 VUs)
 k6 run -e PROFILE=spike load/k6/mixed-stress.js
+```
+
+### 4.4 Standardized 4-Phase Story Arc Traffic Orchestration (`load/k6/story-arc.js`)
+
+Orchestrates a complete operational incident lifecycle across 4 distinct phases:
+1. **Phase 1: Steady-State Baseline**: 100 concurrent SDKs long-polling with ETag caching (95%+ HTTP 304 quiet responses, 0 active leases).
+2. **Phase 2: 2 AM Incident Break-Glass Override**: SRE signs emergency lease (`checkout-v2-flow` = `true`). Control API broadcasts invalidation; SDKs wake up and ingest within $<500\text{ms}$ ($p95 \le 10\text{ s}$ SLO).
+3. **Phase 3: Bulkhead Saturation & Load-Shedding**: High-volume telemetry batch flushes (5,000+ evals/sec). Proves Invariant 1 bulkhead isolation: `telemetryPool` sheds load with HTTP 429 while `leasePool` state delivery remains 100% available with 0 drops.
+4. **Phase 4: Graceful Expiry & Revocation**: Lease is revoked via `POST /v1/leases/:id/revoke`. Active override count returns to 0; fleet returns to quiet 304 baseline.
+
+```bash
+# Standard 2m30s story arc run
+pnpm run test:load:story-arc
+# or
+k6 run load/k6/story-arc.js
+
+# Fast smoke run for CI or local smoke testing
+k6 run -e DURATION=30s -e VUS=20 -e TELEMETRY_VUS=20 -e WAIT_TIME=5s load/k6/story-arc.js
 ```
 
 ---

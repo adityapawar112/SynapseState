@@ -138,6 +138,28 @@ export function generateUlid() {
 }
 
 /**
+ * Parses duration strings like "10m", "30s", "1m30s" into total seconds.
+ * @param {string} str - Duration string.
+ * @param {number} [defaultValue=0] - Fallback seconds if undefined or unparseable.
+ * @returns {number} Total seconds.
+ */
+export function parseDurationToSeconds(str, defaultValue = 0) {
+  if (!str) return defaultValue;
+  let total = 0;
+  const matches = str.matchAll(/(\d+)(h|m|s)/g);
+  let matched = false;
+  for (const m of matches) {
+    matched = true;
+    const val = parseInt(m[1], 10);
+    const unit = m[2];
+    if (unit === "h") total += val * 3600;
+    else if (unit === "m") total += val * 60;
+    else if (unit === "s") total += val;
+  }
+  return matched ? total : parseInt(str, 10) || defaultValue;
+}
+
+/**
  * Generates a realistic TelemetryBatchPayload strictly complying with Invariant 5:
  * Zero-Context: NO user IDs, targeting attributes, or high-cardinality keys.
  * Note: Does NOT include synthetic propagation_lag_ms to prevent histogram contamination.
@@ -151,25 +173,43 @@ export function generateTelemetryBatch(serviceName, env, metricCount = 3) {
     SAMPLE_SERVICES[Math.floor(Math.random() * SAMPLE_SERVICES.length)];
   const resolvedEnv = env || TARGET_ENV;
 
-  const metrics = [];
-  const selectedFlags = shuffle(BOUNDED_FLAGS).slice(
-    0,
-    Math.min(metricCount, BOUNDED_FLAGS.length),
-  );
+  // Build candidate combinations of (flag_key, variant, reason)
+  const combinations = [];
+  for (const flag of BOUNDED_FLAGS) {
+    for (const variant of flag.variants) {
+      for (const reason of EVALUATION_REASONS) {
+        combinations.push({ flag_key: flag.key, variant, reason });
+      }
+    }
+  }
 
+  const shuffledCombinations = shuffle(combinations);
+  const selectedCount = Math.min(metricCount, shuffledCombinations.length);
+  const metrics = [];
   let totalEvals = 0;
-  for (const flag of selectedFlags) {
-    const variant =
-      flag.variants[Math.floor(Math.random() * flag.variants.length)];
-    const reason =
-      EVALUATION_REASONS[Math.floor(Math.random() * EVALUATION_REASONS.length)];
+
+  for (let i = 0; i < selectedCount; i++) {
+    const item = shuffledCombinations[i];
     const count = Math.floor(Math.random() * 500) + 10;
     totalEvals += count;
-
     metrics.push({
-      flag_key: flag.key,
-      variant,
-      reason,
+      flag_key: item.flag_key,
+      variant: item.variant,
+      reason: item.reason,
+      count,
+    });
+  }
+
+  // If requested metricCount exceeds unique combinations, pad with valid tuples
+  while (metrics.length < metricCount) {
+    const randomItem =
+      combinations[Math.floor(Math.random() * combinations.length)];
+    const count = Math.floor(Math.random() * 500) + 10;
+    totalEvals += count;
+    metrics.push({
+      flag_key: randomItem.flag_key,
+      variant: randomItem.variant,
+      reason: randomItem.reason,
       count,
     });
   }
@@ -202,6 +242,7 @@ export function createEmergencyLease(
   flagKey = "checkout-redesign",
   value = true,
   reason = "INC-991: Test emergency override",
+  kid = "ops-primary-01",
 ) {
   const issuedAt = new Date().toISOString();
   return {
@@ -214,10 +255,33 @@ export function createEmergencyLease(
       reason,
       issued_at: issuedAt,
       ttl_seconds: 1800,
-      kid: "ops-primary-01",
+      kid,
       nonce: generateUuid(),
     },
     sig: "TgoN0DAo2Qjza8myGFXI5jpvvOHLycr-G_NwCxVKZyrud6TpWyD9gzKRyiwAOZ_Ce85ENmyl-rwcv1T4pmv9Cg",
+  };
+}
+
+/**
+ * Creates a signed lease revocation payload for live revocation testing.
+ */
+export function createEmergencyRevocation(
+  leaseId,
+  env = TARGET_ENV,
+  reason = "INC-991: Test emergency override revocation",
+  kid = "ops-primary-01",
+) {
+  const revokedAt = new Date().toISOString();
+  return {
+    payload: {
+      v: 1,
+      lease_id: leaseId,
+      env,
+      revoked_at: revokedAt,
+      kid,
+      reason,
+    },
+    sig: "D3a22DWPSsxdkR9tsqXqKc6dYh6Ox3Y4tTGTJZ8sqIQj88cRLE27d5wNv8OqU9fWBk6Sq0pP0qFWxSqxp656Aw",
   };
 }
 
@@ -233,4 +297,63 @@ export function getStandardHeaders(extraHeaders = {}) {
     },
     extraHeaders,
   );
+}
+
+/**
+ * Formats a clean, readable ASCII summary table for terminal output.
+ */
+export function formatConsoleSummary(data) {
+  let output = "\n=======================================================\n";
+  output += "          SYNAPSESTATE LOAD BENCHMARK SUMMARY          \n";
+  output += "=======================================================\n\n";
+
+  if (data.root_group && data.root_group.checks) {
+    output += "CHECKS:\n";
+    for (const chk of data.root_group.checks) {
+      const total = chk.passes + chk.fails;
+      const passRate = total > 0 ? chk.passes / total : 1;
+      const mark = chk.fails === 0 ? "✓" : "✗";
+      output += `  ${mark} ${chk.name}: ${(passRate * 100).toFixed(1)}% (${chk.passes}/${total})\n`;
+    }
+    output += "\n";
+  }
+
+  output += "METRICS & LATENCIES:\n";
+  for (const [name, metric] of Object.entries(data.metrics)) {
+    if (metric.type === "trend") {
+      const vals = metric.values;
+      output += `  ${name.padEnd(42)}: avg=${vals.avg ? vals.avg.toFixed(1) : 0}ms p(50)=${vals.med ? vals.med.toFixed(1) : 0}ms p(95)=${vals["p(95)"] ? vals["p(95)"].toFixed(1) : 0}ms max=${vals.max ? vals.max.toFixed(1) : 0}ms\n`;
+    } else if (metric.type === "rate") {
+      output += `  ${name.padEnd(42)}: ${(metric.values.rate * 100).toFixed(2)}%\n`;
+    } else if (metric.type === "counter") {
+      output += `  ${name.padEnd(42)}: ${metric.values.count} (${metric.values.rate ? metric.values.rate.toFixed(1) : 0}/s)\n`;
+    }
+  }
+
+  output += "\nTHRESHOLDS & REGRESSION GATES:\n";
+  let allPassed = true;
+  for (const [name, metric] of Object.entries(data.metrics)) {
+    if (metric.thresholds) {
+      for (const [rule, result] of Object.entries(metric.thresholds)) {
+        const mark = result.ok ? "✓ PASS" : "✗ FAIL";
+        if (!result.ok) allPassed = false;
+        output += `  ${mark} [${name}] ${rule}\n`;
+      }
+    }
+  }
+
+  output += `\nOVERALL BENCHMARK RESULT: ${allPassed ? "PASS (All thresholds satisfied)" : "FAIL (Regression detected - exit code 99)"}\n`;
+  output += "=======================================================\n";
+  return output;
+}
+
+/**
+ * Standard k6 handleSummary callback for automated CI artifact export and console logging.
+ */
+export function handleSummary(data) {
+  const summaryPath = __ENV.SUMMARY_PATH || "load/summary.json";
+  return {
+    [summaryPath]: JSON.stringify(data, null, 2),
+    stdout: formatConsoleSummary(data),
+  };
 }

@@ -12,6 +12,7 @@ import {
   telemetryErrorRate,
   telemetryBatchDurationTrend,
   telemetryEvaluationsCounter,
+  handleSummary,
 } from "./common.js";
 
 /**
@@ -26,6 +27,7 @@ import {
 
 const VUS = parseInt(__ENV.VUS || "20", 10);
 const DURATION = __ENV.DURATION;
+const BATCH_SIZE = parseInt(__ENV.BATCH_SIZE || "4", 10);
 const ENDPOINT_PATH = TELEMETRY_PATH;
 
 const stagesConfig = DURATION
@@ -59,7 +61,7 @@ export default function () {
   const { payload, totalEvals } = generateTelemetryBatch(
     service,
     TARGET_ENV,
-    4,
+    BATCH_SIZE,
   );
 
   const url = `${BASE_URL}${ENDPOINT_PATH}`;
@@ -111,3 +113,5 @@ export default function () {
   // Realistic SDK flush cadence jitter
   sleep(Math.random() * 0.4 + 0.1);
 }
+
+export { handleSummary };

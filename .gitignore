@@ -48,6 +48,8 @@ playwright-report/
 test-results/
 .stryker-tmp/
 reports/
+summary.json
+load/summary*.json
 
 # Environment and Secrets
 .env

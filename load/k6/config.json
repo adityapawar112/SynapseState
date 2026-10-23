@@ -153,6 +153,33 @@
           }
         }
       }
+    },
+    "soak": {
+      "mixed": {
+        "scenarios": {
+          "state_pollers": {
+            "executor": "constant-vus",
+            "vus": 100,
+            "duration": "10m",
+            "exec": "pollState",
+            "gracefulStop": "15s"
+          },
+          "telemetry_flushers": {
+            "executor": "constant-vus",
+            "vus": 20,
+            "duration": "10m",
+            "exec": "flushTelemetry",
+            "gracefulStop": "15s"
+          },
+          "lease_mutator": {
+            "executor": "constant-vus",
+            "vus": 1,
+            "duration": "10m",
+            "exec": "mutateLease",
+            "gracefulStop": "5s"
+          }
+        }
+      }
     }
   },
   "thresholds": {
@@ -161,6 +188,6 @@
     "synapse_long_poll_error_rate": ["rate<0.01"],
     "synapse_telemetry_error_rate": ["rate<0.05"],
     "synapse_bulkhead_isolation_violations": ["count===0"],
-    "http_req_failed": ["rate<0.05"]
+    "http_req_failed": ["rate<0.01"]
   }
 }
