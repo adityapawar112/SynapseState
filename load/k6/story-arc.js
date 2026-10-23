@@ -23,6 +23,7 @@ import {
   telemetryEvaluationsCounter,
   bulkheadIsolationViolations,
   bulkheadStateDeliveriesUnderShedding,
+  parseDurationToSeconds,
   handleSummary,
 } from "./common.js";
 
@@ -41,24 +42,7 @@ const VUS = parseInt(__ENV.VUS || "100", 10);
 const TELEMETRY_VUS = parseInt(__ENV.TELEMETRY_VUS || "50", 10);
 const WAIT_TIME = __ENV.WAIT_TIME || DEFAULT_WAIT_SECONDS;
 
-// Parse overall duration in seconds (defaults to 150s = 2m30s)
-function parseDurationSec(str) {
-  if (!str) return 150;
-  let total = 0;
-  const matches = str.matchAll(/(\d+)(h|m|s)/g);
-  let matched = false;
-  for (const m of matches) {
-    matched = true;
-    const val = parseInt(m[1], 10);
-    const unit = m[2];
-    if (unit === "h") total += val * 3600;
-    else if (unit === "m") total += val * 60;
-    else if (unit === "s") total += val;
-  }
-  return matched ? total : parseInt(str, 10) || 150;
-}
-
-const totalSec = parseDurationSec(__ENV.DURATION);
+const totalSec = parseDurationToSeconds(__ENV.DURATION, 150);
 // Phase boundary proportions: Phase 1 (20%), Phase 2 (20%), Phase 3 (40%), Phase 4 (remaining ~20%)
 const p1Sec = Math.max(5, Math.round(totalSec * 0.2));
 const p2Sec = Math.max(5, Math.round(totalSec * 0.2));
@@ -125,8 +109,8 @@ export const options = {
   },
 };
 
-// Global shared state for break-glass incident
-let recordedLeaseId = "01J9X000000000000000000001";
+// Global shared state for break-glass incident (recorded on successful Phase 2 injection)
+let recordedLeaseId = null;
 
 // Per-VU caching for ETag validation
 let vuCachedEtag = "";
@@ -256,13 +240,17 @@ export function injectBreakGlassLease() {
     "INC-2041: 2 AM Emergency payment circuit breaker",
     "ops-primary-01",
   );
-  recordedLeaseId = lease.payload.lease_id;
 
   const url = `${BASE_URL}/v1/leases`;
   const res = http.post(url, JSON.stringify(lease), {
     headers: getStandardHeaders(),
     timeout: "10s",
   });
+
+  const success = res.status === 201 || res.status === 200;
+  if (success && lease?.payload?.lease_id) {
+    recordedLeaseId = lease.payload.lease_id;
+  }
 
   check(res, {
     "Phase 2: Emergency override injected successfully": (r) =>
@@ -315,14 +303,46 @@ export function flushBurstTelemetry() {
  * Phase 4 Worker: Revokes emergency override lease, restoring baseline state.
  */
 export function revokeBreakGlassLease() {
+  let leaseIdToRevoke = recordedLeaseId;
+
+  // In multi-scenario k6 runs where VUs do not share module JS state,
+  // query the active leases inventory to resolve the lease injected in Phase 2
+  if (!leaseIdToRevoke) {
+    const listUrl = `${BASE_URL}/v1/leases?env=${TARGET_ENV}`;
+    const listRes = http.get(listUrl, {
+      headers: getStandardHeaders(),
+      timeout: "10s",
+    });
+    if (listRes.status === 200) {
+      try {
+        const body = JSON.parse(listRes.body);
+        const match = (body.leases || []).find(
+          (l) => l?.payload?.flag_key === "checkout-v2-flow",
+        );
+        if (match?.payload?.lease_id) {
+          leaseIdToRevoke = match.payload.lease_id;
+        }
+      } catch {
+        // Fallback to null
+      }
+    }
+  }
+
+  if (!leaseIdToRevoke) {
+    check(null, {
+      "Phase 4: Emergency override revoked successfully": () => false,
+    });
+    return;
+  }
+
   const revocation = createEmergencyRevocation(
-    recordedLeaseId,
+    leaseIdToRevoke,
     TARGET_ENV,
     "INC-2041: Incident mitigated; emergency override recalled",
     "ops-primary-01",
   );
 
-  const url = `${BASE_URL}/v1/leases/${encodeURIComponent(recordedLeaseId)}/revoke`;
+  const url = `${BASE_URL}/v1/leases/${encodeURIComponent(leaseIdToRevoke)}/revoke`;
   const res = http.post(url, JSON.stringify(revocation), {
     headers: getStandardHeaders(),
     timeout: "10s",

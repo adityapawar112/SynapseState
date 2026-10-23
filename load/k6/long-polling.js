@@ -182,6 +182,8 @@ export function pollState() {
   sleep(Math.random() * 0.4 + 0.1);
 }
 
+// Note: Module-level lease ID assumes a single mutator VU (vus: 1).
+// If scaling mutator VUs in future scenarios, track lease IDs in a per-VU map or concurrent structure.
 let activeLeaseId = null;
 
 /**

@@ -23,27 +23,9 @@ import {
   telemetryEvaluationsCounter,
   bulkheadIsolationViolations,
   bulkheadStateDeliveriesUnderShedding,
+  parseDurationToSeconds,
   handleSummary,
 } from "./common.js";
-
-/**
- * Parses duration strings like "10m", "30s", "1m30s" into total seconds.
- */
-function parseDurationToSeconds(str) {
-  if (!str) return 0;
-  let total = 0;
-  const matches = str.matchAll(/(\d+)(h|m|s)/g);
-  let matched = false;
-  for (const m of matches) {
-    matched = true;
-    const val = parseInt(m[1], 10);
-    const unit = m[2];
-    if (unit === "h") total += val * 3600;
-    else if (unit === "m") total += val * 60;
-    else if (unit === "s") total += val;
-  }
-  return matched ? total : parseInt(str, 10) || 0;
-}
 
 /**
  * k6 Mixed Traffic & Stress Scenarios for SynapseState Control API.
@@ -256,6 +238,8 @@ export function flushTelemetry() {
   sleep(Math.random() * 0.3 + 0.1);
 }
 
+// Note: Module-level lease ID assumes a single mutator VU (vus: 1) as configured across all profiles.
+// If scaling mutator VUs in future profiles, track lease IDs in a per-VU map or concurrent structure.
 let stressActiveLeaseId = null;
 
 /**

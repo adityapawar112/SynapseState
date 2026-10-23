@@ -138,10 +138,27 @@ export function generateUlid() {
 }
 
 /**
- * Generates a realistic TelemetryBatchPayload strictly complying with Invariant 5:
- * Zero-Context: NO user IDs, targeting attributes, or high-cardinality keys.
- * Note: Does NOT include synthetic propagation_lag_ms to prevent histogram contamination.
+ * Parses duration strings like "10m", "30s", "1m30s" into total seconds.
+ * @param {string} str - Duration string.
+ * @param {number} [defaultValue=0] - Fallback seconds if undefined or unparseable.
+ * @returns {number} Total seconds.
  */
+export function parseDurationToSeconds(str, defaultValue = 0) {
+  if (!str) return defaultValue;
+  let total = 0;
+  const matches = str.matchAll(/(\d+)(h|m|s)/g);
+  let matched = false;
+  for (const m of matches) {
+    matched = true;
+    const val = parseInt(m[1], 10);
+    const unit = m[2];
+    if (unit === "h") total += val * 3600;
+    else if (unit === "m") total += val * 60;
+    else if (unit === "s") total += val;
+  }
+  return matched ? total : parseInt(str, 10) || defaultValue;
+}
+
 /**
  * Generates a realistic TelemetryBatchPayload strictly complying with Invariant 5:
  * Zero-Context: NO user IDs, targeting attributes, or high-cardinality keys.

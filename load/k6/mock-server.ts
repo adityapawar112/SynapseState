@@ -536,6 +536,13 @@ const server = http.createServer(async (req, res) => {
     const env = body?.payload?.env || "production";
     const envState = getOrCreateEnvState(env);
 
+    if (!envState.activeLeases.has(id)) {
+      sendJson(res, 404, {
+        error: `Lease "${id}" not found or already revoked`,
+      });
+      return;
+    }
+
     envState.activeLeases.delete(id);
     envState.revocations.push({
       lease_id: id,
