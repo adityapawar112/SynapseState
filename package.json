@@ -22,6 +22,8 @@
     "test:load:soak": "k6 run -e PROFILE=soak load/k6/mixed-stress.js",
     "test:load:story-arc": "k6 run load/k6/story-arc.js",
     "test:load:mock": "tsx load/k6/mock-server.ts",
+    "capture:docs": "node scripts/capture-dashboards.mjs",
+    "capture:docs:docker": "docker run --rm --network host -v \"${PWD}:/work\" -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scripts/capture-dashboards.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,json,md,yaml}\""
   },
@@ -33,6 +35,7 @@
     "dotenv": "^16.4.7",
     "eslint": "^9.20.0",
     "lint-staged": "^15.4.3",
+    "playwright": "^1.49.0",
     "prettier": "^3.5.0",
     "rimraf": "^6.0.0",
     "tsx": "^4.19.0",

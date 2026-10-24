@@ -33,6 +33,7 @@ services:
       LEASE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/synapsestate
       TELEMETRY_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/synapsestate
       AUTO_MIGRATE: "true"
+      ENABLE_TEST_RESET: "true"
     ports:
       - "3000:3000"
     depends_on:
