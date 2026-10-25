@@ -10,7 +10,7 @@
 | Phase / PR         | Branch                               | Focus Area                                                               | Status                                 | Quality Gate                                                                                                                                                                 |
 | ------------------ | ------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **PR 30 (PR #31)** | `test/k6-soak-and-saturation`        | 10-Minute Soak Harness, Saturation Benchmarks & Regression Enforcement   | **COMPLETED & SUBMITTED (PR #31)**     | Zero bulkhead violations (`synapse_bulkhead_isolation_violations === 0`), 100% monorepo tests pass with live Docker stack, saturation cliff identified at ~5,500 evals/s     |
-| **PR 31 (PR #32)** | `ci/automated-dashboard-screenshots` | Deterministic Containerized Visual Capture & README Observability Assets | **READY FOR IMPLEMENTATION (NEXT PR)** | Headless visual capture via official Playwright Docker container (`mcr.microsoft.com/playwright:v1.49.0-jammy`), 5/5 UI surfaces captured with live populated data, zero PII |
+| **PR 31 (PR #32)** | `ci/automated-dashboard-screenshots` | Deterministic Containerized Visual Capture & README Observability Assets | **COMPLETED & PUSHED (PR #32)**        | Headless visual capture via official Playwright Docker container (`mcr.microsoft.com/playwright:v1.49.0-jammy`) and native Node.js harness, 5/5 UI surfaces captured with live populated data, zero PII |
 
 ---
 
@@ -106,12 +106,12 @@ The complete load and soak test harness was established in [`load/k6/`](file:///
 
 ---
 
-## 4. PR 31: Deterministic Containerized Visual Capture — [READY FOR IMPLEMENTATION (NEXT PR)]
+## 4. PR 31: Deterministic Containerized Visual Capture — [COMPLETED & PUSHED AS PR #32]
 
 > **Branch:** `ci/automated-dashboard-screenshots`  
 > **Base Branch:** `main` (after merging PR #31)  
-> **Estimated Scope:** 1–2 days  
-> **Deliverable:** Automated containerized screenshot pipeline, refreshed high-resolution visual assets in `docs/assets/`, and aligned `README.md` diagrams.
+> **GitHub PR:** [PR #32: ci(visuals): deterministic containerized visual capture and refreshed dashboard assets](https://github.com/adityapawar112/SynapseState/pull/new/ci/automated-dashboard-screenshots)  
+> **Delivered:** Automated containerized screenshot pipeline, refreshed high-resolution visual assets in `docs/assets/`, and verified `README.md` diagrams.
 
 ### 4.1 Architecture & Decision (Open Question 10)
 
