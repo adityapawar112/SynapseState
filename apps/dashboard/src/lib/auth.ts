@@ -219,7 +219,7 @@ export function getDevSessionUser(role: UserRole = "operator"): OidcSessionUser 
     id: `dev-${role}-id`,
     login: `dev-${role}`,
     name: `Dev ${role.charAt(0).toUpperCase() + role.slice(1)}`,
-    avatarUrl: "https://avatars.githubusercontent.com/u/9919?v=4",
+    avatarUrl: "",
     email: `${role}@synapsestate.local`,
     role,
     teams: role === "admin" ? ["platform-admins"] : ["sre-team"],

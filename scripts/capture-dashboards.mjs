@@ -21,6 +21,7 @@ async function resolveBaseUrl(envVar, defaultUrl, fallbackUrl) {
     const res = await fetch(fallbackUrl, { method: "HEAD", signal: AbortSignal.timeout(1000) });
     if (res.ok || res.status < 500) return fallbackUrl;
   } catch {}
+  console.warn(`[Network Probe] Neither ${defaultUrl} nor ${fallbackUrl} is reachable. Defaulting to ${defaultUrl}.`);
   return defaultUrl;
 }
 
@@ -98,48 +99,53 @@ const targets = [
 
 // 3. Launch headless browser with deterministic rendering options
 console.log("Launching headless browser (1440x900)...");
-const browser = await chromium.launch({
-  args: [
-    "--disable-font-subpixel-positioning",
-    "--font-render-hinting=none",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-  ],
-});
-
-const context = await browser.newContext({
-  viewport: { width: 1440, height: 900 },
-  deviceScaleFactor: 1,
-  colorScheme: "light",
-});
-
-const page = await context.newPage();
-
-// Enforce standard light canvas on Next.js dashboard surfaces
-await page.addInitScript(() => {
-  try {
-    localStorage.setItem("synapse_theme", "light");
-  } catch {}
-});
-
+let browser;
 let failedCount = 0;
 
-for (const target of targets) {
-  console.log(`Capturing ${target.desc} from ${target.url}...`);
-  try {
-    fs.mkdirSync(path.dirname(target.file), { recursive: true });
-    await page.goto(target.url, { waitUntil: "networkidle", timeout: 30000 });
-    // Allow SVG charts, CSS countdown transitions, and Grafana gauges to settle
-    await page.waitForTimeout(3000);
-    await page.screenshot({ path: target.file, fullPage: false });
-    console.log(`Saved: ${target.file}`);
-  } catch (err) {
-    console.error(`Failed to capture ${target.desc}:`, err.message);
-    failedCount++;
+try {
+  browser = await chromium.launch({
+    args: [
+      "--disable-font-subpixel-positioning",
+      "--font-render-hinting=none",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+    ],
+  });
+
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    colorScheme: "light",
+  });
+
+  const page = await context.newPage();
+
+  // Enforce standard light canvas on Next.js dashboard surfaces
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("synapse_theme", "light");
+    } catch {}
+  });
+
+  for (const target of targets) {
+    console.log(`Capturing ${target.desc} from ${target.url}...`);
+    try {
+      fs.mkdirSync(path.dirname(target.file), { recursive: true });
+      await page.goto(target.url, { waitUntil: "networkidle", timeout: 30000 });
+      // Allow SVG charts, CSS countdown transitions, and Grafana gauges to settle
+      await page.waitForTimeout(3000);
+      await page.screenshot({ path: target.file, fullPage: false });
+      console.log(`Saved: ${target.file}`);
+    } catch (err) {
+      console.error(`Failed to capture ${target.desc}:`, err.message);
+      failedCount++;
+    }
+  }
+} finally {
+  if (browser) {
+    await browser.close();
   }
 }
-
-await browser.close();
 
 if (failedCount > 0) {
   console.error(`Visual capture completed with ${failedCount} failures.`);

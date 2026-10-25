@@ -210,49 +210,73 @@ const targets = [
 
 // 3. Launch headless browser with deterministic rendering options
 console.log("Launching headless browser (1440x900)...");
-const browser = await chromium.launch({
-  args: [
-    "--disable-font-subpixel-positioning",
-    "--font-render-hinting=none",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-  ],
-});
+let browser;
+let failedCount = 0;
 
-const context = await browser.newContext({
-  viewport: { width: 1440, height: 900 },
-  deviceScaleFactor: 1,
-});
+try {
+  browser = await chromium.launch({
+    args: [
+      "--disable-font-subpixel-positioning",
+      "--font-render-hinting=none",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+    ],
+  });
 
-const page = await context.newPage();
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    colorScheme: "light",
+  });
 
-for (const target of targets) {
-  console.log(`Capturing ${target.desc} from ${target.url}...`);
-  try {
-    await page.goto(target.url, { waitUntil: "networkidle", timeout: 30000 });
-    // Allow SVG charts, CSS countdown transitions, and Grafana gauges to settle
-    await page.waitForTimeout(2500);
-    await page.screenshot({ path: target.file, fullPage: false });
-    console.log(`Saved: ${target.file}`);
-  } catch (err) {
-    console.error(`Failed to capture ${target.desc}:`, err);
+  const page = await context.newPage();
+
+  // Enforce standard light canvas on Next.js dashboard surfaces
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("synapse_theme", "light");
+    } catch {}
+  });
+
+  for (const target of targets) {
+    console.log(`Capturing ${target.desc} from ${target.url}...`);
+    try {
+      await page.goto(target.url, { waitUntil: "networkidle", timeout: 30000 });
+      // Allow SVG charts, CSS countdown transitions, and Grafana gauges to settle
+      await page.waitForTimeout(3000);
+      await page.screenshot({ path: target.file, fullPage: false });
+      console.log(`Saved: ${target.file}`);
+    } catch (err) {
+      console.error(`Failed to capture ${target.desc}:`, err.message);
+      failedCount++;
+    }
+  }
+} finally {
+  if (browser) {
+    await browser.close();
   }
 }
 
-await browser.close();
+if (failedCount > 0) {
+  process.exit(1);
+}
 console.log("All visual assets captured successfully.");
 ```
 
 #### Step 2: Add npm Script to `package.json`
 
-Add the `capture:docs` script in root `package.json`:
+Add the capture scripts in root `package.json`:
 
 ```json
 "scripts": {
   "capture:docs": "node scripts/capture-dashboards.mjs",
-  "capture:docs:docker": "docker run --rm --network host -v \"${PWD}:/work\" -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scripts/capture-dashboards.mjs"
+  "capture:docs:docker": "docker run --rm --add-host=host.docker.internal:host-gateway -v \"${PWD}:/work\" -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scripts/capture-dashboards.mjs"
 }
 ```
+
+> **Cross-Platform Execution Note:**
+> - `pnpm run capture:docs`: Cross-platform local capture using host Node.js and local Playwright.
+> - `pnpm run capture:docs:docker`: Containerized Linux capture using the pinned `playwright:v1.49.0-jammy` image with host gateway mapping (`--add-host=host.docker.internal:host-gateway`) for CI environments ensuring font-rendering stability across developer workstations.
 
 #### Step 3: Run Visual Asset Checklist
 

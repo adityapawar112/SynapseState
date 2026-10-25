@@ -23,7 +23,7 @@
     "test:load:story-arc": "k6 run load/k6/story-arc.js",
     "test:load:mock": "tsx load/k6/mock-server.ts",
     "capture:docs": "node scripts/capture-dashboards.mjs",
-    "capture:docs:docker": "docker run --rm --network host -v \"${PWD}:/work\" -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scripts/capture-dashboards.mjs",
+    "capture:docs:docker": "docker run --rm --add-host=host.docker.internal:host-gateway -v \"${PWD}:/work\" -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scripts/capture-dashboards.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,json,md,yaml}\""
   },

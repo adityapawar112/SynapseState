@@ -33,6 +33,8 @@ services:
       LEASE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/synapsestate
       TELEMETRY_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/synapsestate
       AUTO_MIGRATE: "true"
+      # SAFETY INVARIANT: ENABLE_TEST_RESET is enabled here strictly for local demo/CI visual capture seeding.
+      # In production deployments, this variable MUST be unset or set to "false" to prevent unauthorized state resets.
       ENABLE_TEST_RESET: "true"
     ports:
       - "3000:3000"
