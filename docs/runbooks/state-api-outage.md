@@ -1,15 +1,18 @@
 # Runbook: State API Outage & High Error Rate
 
 ## Severity
+
 - **Critical (Fast Burn, 14.4x):** Immediate on-call pager notification.
 - **Warning (Slow Burn, 6x):** Business-hours ticket notification.
 
 ## Symptoms
+
 - Alert `SynapseStateApiAvailabilityFastBurn` or `SynapseStateApiAvailabilitySlowBurn` firing.
 - HTTP 5xx responses returned on `GET /v1/sdk/state`.
 - Client SDKs falling back to local cached state or delegate provider.
 
 ## Triage & Investigation
+
 1. **Check Control API Pod Status:**
    ```bash
    kubectl get pods -n synapse-system -l app.kubernetes.io/name=control-api

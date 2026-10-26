@@ -21,9 +21,18 @@ interface MockLeaseItem {
 let currentData = getCurrentSeed();
 function initLeasesStore(seed: SeedDataResult): MockLeaseItem[] {
   return [
-    { ...JSON.parse(JSON.stringify(seed.activeLeaseEnvelope)), state: "ACTIVE" },
-    { ...JSON.parse(JSON.stringify(seed.nearExpiryLeaseEnvelope)), state: "ACTIVE" },
-    { ...JSON.parse(JSON.stringify(seed.expiredLeaseEnvelope)), state: "EXPIRED" },
+    {
+      ...JSON.parse(JSON.stringify(seed.activeLeaseEnvelope)),
+      state: "ACTIVE",
+    },
+    {
+      ...JSON.parse(JSON.stringify(seed.nearExpiryLeaseEnvelope)),
+      state: "ACTIVE",
+    },
+    {
+      ...JSON.parse(JSON.stringify(seed.expiredLeaseEnvelope)),
+      state: "EXPIRED",
+    },
   ];
 }
 
@@ -37,13 +46,22 @@ function resetStore() {
 }
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost:3000"}`);
+  const url = new URL(
+    req.url || "/",
+    `http://${req.headers.host || "localhost:3000"}`,
+  );
   const pathname = url.pathname;
   const method = req.method?.toUpperCase();
 
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, If-None-Match, x-synapse-csrf");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, OPTIONS, PUT, DELETE",
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, If-None-Match, x-synapse-csrf",
+  );
 
   if (method === "OPTIONS") {
     res.writeHead(204);
@@ -62,14 +80,21 @@ const server = http.createServer((req, res) => {
   if (pathname === "/__test/reset" && method === "POST") {
     resetStore();
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "reset", active_leases_count: leasesStore.length }));
+    res.end(
+      JSON.stringify({
+        status: "reset",
+        active_leases_count: leasesStore.length,
+      }),
+    );
     return;
   }
 
   // SDK State Delivery
   if (pathname === "/v1/sdk/state") {
     const env = url.searchParams.get("env") || "prod";
-    const filtered = leasesStore.filter((l) => l.payload.env === env && l.state === "ACTIVE");
+    const filtered = leasesStore.filter(
+      (l) => l.payload.env === env && l.state === "ACTIVE",
+    );
     res.writeHead(200, {
       "Content-Type": "application/json",
       ETag: '"mock-seed-etag-v1"',
@@ -80,7 +105,7 @@ const server = http.createServer((req, res) => {
         server_time: new Date().toISOString(),
         registry_version: 1,
         active_leases: filtered.map(({ payload, sig }) => ({ payload, sig })),
-      })
+      }),
     );
     return;
   }
@@ -103,7 +128,8 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       try {
         const parsed = JSON.parse(bodyStr || "{}");
-        const prev = currentData.auditEvents[currentData.auditEvents.length - 1];
+        const prev =
+          currentData.auditEvents[currentData.auditEvents.length - 1];
         const seq = currentData.auditEvents.length + 1;
         const prevHash = prev?.hash || "0".repeat(64);
         const eventRecord = {
@@ -123,20 +149,25 @@ const server = http.createServer((req, res) => {
         // Ignore json parse error in mock server
       }
       res.writeHead(202, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ success: true, status: "staged", staged: true }));
+      res.end(
+        JSON.stringify({ success: true, status: "staged", staged: true }),
+      );
     });
     return;
   }
 
   // Audit Events list (GET)
-  if (pathname === "/v1/audit/events" && (method === "GET" || method === "HEAD")) {
+  if (
+    pathname === "/v1/audit/events" &&
+    (method === "GET" || method === "HEAD")
+  ) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
         events: currentData.auditEvents,
         total: currentData.auditEvents.length,
         has_more: false,
-      })
+      }),
     );
     return;
   }
@@ -162,23 +193,30 @@ const server = http.createServer((req, res) => {
         query: { env },
         events: [],
         evaluations: evals,
-      })
+      }),
     );
     return;
   }
 
   // Revoke Lease
-  if (pathname.startsWith("/v1/leases/") && pathname.endsWith("/revoke") && method === "POST") {
+  if (
+    pathname.startsWith("/v1/leases/") &&
+    pathname.endsWith("/revoke") &&
+    method === "POST"
+  ) {
     const authHeader = req.headers["authorization"] || "";
     const expectedToken =
       process.env.SYNAPSE_API_TOKEN || "synapse-e2e-master-token-value-2026";
-    if (!authHeader.startsWith("Bearer ") || authHeader.slice(7) !== expectedToken) {
+    if (
+      !authHeader.startsWith("Bearer ") ||
+      authHeader.slice(7) !== expectedToken
+    ) {
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
           error: "UNAUTHORIZED",
           message: "Missing or invalid Bearer token",
-        })
+        }),
       );
       return;
     }
@@ -190,7 +228,7 @@ const server = http.createServer((req, res) => {
         JSON.stringify({
           error: "INVALID_LEASE_ID",
           message: "Invalid ULID format",
-        })
+        }),
       );
       return;
     }
@@ -202,7 +240,7 @@ const server = http.createServer((req, res) => {
         JSON.stringify({
           error: "NOT_FOUND",
           message: `Lease "${leaseId}" not found`,
-        })
+        }),
       );
       return;
     }
@@ -231,23 +269,30 @@ const server = http.createServer((req, res) => {
         lease_id: leaseId,
         state: "REVOKED",
         revoked_at: new Date().toISOString(),
-      })
+      }),
     );
     return;
   }
 
   // Promote Lease
-  if (pathname.startsWith("/v1/leases/") && pathname.endsWith("/promote") && method === "POST") {
+  if (
+    pathname.startsWith("/v1/leases/") &&
+    pathname.endsWith("/promote") &&
+    method === "POST"
+  ) {
     const authHeader = req.headers["authorization"] || "";
     const expectedToken =
       process.env.SYNAPSE_API_TOKEN || "synapse-e2e-master-token-value-2026";
-    if (!authHeader.startsWith("Bearer ") || authHeader.slice(7) !== expectedToken) {
+    if (
+      !authHeader.startsWith("Bearer ") ||
+      authHeader.slice(7) !== expectedToken
+    ) {
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
           error: "UNAUTHORIZED",
           message: "Missing or invalid Bearer token",
-        })
+        }),
       );
       return;
     }
@@ -259,7 +304,7 @@ const server = http.createServer((req, res) => {
         JSON.stringify({
           error: "INVALID_LEASE_ID",
           message: "Invalid ULID format",
-        })
+        }),
       );
       return;
     }
@@ -271,7 +316,7 @@ const server = http.createServer((req, res) => {
         JSON.stringify({
           error: "NOT_FOUND",
           message: `Lease "${leaseId}" not found`,
-        })
+        }),
       );
       return;
     }
@@ -284,7 +329,7 @@ const server = http.createServer((req, res) => {
           message: `Cannot promote lease "${leaseId}": lease is already in state "PROMOTED"`,
           existing_pr_url: `https://github.com/adityapawar112/SynapseState/pull/123`,
           promote_pr_url: `https://github.com/adityapawar112/SynapseState/pull/123`,
-        })
+        }),
       );
       return;
     }
@@ -313,7 +358,7 @@ const server = http.createServer((req, res) => {
         lease_id: leaseId,
         branch: `synapse/promote-lease-${leaseId}`,
         pr_url: `https://github.com/adityapawar112/SynapseState/pull/123`,
-      })
+      }),
     );
     return;
   }

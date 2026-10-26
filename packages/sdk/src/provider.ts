@@ -122,8 +122,7 @@ export class OverrideProvider implements Provider {
     }
 
     // Initialize TelemetryHook if enabled or controlApiUrl is provided
-    const enableTelemetry =
-      opts.enableTelemetry ?? Boolean(opts.controlApiUrl);
+    const enableTelemetry = opts.enableTelemetry ?? Boolean(opts.controlApiUrl);
     if (enableTelemetry) {
       this.telemetryHook = new TelemetryHook({
         controlApiUrl: opts.controlApiUrl,

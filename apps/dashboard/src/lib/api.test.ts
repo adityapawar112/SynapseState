@@ -58,7 +58,7 @@ describe("Dashboard Control API Client", () => {
           headers: expect.objectContaining({
             Accept: "application/json",
           }),
-        })
+        }),
       );
       expect(leases).toHaveLength(1);
       expect(leases[0].leaseId).toBe("01J9X57YTRPQ8A7F4E12345678");
@@ -67,7 +67,9 @@ describe("Dashboard Control API Client", () => {
     });
 
     it("returns empty list if fetch fails or network is down", async () => {
-      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Connection refused"));
+      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+        new Error("Connection refused"),
+      );
 
       const leases = await client.fetchActiveLeases("prod");
       expect(leases).toEqual([]);
@@ -84,7 +86,8 @@ describe("Dashboard Control API Client", () => {
             actor: "ops-key-1",
             event_type: "LEASE_CREATED",
             payload: { lease_id: "01J9X" },
-            prev_hash: "0000000000000000000000000000000000000000000000000000000000000000",
+            prev_hash:
+              "0000000000000000000000000000000000000000000000000000000000000000",
             hash: "hash-1",
           },
         ],
@@ -107,7 +110,7 @@ describe("Dashboard Control API Client", () => {
           headers: expect.objectContaining({
             Authorization: "Bearer synapse-test-token",
           }),
-        })
+        }),
       );
       expect(result.events).toHaveLength(1);
       expect(result.events[0].seq).toBe(1);
@@ -228,17 +231,23 @@ describe("Dashboard Control API Client", () => {
       vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ lease_id: "01J9X57YTRPQ8A7F4E12345678", state: "REVOKED" }),
+        json: async () => ({
+          lease_id: "01J9X57YTRPQ8A7F4E12345678",
+          state: "REVOKED",
+        }),
       } as Response);
 
-      const result = await client.revokeLease("01J9X57YTRPQ8A7F4E12345678", revocationEnvelope);
+      const result = await client.revokeLease(
+        "01J9X57YTRPQ8A7F4E12345678",
+        revocationEnvelope,
+      );
 
       expect(fetch).toHaveBeenCalledWith(
         "http://control-api.internal:3000/v1/leases/01J9X57YTRPQ8A7F4E12345678/revoke",
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify(revocationEnvelope),
-        })
+        }),
       );
       expect(result.state).toBe("REVOKED");
     });
@@ -271,7 +280,7 @@ describe("Dashboard Control API Client", () => {
             "Content-Type": "application/json",
           }),
           body: JSON.stringify({ env: "prod" }),
-        })
+        }),
       );
       expect(result.pr_url).toBe(mockResult.pr_url);
       expect(result.branch).toBe(mockResult.branch);
@@ -285,13 +294,14 @@ describe("Dashboard Control API Client", () => {
         json: async () => ({
           error: "STALE_PR_CONFLICT",
           message: "Conflict with existing PR",
-          existing_pr_url: "https://github.com/adityapawar112/SynapseState/pull/20",
+          existing_pr_url:
+            "https://github.com/adityapawar112/SynapseState/pull/20",
         }),
       } as Response);
 
-      await expect(client.promoteLease("01J9X57YTRPQ8A7F4E12345678")).rejects.toThrow(
-        "Conflict with existing PR"
-      );
+      await expect(
+        client.promoteLease("01J9X57YTRPQ8A7F4E12345678"),
+      ).rejects.toThrow("Conflict with existing PR");
     });
   });
 
@@ -322,13 +332,15 @@ describe("Dashboard Control API Client", () => {
             event_type: "DASHBOARD_LOGIN",
             payload: { role: "operator" },
           }),
-        })
+        }),
       );
       expect(success).toBe(true);
     });
 
     it("returns false gracefully if recording audit event fails or times out", async () => {
-      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Network timeout"));
+      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+        new Error("Network timeout"),
+      );
 
       const success = await client.recordAuditEvent({
         actor: "sre-alice",
@@ -339,4 +351,3 @@ describe("Dashboard Control API Client", () => {
     });
   });
 });
-

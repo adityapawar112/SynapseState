@@ -441,34 +441,71 @@ describe("OverrideProvider", () => {
     const ctx: EvaluationContext = {};
 
     // 1. String evaluation: override with boolean value -> falls back to delegate ("blue")
-    const boolLease = signTestLease({ flag_key: "feature.string", value: true });
+    const boolLease = signTestLease({
+      flag_key: "feature.string",
+      value: true,
+    });
     leaseStore.addLease(boolLease, trustedKeyset);
-    const strRes1 = await provider.resolveStringEvaluation("feature.string", "fallback", ctx, dummyLogger);
+    const strRes1 = await provider.resolveStringEvaluation(
+      "feature.string",
+      "fallback",
+      ctx,
+      dummyLogger,
+    );
     expect(strRes1.value).toBe("blue");
 
     // Now override with string value -> returns OVERRIDE details
-    const strLease = signTestLease({ flag_key: "feature.string", value: "emergency-red" });
+    const strLease = signTestLease({
+      flag_key: "feature.string",
+      value: "emergency-red",
+    });
     leaseStore.addLease(strLease, trustedKeyset);
-    const strRes2 = await provider.resolveStringEvaluation("feature.string", "fallback", ctx, dummyLogger);
+    const strRes2 = await provider.resolveStringEvaluation(
+      "feature.string",
+      "fallback",
+      ctx,
+      dummyLogger,
+    );
     expect(strRes2.value).toBe("emergency-red");
     expect(strRes2.reason).toBe("OVERRIDE");
 
     // 2. Number evaluation: non-finite number or string -> falls back to delegate
-    const strLeaseForNum = signTestLease({ flag_key: "feature.num", value: "not-a-number" });
+    const strLeaseForNum = signTestLease({
+      flag_key: "feature.num",
+      value: "not-a-number",
+    });
     leaseStore.addLease(strLeaseForNum, trustedKeyset);
-    const numRes1 = await provider.resolveNumberEvaluation("feature.num", 999, ctx, dummyLogger);
+    const numRes1 = await provider.resolveNumberEvaluation(
+      "feature.num",
+      999,
+      ctx,
+      dummyLogger,
+    );
     expect(numRes1.value).toBe(10); // delegate default
 
     const validNumLease = signTestLease({ flag_key: "feature.num", value: 42 });
     leaseStore.addLease(validNumLease, trustedKeyset);
-    const numRes2 = await provider.resolveNumberEvaluation("feature.num", 999, ctx, dummyLogger);
+    const numRes2 = await provider.resolveNumberEvaluation(
+      "feature.num",
+      999,
+      ctx,
+      dummyLogger,
+    );
     expect(numRes2.value).toBe(42);
     expect(numRes2.reason).toBe("OVERRIDE");
 
     // 3. Object evaluation: null or primitive -> falls back to delegate
-    const nullLeaseForObj = signTestLease({ flag_key: "feature.obj", value: null as any });
+    const nullLeaseForObj = signTestLease({
+      flag_key: "feature.obj",
+      value: null as any,
+    });
     leaseStore.addLease(nullLeaseForObj, trustedKeyset);
-    const objRes1 = await provider.resolveObjectEvaluation("feature.obj", { rateLimit: 1, tier: "t" }, ctx, dummyLogger);
+    const objRes1 = await provider.resolveObjectEvaluation(
+      "feature.obj",
+      { rateLimit: 1, tier: "t" },
+      ctx,
+      dummyLogger,
+    );
     expect(objRes1.value).toEqual({ rateLimit: 60, tier: "standard" });
 
     const validObjLease = signTestLease({
@@ -476,10 +513,17 @@ describe("OverrideProvider", () => {
       value: { rateLimit: 1200, tier: "enterprise" },
     });
     leaseStore.addLease(validObjLease, trustedKeyset);
-    const objRes2 = await provider.resolveObjectEvaluation("feature.obj", { rateLimit: 1, tier: "t" }, ctx, dummyLogger);
+    const objRes2 = await provider.resolveObjectEvaluation(
+      "feature.obj",
+      { rateLimit: 1, tier: "t" },
+      ctx,
+      dummyLogger,
+    );
     expect(objRes2.value).toEqual({ rateLimit: 1200, tier: "enterprise" });
     expect(objRes2.reason).toBe("OVERRIDE");
-    expect(objRes2.variant).toBe(JSON.stringify({ rateLimit: 1200, tier: "enterprise" }));
+    expect(objRes2.variant).toBe(
+      JSON.stringify({ rateLimit: 1200, tier: "enterprise" }),
+    );
   });
 
   it("handles exception thrown during store lookup in resolveString, resolveNumber, and resolveObject", async () => {
@@ -495,13 +539,28 @@ describe("OverrideProvider", () => {
       throw new Error("Simulated transient memory fault");
     });
 
-    const strRes = await provider.resolveStringEvaluation("feature.string", "fallback", ctx, dummyLogger);
+    const strRes = await provider.resolveStringEvaluation(
+      "feature.string",
+      "fallback",
+      ctx,
+      dummyLogger,
+    );
     expect(strRes.value).toBe("blue");
 
-    const numRes = await provider.resolveNumberEvaluation("feature.num", 0, ctx, dummyLogger);
+    const numRes = await provider.resolveNumberEvaluation(
+      "feature.num",
+      0,
+      ctx,
+      dummyLogger,
+    );
     expect(numRes.value).toBe(10);
 
-    const objRes = await provider.resolveObjectEvaluation("feature.obj", {} as any, ctx, dummyLogger);
+    const objRes = await provider.resolveObjectEvaluation(
+      "feature.obj",
+      {} as any,
+      ctx,
+      dummyLogger,
+    );
     expect(objRes.value).toEqual({ rateLimit: 60, tier: "standard" });
 
     expect(provider.getMetrics().internalErrorsCount).toBeGreaterThanOrEqual(3);
@@ -527,10 +586,14 @@ describe("OverrideProvider", () => {
     });
 
     await expect(p.initialize()).rejects.toThrow("Init boom");
-    expect(warnFn).toHaveBeenCalledWith(expect.stringContaining("OverrideProvider failed during initialize"));
+    expect(warnFn).toHaveBeenCalledWith(
+      expect.stringContaining("OverrideProvider failed during initialize"),
+    );
 
     await expect(p.onClose()).resolves.toBeUndefined();
-    expect(warnFn).toHaveBeenCalledWith(expect.stringContaining("OverrideProvider failed during onClose"));
+    expect(warnFn).toHaveBeenCalledWith(
+      expect.stringContaining("OverrideProvider failed during onClose"),
+    );
     expect(p.getMetrics().internalErrorsCount).toBeGreaterThanOrEqual(2);
   });
 
@@ -594,12 +657,15 @@ describe("OverrideProvider", () => {
     expect(pThrowingWithTelemetry.hooks?.length).toBe(1);
 
     // 5. Delegate throws on hooks getter, telemetry disabled -> undefined
-    const pThrowingWithoutTelemetry = new OverrideProvider(throwingHooksDelegate, {
-      leaseStore,
-      enableTelemetry: false,
-      enableKeysetWatcher: false,
-      enableEmergencyScanner: false,
-    });
+    const pThrowingWithoutTelemetry = new OverrideProvider(
+      throwingHooksDelegate,
+      {
+        leaseStore,
+        enableTelemetry: false,
+        enableKeysetWatcher: false,
+        enableEmergencyScanner: false,
+      },
+    );
     expect(pThrowingWithoutTelemetry.hooks).toBeUndefined();
   });
 
@@ -652,7 +718,10 @@ describe("OverrideProvider", () => {
     // Test lifecycle calls
     const startScannerSpy = vi.fn().mockResolvedValue(undefined);
     const stopScannerSpy = vi.fn().mockResolvedValue(undefined);
-    (p as any).emergencyScanner = { start: startScannerSpy, stop: stopScannerSpy };
+    (p as any).emergencyScanner = {
+      start: startScannerSpy,
+      stop: stopScannerSpy,
+    };
 
     const startClientSpy = vi.fn().mockResolvedValue(undefined);
     const stopClientSpy = vi.fn().mockResolvedValue(undefined);
@@ -677,4 +746,3 @@ describe("OverrideProvider", () => {
     expect(stopHookSpy).toHaveBeenCalled();
   });
 });
-

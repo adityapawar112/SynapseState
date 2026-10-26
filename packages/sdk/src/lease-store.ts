@@ -13,10 +13,7 @@ import {
   type KeyRevocationPayload,
 } from "@synapsestate/lease";
 import type { ActiveLease, LeaseStoreMetrics } from "./types.js";
-import {
-  type SynapseSdkMetrics,
-  safeInvokeMetricCallback,
-} from "./metrics.js";
+import { type SynapseSdkMetrics, safeInvokeMetricCallback } from "./metrics.js";
 
 export const DEFAULT_MAX_TRACKED_MONOTONIC_LEASES = 2000;
 

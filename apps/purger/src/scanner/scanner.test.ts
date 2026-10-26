@@ -216,7 +216,9 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
 
       expect(result.totalCallSites).toBe(1);
       expect(result.callSites[0]?.refusal?.reason).toBe("NON_LITERAL_FLAG_KEY");
-      expect(result.callSites[0]?.refusal?.nodeText).toBe("`flag.${env}.feature`");
+      expect(result.callSites[0]?.refusal?.nodeText).toBe(
+        "`flag.${env}.feature`",
+      );
     });
 
     it("refuses function call expressions passed as flag key", () => {
@@ -274,7 +276,9 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
 
       expect(result.totalCallSites).toBe(1);
       expect(result.callSites[0]?.flagKey).toBe("payment.v2");
-      expect(result.callSites[0]?.refusal?.reason).toBe("MISSING_DEFAULT_VALUE");
+      expect(result.callSites[0]?.refusal?.reason).toBe(
+        "MISSING_DEFAULT_VALUE",
+      );
     });
   });
 
@@ -286,9 +290,7 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
       expect(defaultServiceResolver("packages/shared-lib/src/util.ts")).toBe(
         "shared-lib",
       );
-      expect(defaultServiceResolver("services/auth/src/token.ts")).toBe(
-        "auth",
-      );
+      expect(defaultServiceResolver("services/auth/src/token.ts")).toBe("auth");
       expect(defaultServiceResolver("src/index.ts")).toBe("root");
     });
 
@@ -440,7 +442,9 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
       ]);
 
       expect(scanResult.unresolvedServices).toEqual(["web-frontend"]);
-      expect(scanResult.unresolvedCallSitesByService["web-frontend"]).toHaveLength(1);
+      expect(
+        scanResult.unresolvedCallSitesByService["web-frontend"],
+      ).toHaveLength(1);
 
       const crossRef = crossReferenceConsumers({
         candidates: [candidate],
@@ -485,7 +489,9 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
       ]);
 
       // Either refused or recognized as dynamic refusal
-      expect(result.refusals.some((r) => r.reason === "NON_LITERAL_FLAG_KEY")).toBe(true);
+      expect(
+        result.refusals.some((r) => r.reason === "NON_LITERAL_FLAG_KEY"),
+      ).toBe(true);
     });
   });
 
@@ -612,11 +618,15 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
       expect(ctorCall?.scope.functionName).toBe("constructor");
       expect(ctorCall?.scope.className).toBe("UserService");
 
-      const getterCall = result.callSites.find((c) => c.flagKey === "user.getter");
+      const getterCall = result.callSites.find(
+        (c) => c.flagKey === "user.getter",
+      );
       expect(getterCall?.scope.functionName).toBe("isEnabled");
       expect(getterCall?.scope.kind).toBe("GetAccessor");
 
-      const propArrow = result.callSites.find((c) => c.flagKey === "user.prop-arrow");
+      const propArrow = result.callSites.find(
+        (c) => c.flagKey === "user.prop-arrow",
+      );
       expect(propArrow?.scope.functionName).toBe("onCheckout");
     });
   });
@@ -671,5 +681,3 @@ describe("Read-Only ts-morph AST Scanner (PR 22)", () => {
     });
   });
 });
-
-

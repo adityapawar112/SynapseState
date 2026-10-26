@@ -33,22 +33,27 @@ export async function GET(request: NextRequest) {
 
   try {
     // 1. Exchange authorization code for access token
-    const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+    const tokenRes = await fetch(
+      "https://github.com/login/oauth/access_token",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+        }),
       },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code,
-      }),
-    });
+    );
 
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
-      throw new Error(tokenData.error_description || "Failed to obtain access token");
+      throw new Error(
+        tokenData.error_description || "Failed to obtain access token",
+      );
     }
 
     const accessToken = tokenData.access_token;
@@ -78,9 +83,12 @@ export async function GET(request: NextRequest) {
       }).catch(() => null),
     ]);
 
-    const ghTeams = teamsRes && teamsRes.ok ? await teamsRes.json().catch(() => []) : [];
+    const ghTeams =
+      teamsRes && teamsRes.ok ? await teamsRes.json().catch(() => []) : [];
     const teamSlugs: string[] = Array.isArray(ghTeams)
-      ? ghTeams.map((t: { slug?: string; name?: string }) => t.slug || t.name || "").filter(Boolean)
+      ? ghTeams
+          .map((t: { slug?: string; name?: string }) => t.slug || t.name || "")
+          .filter(Boolean)
       : [];
 
     if (orgsRes && orgsRes.ok) {
@@ -102,7 +110,7 @@ export async function GET(request: NextRequest) {
         teams: teamSlugs,
         email: ghUser.email,
       },
-      config
+      config,
     );
 
     // 5. Mint authenticated session user (accessToken is discarded immediately)
@@ -135,7 +143,6 @@ export async function GET(request: NextRequest) {
 
     const redirectUrl = new URL("/", request.url);
     const res = NextResponse.redirect(redirectUrl);
-
 
     res.cookies.set("synapse_session", sessionToken, {
       httpOnly: true,

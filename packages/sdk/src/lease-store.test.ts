@@ -302,7 +302,8 @@ describe("LeaseStore", () => {
     const payload = createLeasePayload();
     const env = signLease(payload, alicePair.privateKey);
     expect(store.addLease(env, trustedKeyset)).toBe(true);
-    const originalMono = store.getActiveLease("killswitch-cart")!.firstSeenMonoMs;
+    const originalMono =
+      store.getActiveLease("killswitch-cart")!.firstSeenMonoMs;
 
     // Simulate eviction of the lease_id from the monotonic tracking map
     (
@@ -366,7 +367,9 @@ describe("LeaseStore", () => {
     expect(store.getActiveLeasesCount()).toBe(1);
 
     // Manually force lease expiry by manipulating issuedAt
-    const rawLease = (store as unknown as { leases: Map<string, { issuedAt: string }> }).leases.get("killswitch-cart")!;
+    const rawLease = (
+      store as unknown as { leases: Map<string, { issuedAt: string }> }
+    ).leases.get("killswitch-cart")!;
     rawLease.issuedAt = new Date(Date.now() - 500_000).toISOString();
 
     const prevEvicted = store.getMetrics().leasesEvictedExpiredCount;
@@ -388,7 +391,9 @@ describe("LeaseStore", () => {
     const prevEvictedRevoked = store.getMetrics().leasesEvictedRevokedCount;
     expect(store.revokeLease(payload.lease_id)).toBe(true);
     expect(store.getActiveLeasesCount()).toBe(0);
-    expect(store.getMetrics().leasesEvictedRevokedCount).toBe(prevEvictedRevoked + 1);
+    expect(store.getMetrics().leasesEvictedRevokedCount).toBe(
+      prevEvictedRevoked + 1,
+    );
     expect(store.getActiveLease("killswitch-cart")).toBeUndefined();
   });
 
@@ -409,14 +414,18 @@ describe("LeaseStore", () => {
   });
 
   it("evicts oldest non-active monotonic anchor when tracking capacity is reached", () => {
-    const map = (store as unknown as { firstSeenMonoByLeaseId: Map<string, number> }).firstSeenMonoByLeaseId;
+    const map = (
+      store as unknown as { firstSeenMonoByLeaseId: Map<string, number> }
+    ).firstSeenMonoByLeaseId;
     // Fill up to 2000 entries
     for (let i = 0; i < 2000; i++) {
       map.set(`dummy-id-${i}`, i);
     }
     expect(map.size).toBe(2000);
 
-    const payload = createLeasePayload({ lease_id: "01J9X57YTRPQ8A7F4ENEW00001" });
+    const payload = createLeasePayload({
+      lease_id: "01J9X57YTRPQ8A7F4ENEW00001",
+    });
     const env = signLease(payload, alicePair.privateKey);
     expect(store.addLease(env, trustedKeyset)).toBe(true);
 
@@ -428,7 +437,9 @@ describe("LeaseStore", () => {
 
   it("fails safe and records internalErrorsCount on unexpected exceptions in store methods", () => {
     const throwingStore = new LeaseStore({ keyset: trustedKeyset });
-    const payload = createLeasePayload({ lease_id: "01J9X57YTRPQ8A7F4ENEW00099" });
+    const payload = createLeasePayload({
+      lease_id: "01J9X57YTRPQ8A7F4ENEW00099",
+    });
     const env = signLease(payload, alicePair.privateKey);
 
     // 1. Trigger catch block in addLease
@@ -481,7 +492,9 @@ describe("LeaseStore", () => {
         throw new Error("Simulated keyRevocations.set fault");
       },
     };
-    expect(throwingStore.applyKeyRevocation(keyRevEnv, trustedKeyset)).toBe(false);
+    expect(throwingStore.applyKeyRevocation(keyRevEnv, trustedKeyset)).toBe(
+      false,
+    );
     expect(throwingStore.getMetrics().internalErrorsCount).toBe(4);
   });
 
@@ -497,7 +510,9 @@ describe("LeaseStore", () => {
       },
       sig: "invalid-signature",
     };
-    expect(store.applyRevocation(invalidRevEnv as any, trustedKeyset)).toBe(false);
+    expect(store.applyRevocation(invalidRevEnv as any, trustedKeyset)).toBe(
+      false,
+    );
 
     // 2. applyKeyRevocation with invalid signature
     const invalidKeyRevEnv = {
@@ -510,7 +525,9 @@ describe("LeaseStore", () => {
       },
       sig: "invalid-signature",
     };
-    expect(store.applyKeyRevocation(invalidKeyRevEnv as any, trustedKeyset)).toBe(false);
+    expect(
+      store.applyKeyRevocation(invalidKeyRevEnv as any, trustedKeyset),
+    ).toBe(false);
 
     // 3. applyRevocation when signing kid has already been revoked via applyKeyRevocation
     const keyRevPayload: KeyRevocationPayload = {
@@ -530,8 +547,13 @@ describe("LeaseStore", () => {
       kid: "sre-alice", // this kid is now revoked!
       reason: "early",
     };
-    const revEnvWithRevokedKid = signRevocation(validRevPayload, alicePair.privateKey);
-    expect(store.applyRevocation(revEnvWithRevokedKid, trustedKeyset)).toBe(false);
+    const revEnvWithRevokedKid = signRevocation(
+      validRevPayload,
+      alicePair.privateKey,
+    );
+    expect(store.applyRevocation(revEnvWithRevokedKid, trustedKeyset)).toBe(
+      false,
+    );
 
     // 4. applyKeyRevocation when revoked_by_kid is itself revoked
     const adminRevPayload: KeyRevocationPayload = {
@@ -541,7 +563,10 @@ describe("LeaseStore", () => {
       revoked_at: new Date().toISOString(),
       reason: "compromised admin",
     };
-    const adminRevEnv = signKeyRevocation(adminRevPayload, adminPair.privateKey);
+    const adminRevEnv = signKeyRevocation(
+      adminRevPayload,
+      adminPair.privateKey,
+    );
     expect(store.applyKeyRevocation(adminRevEnv, trustedKeyset)).toBe(true);
 
     const chainedKeyRevPayload: KeyRevocationPayload = {
@@ -551,8 +576,13 @@ describe("LeaseStore", () => {
       revoked_by_kid: "admin-carol",
       reason: "should fail",
     };
-    const chainedKeyRevEnv = signKeyRevocation(chainedKeyRevPayload, adminPair.privateKey);
-    expect(store.applyKeyRevocation(chainedKeyRevEnv, trustedKeyset)).toBe(false);
+    const chainedKeyRevEnv = signKeyRevocation(
+      chainedKeyRevPayload,
+      adminPair.privateKey,
+    );
+    expect(store.applyKeyRevocation(chainedKeyRevEnv, trustedKeyset)).toBe(
+      false,
+    );
   });
 
   it("increments leasesRejectedCount accurately across key revocation, lease revocation, expiry, and superseding conflicts", () => {
@@ -567,16 +597,25 @@ describe("LeaseStore", () => {
       revoked_by_kid: "admin-carol",
       reason: "compromised",
     };
-    s.applyKeyRevocation(signKeyRevocation(keyRevPayload, adminPair.privateKey), trustedKeyset);
+    s.applyKeyRevocation(
+      signKeyRevocation(keyRevPayload, adminPair.privateKey),
+      trustedKeyset,
+    );
     const aliceLease = signLease(
-      createLeasePayload({ kid: "sre-alice", lease_id: "01J9X57YTRPQ8A7F4ENEW00101" }),
+      createLeasePayload({
+        kid: "sre-alice",
+        lease_id: "01J9X57YTRPQ8A7F4ENEW00101",
+      }),
       alicePair.privateKey,
     );
     expect(s.addLease(aliceLease, trustedKeyset)).toBe(false);
     expect(s.getMetrics().leasesRejectedCount).toBe(1);
 
     // 2. Rejected because lease is revoked
-    const bobPayload = createLeasePayload({ kid: "sre-bob", lease_id: "01J9X57YTRPQ8A7F4ENEW00102" });
+    const bobPayload = createLeasePayload({
+      kid: "sre-bob",
+      lease_id: "01J9X57YTRPQ8A7F4ENEW00102",
+    });
     const revBobPayload: RevocationPayload = {
       v: 1,
       lease_id: "01J9X57YTRPQ8A7F4ENEW00102",
@@ -584,8 +623,13 @@ describe("LeaseStore", () => {
       kid: "sre-bob",
       reason: "early",
     };
-    s.applyRevocation(signRevocation(revBobPayload, bobPair.privateKey), trustedKeyset);
-    expect(s.addLease(signLease(bobPayload, bobPair.privateKey), trustedKeyset)).toBe(false);
+    s.applyRevocation(
+      signRevocation(revBobPayload, bobPair.privateKey),
+      trustedKeyset,
+    );
+    expect(
+      s.addLease(signLease(bobPayload, bobPair.privateKey), trustedKeyset),
+    ).toBe(false);
     expect(s.getMetrics().leasesRejectedCount).toBe(2);
 
     // 3. Rejected because already expired
@@ -595,7 +639,9 @@ describe("LeaseStore", () => {
       issued_at: new Date(Date.now() - 600_000).toISOString(),
       ttl_seconds: 60,
     });
-    expect(s.addLease(signLease(expiredPayload, bobPair.privateKey), trustedKeyset)).toBe(false);
+    expect(
+      s.addLease(signLease(expiredPayload, bobPair.privateKey), trustedKeyset),
+    ).toBe(false);
     expect(s.getMetrics().leasesRejectedCount).toBe(3);
 
     // 4. Rejected because superseded by newer lease
@@ -605,7 +651,9 @@ describe("LeaseStore", () => {
       lease_id: "01J9X57YTRPQ8A7F4ENEW00105",
       issued_at: new Date(Date.now()).toISOString(),
     });
-    expect(s.addLease(signLease(newerPayload, bobPair.privateKey), trustedKeyset)).toBe(true);
+    expect(
+      s.addLease(signLease(newerPayload, bobPair.privateKey), trustedKeyset),
+    ).toBe(true);
 
     const olderPayload = createLeasePayload({
       kid: "sre-bob",
@@ -613,7 +661,9 @@ describe("LeaseStore", () => {
       lease_id: "01J9X57YTRPQ8A7F4ENEW00104",
       issued_at: new Date(Date.now() - 50_000).toISOString(),
     });
-    expect(s.addLease(signLease(olderPayload, bobPair.privateKey), trustedKeyset)).toBe(false);
+    expect(
+      s.addLease(signLease(olderPayload, bobPair.privateKey), trustedKeyset),
+    ).toBe(false);
     expect(s.getMetrics().leasesRejectedCount).toBe(4);
   });
 
@@ -658,7 +708,10 @@ describe("LeaseStore", () => {
     expect(s.revokeLease("non-existent-id")).toBe(false);
     expect(notifyFn).not.toHaveBeenCalled();
 
-    const payload = createLeasePayload({ kid: "sre-bob", lease_id: "01J9X57YTRPQ8A7F4ENEW00107" });
+    const payload = createLeasePayload({
+      kid: "sre-bob",
+      lease_id: "01J9X57YTRPQ8A7F4ENEW00107",
+    });
     s.addLease(signLease(payload, bobPair.privateKey), trustedKeyset);
     notifyFn.mockClear();
 

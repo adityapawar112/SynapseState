@@ -46,7 +46,7 @@ interface AuditPendingRow {
 function getOrCreateGauge(
   registry: Registry,
   name: string,
-  help: string
+  help: string,
 ): Gauge<string> {
   const existing = registry.getSingleMetric(name);
   if (existing) {
@@ -97,17 +97,17 @@ export class AuditSealer {
       this.pendingAgeGauge = getOrCreateGauge(
         registry,
         "synapse_audit_pending_age_seconds",
-        "Age in seconds of the oldest unsealed audit event in audit_pending"
+        "Age in seconds of the oldest unsealed audit event in audit_pending",
       );
       this.pendingQueueGauge = getOrCreateGauge(
         registry,
         "synapse_audit_pending_queue_size",
-        "Current depth of unsealed staged events in audit_pending table"
+        "Current depth of unsealed staged events in audit_pending table",
       );
       this.chainLengthGauge = getOrCreateGauge(
         registry,
         "synapse_audit_chain_length",
-        "Total monotonic length of sealed audit events in audit_events ledger"
+        "Total monotonic length of sealed audit events in audit_events ledger",
       );
     }
     this.logger = options.logger ?? {
@@ -164,9 +164,12 @@ export class AuditSealer {
    * Manually executes a single sealing cycle within a transaction-level advisory lock.
    */
   public async sealOnce(): Promise<SealResult> {
-    const lockResult = await withAuditSealerTransaction(this.pool, async (client) => {
-      return this.processBatch(client);
-    });
+    const lockResult = await withAuditSealerTransaction(
+      this.pool,
+      async (client) => {
+        return this.processBatch(client);
+      },
+    );
 
     if (!lockResult.acquired) {
       // Lock-free lag query so standby replicas export accurate pending age to Prometheus
@@ -186,8 +189,11 @@ export class AuditSealer {
    */
   public async updatePendingAgeMetric(client?: PoolClient): Promise<number> {
     const queryRunner = client ?? this.pool;
-    const res = await queryRunner.query<{ count: string | number; created_at: Date | string | null }>(
-      "SELECT COUNT(*)::bigint AS count, MIN(created_at) AS created_at FROM audit_pending;"
+    const res = await queryRunner.query<{
+      count: string | number;
+      created_at: Date | string | null;
+    }>(
+      "SELECT COUNT(*)::bigint AS count, MIN(created_at) AS created_at FROM audit_pending;",
     );
 
     if (res.rows.length === 0 || !res.rows[0]?.created_at) {
@@ -211,7 +217,7 @@ export class AuditSealer {
   protected async processBatch(client: PoolClient): Promise<SealResult> {
     // 1. Fetch current tip of the audit ledger
     const tipRes = await client.query<{ seq: string | number; hash: string }>(
-      "SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1;"
+      "SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1;",
     );
 
     let lastSeq = 0;
@@ -229,7 +235,7 @@ export class AuditSealer {
        ORDER BY created_at ASC, id ASC
        LIMIT $1
        FOR UPDATE;`,
-      [this.batchSize]
+      [this.batchSize],
     );
 
     if (pendingRes.rows.length === 0) {
@@ -283,7 +289,7 @@ export class AuditSealer {
 
     for (const event of sealedEvents) {
       valuePlaceholders.push(
-        `($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6})`
+        `($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6})`,
       );
       params.push(
         event.seq,
@@ -292,7 +298,7 @@ export class AuditSealer {
         event.event_type,
         JSON.stringify(event.payload),
         event.prev_hash,
-        event.hash
+        event.hash,
       );
       paramIdx += 7;
     }
@@ -300,33 +306,42 @@ export class AuditSealer {
     await client.query(
       `INSERT INTO audit_events (seq, ts, actor, event_type, payload, prev_hash, hash)
        VALUES ${valuePlaceholders.join(", ")};`,
-      params
+      params,
     );
 
     // Synchronize underlying sequence with assigned seq to prevent future default collisions
     await client.query(
       "SELECT setval(pg_get_serial_sequence('audit_events', 'seq'), $1, true);",
-      [currentSeq]
+      [currentSeq],
     );
 
     // 5. Delete processed events from audit_pending within the EXACT same transaction
-    await client.query("DELETE FROM audit_pending WHERE id = ANY($1::bigint[]);", [
-      pendingIdsToDelete,
-    ]);
+    await client.query(
+      "DELETE FROM audit_pending WHERE id = ANY($1::bigint[]);",
+      [pendingIdsToDelete],
+    );
 
     // Update chain length metric
     this.chainLengthGauge.set(currentSeq);
 
     // 6. Update lag and queue metrics for remaining pending events
-    const remainingPendingRes = await client.query<{ count: string | number; created_at: Date | string | null }>(
-      "SELECT COUNT(*)::bigint AS count, MIN(created_at) AS created_at FROM audit_pending;"
+    const remainingPendingRes = await client.query<{
+      count: string | number;
+      created_at: Date | string | null;
+    }>(
+      "SELECT COUNT(*)::bigint AS count, MIN(created_at) AS created_at FROM audit_pending;",
     );
 
     let pendingAgeSeconds = 0;
-    if (remainingPendingRes.rows.length > 0 && remainingPendingRes.rows[0]?.created_at) {
+    if (
+      remainingPendingRes.rows.length > 0 &&
+      remainingPendingRes.rows[0]?.created_at
+    ) {
       const count = Number(remainingPendingRes.rows[0].count);
       this.pendingQueueGauge.set(count);
-      const oldestCreatedAt = new Date(remainingPendingRes.rows[0].created_at).getTime();
+      const oldestCreatedAt = new Date(
+        remainingPendingRes.rows[0].created_at,
+      ).getTime();
       pendingAgeSeconds = Math.max(0, (Date.now() - oldestCreatedAt) / 1000);
       this.pendingAgeGauge.set(pendingAgeSeconds);
     } else {

@@ -34,7 +34,7 @@ describe("Subsystem 3 Conformance: RFC 8785 Canonicalization & Ed25519 Cryptogra
 
     const canonicalJson = canonicalizeJson(uncanonical);
     expect(canonicalJson).toBe(
-      '{"attributes":{"a":1,"z":99},"flag_key":"ui.theme","lease_id":"lease-101","ttl_seconds":1800,"variant":"dark-mode"}'
+      '{"attributes":{"a":1,"z":99},"flag_key":"ui.theme","lease_id":"lease-101","ttl_seconds":1800,"variant":"dark-mode"}',
     );
   });
 
@@ -52,7 +52,10 @@ describe("Subsystem 3 Conformance: RFC 8785 Canonicalization & Ed25519 Cryptogra
 
     // Domain separation prefix for leases
     const domainPrefix = Buffer.from(LEASE_DOMAIN_PREFIX, "utf8");
-    const messageBuffer = Buffer.concat([domainPrefix, Buffer.from(canonicalJson, "utf8")]);
+    const messageBuffer = Buffer.concat([
+      domainPrefix,
+      Buffer.from(canonicalJson, "utf8"),
+    ]);
 
     // Sign with null algorithm (required for Ed25519 in Node.js)
     const signature = crypto.sign(null, messageBuffer, privateKey);
@@ -64,13 +67,29 @@ describe("Subsystem 3 Conformance: RFC 8785 Canonicalization & Ed25519 Cryptogra
 
     // Reject verification if domain prefix differs (cross-protocol prevention)
     const revocationPrefix = Buffer.from(KEYREVOCATION_DOMAIN_PREFIX, "utf8");
-    const tamperedDomainBuffer = Buffer.concat([revocationPrefix, Buffer.from(canonicalJson, "utf8")]);
-    const isDomainTamperedValid = crypto.verify(null, tamperedDomainBuffer, publicKey, signature);
+    const tamperedDomainBuffer = Buffer.concat([
+      revocationPrefix,
+      Buffer.from(canonicalJson, "utf8"),
+    ]);
+    const isDomainTamperedValid = crypto.verify(
+      null,
+      tamperedDomainBuffer,
+      publicKey,
+      signature,
+    );
     expect(isDomainTamperedValid).toBe(false);
 
     // Reject verification if payload is altered
-    const alteredPayload = Buffer.concat([domainPrefix, Buffer.from(canonicalJson + "tamper", "utf8")]);
-    const isPayloadTamperedValid = crypto.verify(null, alteredPayload, publicKey, signature);
+    const alteredPayload = Buffer.concat([
+      domainPrefix,
+      Buffer.from(canonicalJson + "tamper", "utf8"),
+    ]);
+    const isPayloadTamperedValid = crypto.verify(
+      null,
+      alteredPayload,
+      publicKey,
+      signature,
+    );
     expect(isPayloadTamperedValid).toBe(false);
   });
 });
@@ -105,7 +124,7 @@ describe("Subsystem 1 & 2 Conformance: OpenFeature Provider Contract & Fail-Open
       flagKey: string,
       defaultValue: boolean,
       context: EvaluationContext,
-      logger: Logger
+      logger: Logger,
     ): Promise<ResolutionDetails<boolean>> {
       try {
         if (this.simulateInternalCrash) {
@@ -127,16 +146,23 @@ describe("Subsystem 1 & 2 Conformance: OpenFeature Provider Contract & Fail-Open
         }
       } catch (err) {
         // Invariant 1: Fail-safe fallback to delegate provider on any internal exception
-        logger?.warn?.(`SynapseState internal error, falling back to delegate: ${err}`);
+        logger?.warn?.(
+          `SynapseState internal error, falling back to delegate: ${err}`,
+        );
       }
-      return this.delegate.resolveBooleanEvaluation(flagKey, defaultValue, context, logger);
+      return this.delegate.resolveBooleanEvaluation(
+        flagKey,
+        defaultValue,
+        context,
+        logger,
+      );
     }
 
     async resolveStringEvaluation(
       flagKey: string,
       defaultValue: string,
       context: EvaluationContext,
-      logger: Logger
+      logger: Logger,
     ): Promise<ResolutionDetails<string>> {
       try {
         if (this.simulateInternalCrash) {
@@ -157,25 +183,40 @@ describe("Subsystem 1 & 2 Conformance: OpenFeature Provider Contract & Fail-Open
       } catch (err) {
         logger?.warn?.(`Fallback on error: ${err}`);
       }
-      return this.delegate.resolveStringEvaluation(flagKey, defaultValue, context, logger);
+      return this.delegate.resolveStringEvaluation(
+        flagKey,
+        defaultValue,
+        context,
+        logger,
+      );
     }
 
     async resolveNumberEvaluation(
       flagKey: string,
       defaultValue: number,
       context: EvaluationContext,
-      logger: Logger
+      logger: Logger,
     ): Promise<ResolutionDetails<number>> {
-      return this.delegate.resolveNumberEvaluation(flagKey, defaultValue, context, logger);
+      return this.delegate.resolveNumberEvaluation(
+        flagKey,
+        defaultValue,
+        context,
+        logger,
+      );
     }
 
     async resolveObjectEvaluation<T extends JsonValue>(
       flagKey: string,
       defaultValue: T,
       context: EvaluationContext,
-      logger: Logger
+      logger: Logger,
     ): Promise<ResolutionDetails<T>> {
-      return this.delegate.resolveObjectEvaluation(flagKey, defaultValue, context, logger);
+      return this.delegate.resolveObjectEvaluation(
+        flagKey,
+        defaultValue,
+        context,
+        logger,
+      );
     }
   }
 
@@ -242,7 +283,10 @@ describe("Subsystem 1 & 2 Conformance: OpenFeature Provider Contract & Fail-Open
 
     // Zero-Context TelemetryHook conforming to Invariant 5
     const telemetryHook: Hook = {
-      after(hookContext: Readonly<HookContext>, details: EvaluationDetails<FlagValue>): void {
+      after(
+        hookContext: Readonly<HookContext>,
+        details: EvaluationDetails<FlagValue>,
+      ): void {
         // Non-negotiable invariant: hookContext.context MUST NOT be accessed
         recordedMetrics.push({
           flagKey: hookContext.flagKey,
@@ -281,6 +325,8 @@ describe("Subsystem 1 & 2 Conformance: OpenFeature Provider Contract & Fail-Open
     });
     // Ensure recorded metrics contains no trace of sensitiveContext keys
     expect(JSON.stringify(recordedMetrics[0])).not.toContain("user-12345");
-    expect(JSON.stringify(recordedMetrics[0])).not.toContain("sensitive-user@enterprise.internal");
+    expect(JSON.stringify(recordedMetrics[0])).not.toContain(
+      "sensitive-user@enterprise.internal",
+    );
   });
 });

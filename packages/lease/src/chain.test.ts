@@ -258,10 +258,14 @@ describe("Audit Ledger Chain Math & Verification (packages/lease/src/chain.ts)",
       prev_hash: "a".repeat(64),
       hash: "b".repeat(64),
     };
-    const result = verifyAuditChain([event], "a".repeat(64), { requireGenesisStart: false });
+    const result = verifyAuditChain([event], "a".repeat(64), {
+      requireGenesisStart: false,
+    });
     expect(result.valid).toBe(false);
     expect(result.failedSeq).toBe(1);
-    expect(result.error).toBe(`Genesis prev_hash must be 64 zeros, got: "${"a".repeat(64)}"`);
+    expect(result.error).toBe(
+      `Genesis prev_hash must be 64 zeros, got: "${"a".repeat(64)}"`,
+    );
   });
 
   it("formats broken prev_hash error messages specifically for seq 1 and seq > 1", () => {
@@ -276,7 +280,9 @@ describe("Audit Ledger Chain Math & Verification (packages/lease/src/chain.ts)",
     };
     const res1 = verifyAuditChain([event1BadPrev]);
     expect(res1.valid).toBe(false);
-    expect(res1.error).toBe(`Genesis prev_hash must be 64 zeros, got: "${event1BadPrev.prev_hash}"`);
+    expect(res1.error).toBe(
+      `Genesis prev_hash must be 64 zeros, got: "${event1BadPrev.prev_hash}"`,
+    );
 
     const valid1 = {
       seq: 1,
@@ -286,7 +292,11 @@ describe("Audit Ledger Chain Math & Verification (packages/lease/src/chain.ts)",
       payload: {},
     };
     const hash1 = computeEventHash(GENESIS_PREV_HASH, valid1);
-    const rec1: AuditEventRecord = { ...valid1, prev_hash: GENESIS_PREV_HASH, hash: hash1 };
+    const rec1: AuditEventRecord = {
+      ...valid1,
+      prev_hash: GENESIS_PREV_HASH,
+      hash: hash1,
+    };
 
     const rec2BadPrev: AuditEventRecord = {
       seq: 2,
@@ -301,16 +311,36 @@ describe("Audit Ledger Chain Math & Verification (packages/lease/src/chain.ts)",
     const res2 = verifyAuditChain([rec1, rec2BadPrev]);
     expect(res2.valid).toBe(false);
     expect(res2.failedSeq).toBe(2);
-    expect(res2.error).toBe(`Broken prev_hash link at seq 2: expected "${hash1}", got "${rec2BadPrev.prev_hash}"`);
+    expect(res2.error).toBe(
+      `Broken prev_hash link at seq 2: expected "${hash1}", got "${rec2BadPrev.prev_hash}"`,
+    );
   });
 
   it("handles non-Date and non-parseable timestamps in canonicalizeAuditEvent", () => {
     const d = new Date("2026-10-11T12:00:00.000Z");
-    const c1 = canonicalizeAuditEvent({ seq: 1, ts: d, actor: "a", event_type: "e", payload: {} });
-    const c2 = canonicalizeAuditEvent({ seq: 1, ts: "2026-10-11T12:00:00.000Z", actor: "a", event_type: "e", payload: {} });
+    const c1 = canonicalizeAuditEvent({
+      seq: 1,
+      ts: d,
+      actor: "a",
+      event_type: "e",
+      payload: {},
+    });
+    const c2 = canonicalizeAuditEvent({
+      seq: 1,
+      ts: "2026-10-11T12:00:00.000Z",
+      actor: "a",
+      event_type: "e",
+      payload: {},
+    });
     expect(c1).toBe(c2);
 
-    const c3 = canonicalizeAuditEvent({ seq: 1, ts: "invalid-date", actor: "a", event_type: "e", payload: {} });
+    const c3 = canonicalizeAuditEvent({
+      seq: 1,
+      ts: "invalid-date",
+      actor: "a",
+      event_type: "e",
+      payload: {},
+    });
     expect(c3).toContain('"ts":"invalid-date"');
   });
 

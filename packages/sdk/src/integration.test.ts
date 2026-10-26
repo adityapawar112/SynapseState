@@ -154,31 +154,33 @@ describe("SDK End-to-End Integration: Break-Glass & Hot-Reload Lifecycle", () =>
     };
     const signedLease = signLease(stateLease, alicePair.privateKey);
 
-    const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
-      if (url.includes("/v1/sdk/state")) {
-        return {
-          ok: true,
-          status: 200,
-          headers: new Headers({ etag: '"state-etag-v1"' }),
-          json: async () => ({
-            server_time: new Date().toISOString(),
-            registry_version: 1,
-            active_leases: [signedLease],
-            revocations: [],
-            key_revocations: [],
-          }),
-        };
-      }
-      if (url.includes("/v1/telemetry/batches")) {
-        flushedBatches.push(JSON.parse(init?.body as string));
-        return {
-          ok: true,
-          status: 202,
-          json: async () => ({ status: "accepted" }),
-        };
-      }
-      return { ok: false, status: 404 };
-    });
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes("/v1/sdk/state")) {
+          return {
+            ok: true,
+            status: 200,
+            headers: new Headers({ etag: '"state-etag-v1"' }),
+            json: async () => ({
+              server_time: new Date().toISOString(),
+              registry_version: 1,
+              active_leases: [signedLease],
+              revocations: [],
+              key_revocations: [],
+            }),
+          };
+        }
+        if (url.includes("/v1/telemetry/batches")) {
+          flushedBatches.push(JSON.parse(init?.body as string));
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({ status: "accepted" }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
 
     const delegate = new InMemoryProvider({
       "checkout-killswitch": {

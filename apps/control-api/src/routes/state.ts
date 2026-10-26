@@ -37,13 +37,13 @@ export function parseWaitSeconds(rawWait?: unknown): number {
  */
 export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
   fastify,
-  options
+  options,
 ) => {
   const { stateManager, metrics } = options;
 
   const handleStateRequest = async (
     req: import("fastify").FastifyRequest,
-    reply: import("fastify").FastifyReply
+    reply: import("fastify").FastifyReply,
   ) => {
     const startTime = process.hrtime.bigint();
     const recordMetric = (statusCode: number) => {
@@ -51,7 +51,7 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
         const durationSec = Number(process.hrtime.bigint() - startTime) / 1e9;
         metrics.statePollDurationSeconds.observe(
           { status_code: String(statusCode) },
-          durationSec
+          durationSec,
         );
       }
     };
@@ -63,7 +63,8 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(env)) {
       recordMetric(400);
       return reply.code(400).send({
-        error: "Invalid environment parameter. Must be alphanumeric with hyphens or underscores (1-64 characters).",
+        error:
+          "Invalid environment parameter. Must be alphanumeric with hyphens or underscores (1-64 characters).",
       });
     }
 
@@ -85,7 +86,7 @@ export const stateRoutes: FastifyPluginAsync<StateRoutesOptions> = async (
         env,
         ifNoneMatch,
         waitSeconds,
-        abortController.signal
+        abortController.signal,
       );
 
       // Clean up abort listener

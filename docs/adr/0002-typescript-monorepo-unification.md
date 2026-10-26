@@ -1,7 +1,7 @@
 # 2. TypeScript Monorepo Unification
 
 Date: 2026-10-06  
-Status: Accepted  
+Status: Accepted
 
 ---
 
@@ -27,10 +27,12 @@ We chose to standardize the entire SynapseState codebase on a unified **TypeScri
 ## Consequences
 
 ### Positive
-* Single build, lint (`eslint`), format (`prettier`), and test (`vitest`/`jest`) toolchain across all packages and services.
-* 100% code sharing for cryptographic canonicalization and verification logic.
-* Faster iteration velocity and clean, single-pipeline CI/CD.
-* Frictionless local development without Docker cross-compilation or native C toolchain setups.
+
+- Single build, lint (`eslint`), format (`prettier`), and test (`vitest`/`jest`) toolchain across all packages and services.
+- 100% code sharing for cryptographic canonicalization and verification logic.
+- Faster iteration velocity and clean, single-pipeline CI/CD.
+- Frictionless local development without Docker cross-compilation or native C toolchain setups.
 
 ### Negative
-* The Control API incurs Node.js V8 memory and runtime characteristics compared to a compiled Go binary (which is entirely acceptable for single-cluster governance workloads).
+
+- The Control API incurs Node.js V8 memory and runtime characteristics compared to a compiled Go binary (which is entirely acceptable for single-cluster governance workloads).

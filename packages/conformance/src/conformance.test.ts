@@ -60,7 +60,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
 
       const report = runKeysetVectors();
       const emptyResult = report.results.find(
-        (r) => r.vectorId === "empty_keyset_authoritative_revocation"
+        (r) => r.vectorId === "empty_keyset_authoritative_revocation",
       );
       expect(emptyResult).toBeDefined();
       expect(emptyResult?.passed).toBe(true);
@@ -69,7 +69,12 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
 
     it("verifies all invalid keyset test vectors fail parsing or validation as expected", () => {
       const invalidFixtures = readFixtureJson<{
-        cases: Array<{ id: string; description: string; raw: string; expectedError: string }>;
+        cases: Array<{
+          id: string;
+          description: string;
+          raw: string;
+          expectedError: string;
+        }>;
       }>("keysets/invalid_keyset.json");
       expect(invalidFixtures.cases.length).toBe(9);
 
@@ -96,7 +101,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
   describe("Emergency Lease Vectors (fixtures/leases/)", () => {
     it("verifies 100% of valid leases pass envelope, keyset seam, signature, and dual-clock validation", () => {
       const validFixtures = readFixtureJson<{ cases: ValidLeaseVector[] }>(
-        "leases/valid_leases.json"
+        "leases/valid_leases.json",
       );
       expect(validFixtures.cases.length).toBe(5);
       const trustedKeyset = loadTrustedKeyset();
@@ -108,17 +113,23 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         // Cryptographic verification
         expect(verifyLease(validCase.envelope, key!.public_key)).toBe(true);
         // Authoritative keyset policy seam verification
-        expect(verifyLeaseWithKeyset(validCase.envelope, trustedKeyset)).toBe(true);
+        expect(verifyLeaseWithKeyset(validCase.envelope, trustedKeyset)).toBe(
+          true,
+        );
 
         // Deterministic RFC 8785 canonical serialization verification
         if (validCase.expected.canonicalPayload) {
           expect(canonicalizeJson(validCase.envelope.payload)).toBe(
-            validCase.expected.canonicalPayload
+            validCase.expected.canonicalPayload,
           );
         }
 
-        expect(validCase.envelope.payload.flag_key).toBe(validCase.expected.flagKey);
-        expect(validCase.envelope.payload.value).toEqual(validCase.expected.resolvedValue);
+        expect(validCase.envelope.payload.flag_key).toBe(
+          validCase.expected.flagKey,
+        );
+        expect(validCase.envelope.payload.value).toEqual(
+          validCase.expected.resolvedValue,
+        );
         expect(validCase.envelope.payload.kid).toBe(validCase.expected.kid);
 
         if (validCase.clockParams) {
@@ -135,7 +146,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
               issuedAt: validCase.envelope.payload.issued_at,
               ttlSeconds: validCase.envelope.payload.ttl_seconds,
               ...validCase.clockParams,
-            })
+            }),
           ).toBe(true);
         }
       }
@@ -151,7 +162,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
 
     it("verifies tampered payload leases fail cryptographic verification", () => {
       const tamperedFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
-        "leases/tampered_payload_leases.json"
+        "leases/tampered_payload_leases.json",
       );
       expect(tamperedFixtures.cases.length).toBe(8);
       const trustedKeyset = loadTrustedKeyset();
@@ -175,14 +186,14 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
     });
 
     it("verifies tampered signature leases fail schema validation or cryptographic verification (including base64url malleability)", () => {
-      const tamperedSigFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
-        "leases/tampered_sig_leases.json"
-      );
+      const tamperedSigFixtures = readFixtureJson<{
+        cases: InvalidLeaseVector[];
+      }>("leases/tampered_sig_leases.json");
       expect(tamperedSigFixtures.cases.length).toBe(6);
 
       // Verify canonical-base64url malleability vector specifically
       const malleabilityCase = tamperedSigFixtures.cases.find(
-        (c) => c.id === "tampered_sig_canonical_base64url_malleability"
+        (c) => c.id === "tampered_sig_canonical_base64url_malleability",
       );
       expect(malleabilityCase).toBeDefined();
       const malleatedEnvelope = malleabilityCase!.envelope as LeaseEnvelope;
@@ -192,7 +203,9 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
       // Raw 64-byte decoding is identical, but non-canonical padding bits must cause failure
       expect(Buffer.from(malleatedEnvelope.sig, "base64url").length).toBe(64);
       expect(verifyLease(malleatedEnvelope, key!.public_key)).toBe(false);
-      expect(verifyLeaseWithKeyset(malleatedEnvelope, trustedKeyset)).toBe(false);
+      expect(verifyLeaseWithKeyset(malleatedEnvelope, trustedKeyset)).toBe(
+        false,
+      );
 
       const report = runLeaseVectors();
       for (const tc of tamperedSigFixtures.cases) {
@@ -204,9 +217,9 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
     });
 
     it("verifies leases signed by unknown kid not in keyset are rejected under keyset-policy seam", () => {
-      const unknownKidFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
-        "leases/unknown_kid_leases.json"
-      );
+      const unknownKidFixtures = readFixtureJson<{
+        cases: InvalidLeaseVector[];
+      }>("leases/unknown_kid_leases.json");
       expect(unknownKidFixtures.cases.length).toBe(1);
       const trustedKeyset = loadTrustedKeyset();
 
@@ -225,9 +238,9 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
     });
 
     it("enforces Domain Separation Invariant: cross-domain signed leases fail verification", () => {
-      const crossDomainFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
-        "leases/cross_domain_leases.json"
-      );
+      const crossDomainFixtures = readFixtureJson<{
+        cases: InvalidLeaseVector[];
+      }>("leases/cross_domain_leases.json");
       expect(crossDomainFixtures.cases.length).toBe(4);
       const trustedKeyset = loadTrustedKeyset();
 
@@ -242,11 +255,25 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
 
         // 2. Must pass under the actual domain used to sign it
         if (tc.id === "cross_domain_signed_with_revocation_prefix") {
-          expect(verifyEnvelope(REVOCATION_DOMAIN_PREFIX, envelope, key!.public_key)).toBe(true);
+          expect(
+            verifyEnvelope(REVOCATION_DOMAIN_PREFIX, envelope, key!.public_key),
+          ).toBe(true);
         } else if (tc.id === "cross_domain_signed_with_keyrevocation_prefix") {
-          expect(verifyEnvelope(KEYREVOCATION_DOMAIN_PREFIX, envelope, key!.public_key)).toBe(true);
+          expect(
+            verifyEnvelope(
+              KEYREVOCATION_DOMAIN_PREFIX,
+              envelope,
+              key!.public_key,
+            ),
+          ).toBe(true);
         } else if (tc.id === "cross_domain_signed_with_bogus_prefix") {
-          expect(verifyEnvelope("synapsestate/audit/v1\n", envelope, key!.public_key)).toBe(true);
+          expect(
+            verifyEnvelope(
+              "synapsestate/audit/v1\n",
+              envelope,
+              key!.public_key,
+            ),
+          ).toBe(true);
         } else if (tc.id === "cross_domain_signed_with_empty_prefix") {
           expect(verifyEnvelope("", envelope, key!.public_key)).toBe(true);
         }
@@ -263,7 +290,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
 
     it("enforces Dual-Clock Expiry Invariant: expired wall clock and monotonic leases fail-static", () => {
       const expiredFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
-        "leases/expired_wall_clock_leases.json"
+        "leases/expired_wall_clock_leases.json",
       );
       expect(expiredFixtures.cases.length).toBe(4);
       const trustedKeyset = loadTrustedKeyset();
@@ -290,7 +317,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
             issuedAt: envelope.payload.issued_at,
             ttlSeconds: envelope.payload.ttl_seconds,
             ...tc.clockParams!,
-          })
+          }),
         ).toBe(false);
       }
 
@@ -305,7 +332,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
 
     it("enforces Anti-Future Skew Check: future-dated leases beyond tolerance are rejected", () => {
       const futureFixtures = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
-        "leases/future_dated_leases.json"
+        "leases/future_dated_leases.json",
       );
       expect(futureFixtures.cases.length).toBe(2);
       const trustedKeyset = loadTrustedKeyset();
@@ -329,7 +356,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
             issuedAt: envelope.payload.issued_at,
             ttlSeconds: envelope.payload.ttl_seconds,
             ...tc.clockParams!,
-          })
+          }),
         ).toBe(false);
       }
 
@@ -346,7 +373,7 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
   describe("Revocation Vectors (fixtures/revocations/)", () => {
     it("verifies 100% of valid lease revocations pass verification", () => {
       const validFixtures = readFixtureJson<{ cases: ValidRevocationVector[] }>(
-        "revocations/valid_revocations.json"
+        "revocations/valid_revocations.json",
       );
       expect(validFixtures.cases.length).toBe(2);
       const trustedKeyset = loadTrustedKeyset();
@@ -355,9 +382,13 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         const key = getKey(trustedKeyset, vc.envelope.payload.kid);
         expect(key).toBeDefined();
         expect(verifyRevocation(vc.envelope, key!.public_key)).toBe(true);
-        expect(verifyRevocationWithKeyset(vc.envelope, trustedKeyset)).toBe(true);
+        expect(verifyRevocationWithKeyset(vc.envelope, trustedKeyset)).toBe(
+          true,
+        );
         if (vc.expected.canonicalPayload) {
-          expect(canonicalizeJson(vc.envelope.payload)).toBe(vc.expected.canonicalPayload);
+          expect(canonicalizeJson(vc.envelope.payload)).toBe(
+            vc.expected.canonicalPayload,
+          );
         }
         expect(vc.envelope.payload.lease_id).toBe(vc.expected.leaseId);
         expect(vc.envelope.payload.kid).toBe(vc.expected.kid);
@@ -373,23 +404,31 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
     });
 
     it("verifies invalid lease revocations fail verification with expected reasons", () => {
-      const invalidFixtures = readFixtureJson<{ cases: InvalidRevocationVector[] }>(
-        "revocations/invalid_revocations.json"
-      );
+      const invalidFixtures = readFixtureJson<{
+        cases: InvalidRevocationVector[];
+      }>("revocations/invalid_revocations.json");
       expect(invalidFixtures.cases.length).toBe(5);
       const trustedKeyset = loadTrustedKeyset();
 
       // Check cross-domain revocation vector mathematically
       const crossDomainRev = invalidFixtures.cases.find(
-        (c) => c.id === "revocation_cross_domain_lease_prefix"
+        (c) => c.id === "revocation_cross_domain_lease_prefix",
       );
       expect(crossDomainRev).toBeDefined();
       const crossEnvelope = crossDomainRev!.envelope as RevocationEnvelope;
       const crossKey = getKey(trustedKeyset, crossEnvelope.payload.kid);
       expect(crossKey).toBeDefined();
       expect(verifyRevocation(crossEnvelope, crossKey!.public_key)).toBe(false);
-      expect(verifyRevocationWithKeyset(crossEnvelope, trustedKeyset)).toBe(false);
-      expect(verifyEnvelope(LEASE_DOMAIN_PREFIX, crossEnvelope, crossKey!.public_key)).toBe(true);
+      expect(verifyRevocationWithKeyset(crossEnvelope, trustedKeyset)).toBe(
+        false,
+      );
+      expect(
+        verifyEnvelope(
+          LEASE_DOMAIN_PREFIX,
+          crossEnvelope,
+          crossKey!.public_key,
+        ),
+      ).toBe(true);
 
       const report = runRevocationVectors();
       for (const ic of invalidFixtures.cases) {
@@ -403,9 +442,9 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
 
   describe("Key Revocation Vectors (fixtures/key_revocations/)", () => {
     it("verifies 100% of valid key revocations pass verification", () => {
-      const validFixtures = readFixtureJson<{ cases: ValidKeyRevocationVector[] }>(
-        "key_revocations/valid_key_revocations.json"
-      );
+      const validFixtures = readFixtureJson<{
+        cases: ValidKeyRevocationVector[];
+      }>("key_revocations/valid_key_revocations.json");
       expect(validFixtures.cases.length).toBe(2);
       const trustedKeyset = loadTrustedKeyset();
 
@@ -416,9 +455,13 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
         // ARCHITECTURE.md:286 - Key revocation signer requires key_revoker permission
         expect(canRevokeKey(key!)).toBe(true);
         expect(verifyKeyRevocation(vc.envelope, key!.public_key)).toBe(true);
-        expect(verifyKeyRevocationWithKeyset(vc.envelope, trustedKeyset, signerKid)).toBe(true);
+        expect(
+          verifyKeyRevocationWithKeyset(vc.envelope, trustedKeyset, signerKid),
+        ).toBe(true);
         if (vc.expected.canonicalPayload) {
-          expect(canonicalizeJson(vc.envelope.payload)).toBe(vc.expected.canonicalPayload);
+          expect(canonicalizeJson(vc.envelope.payload)).toBe(
+            vc.expected.canonicalPayload,
+          );
         }
         expect(vc.envelope.payload.kid).toBe(vc.expected.revokedKid);
       }
@@ -433,24 +476,36 @@ describe("Language-Neutral Conformance Golden Vectors & Runner", () => {
     });
 
     it("verifies invalid key revocations fail verification with expected reasons", () => {
-      const invalidFixtures = readFixtureJson<{ cases: InvalidKeyRevocationVector[] }>(
-        "key_revocations/invalid_key_revocations.json"
-      );
+      const invalidFixtures = readFixtureJson<{
+        cases: InvalidKeyRevocationVector[];
+      }>("key_revocations/invalid_key_revocations.json");
       expect(invalidFixtures.cases.length).toBe(5);
       const trustedKeyset = loadTrustedKeyset();
 
       // Check cross-domain key revocation vector mathematically
       const crossDomainKeyRev = invalidFixtures.cases.find(
-        (c) => c.id === "key_revocation_cross_domain"
+        (c) => c.id === "key_revocation_cross_domain",
       );
       expect(crossDomainKeyRev).toBeDefined();
-      const crossEnvelope = crossDomainKeyRev!.envelope as KeyRevocationEnvelope;
-      const signerKid = crossEnvelope.payload.revoked_by_kid ?? crossEnvelope.payload.kid;
+      const crossEnvelope = crossDomainKeyRev!
+        .envelope as KeyRevocationEnvelope;
+      const signerKid =
+        crossEnvelope.payload.revoked_by_kid ?? crossEnvelope.payload.kid;
       const crossKey = getKey(trustedKeyset, signerKid);
       expect(crossKey).toBeDefined();
-      expect(verifyKeyRevocation(crossEnvelope, crossKey!.public_key)).toBe(false);
-      expect(verifyKeyRevocationWithKeyset(crossEnvelope, trustedKeyset, signerKid)).toBe(false);
-      expect(verifyEnvelope(LEASE_DOMAIN_PREFIX, crossEnvelope, crossKey!.public_key)).toBe(true);
+      expect(verifyKeyRevocation(crossEnvelope, crossKey!.public_key)).toBe(
+        false,
+      );
+      expect(
+        verifyKeyRevocationWithKeyset(crossEnvelope, trustedKeyset, signerKid),
+      ).toBe(false);
+      expect(
+        verifyEnvelope(
+          LEASE_DOMAIN_PREFIX,
+          crossEnvelope,
+          crossKey!.public_key,
+        ),
+      ).toBe(true);
 
       const report = runKeyRevocationVectors();
       for (const ic of invalidFixtures.cases) {

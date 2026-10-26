@@ -39,7 +39,7 @@ describe("API Route: GET /api/auth/callback", () => {
         headers: {
           cookie: "synapse_oauth_state=state-bar",
         },
-      }
+      },
     );
     const res = await GET(req);
 
@@ -57,7 +57,7 @@ describe("API Route: GET /api/auth/callback", () => {
         headers: {
           cookie: "synapse_oauth_state=matching-state",
         },
-      }
+      },
     );
     const res = await GET(req);
 
@@ -79,7 +79,7 @@ describe("API Route: GET /api/auth/callback", () => {
         headers: {
           cookie: "synapse_oauth_state=matching-state",
         },
-      }
+      },
     );
     const res = await GET(req);
 
@@ -97,16 +97,23 @@ describe("API Route: GET /api/auth/callback", () => {
       email: "bob@example.com",
       avatar_url: "https://avatars.githubusercontent.com/u/12345",
     };
-    const mockTeams = [{ slug: "incident-responders", name: "Incident Responders" }];
+    const mockTeams = [
+      { slug: "incident-responders", name: "Incident Responders" },
+    ];
 
-    const auditSpy = vi.spyOn(controlApiClient, "recordAuditEvent").mockResolvedValue(true);
+    const auditSpy = vi
+      .spyOn(controlApiClient, "recordAuditEvent")
+      .mockResolvedValue(true);
 
     vi.spyOn(globalThis, "fetch")
       // 1. Token exchange
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ access_token: mockAccessToken, token_type: "bearer" }),
+        json: async () => ({
+          access_token: mockAccessToken,
+          token_type: "bearer",
+        }),
       } as Response)
       // 2. User profile
       .mockResolvedValueOnce({
@@ -133,7 +140,7 @@ describe("API Route: GET /api/auth/callback", () => {
         headers: {
           cookie: "synapse_oauth_state=matching-state",
         },
-      }
+      },
     );
     const res = await GET(req);
 
@@ -146,7 +153,10 @@ describe("API Route: GET /api/auth/callback", () => {
     expect(sessionCookie).toBeDefined();
     expect(sessionCookie?.httpOnly).toBe(true);
 
-    const sessionUser = await verifySessionToken(sessionCookie!.value, mockSecret);
+    const sessionUser = await verifySessionToken(
+      sessionCookie!.value,
+      mockSecret,
+    );
     expect(sessionUser).not.toBeNull();
     expect(sessionUser?.login).toBe("bob-sre");
     expect(sessionUser?.role).toBe("operator"); // mapped from incident-responders team!
@@ -208,12 +218,15 @@ describe("API Route: GET /api/auth/callback", () => {
         headers: {
           cookie: "synapse_oauth_state=matching-state",
         },
-      }
+      },
     );
     const res = await GET(req);
 
     const sessionCookie = res.cookies.get("synapse_session");
-    const sessionUser = await verifySessionToken(sessionCookie!.value, mockSecret);
+    const sessionUser = await verifySessionToken(
+      sessionCookie!.value,
+      mockSecret,
+    );
     expect(sessionUser?.role).toBe("admin");
   });
 });

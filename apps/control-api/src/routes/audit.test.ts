@@ -282,7 +282,15 @@ describe("Phase 4 PR 19: Audit Export Routes (apps/control-api/src/routes/audit.
       await leasePool.query(
         `INSERT INTO audit_events (seq, ts, actor, event_type, payload, prev_hash, hash)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [1, ts, eventData.actor, eventData.event_type, JSON.stringify(eventData.payload), GENESIS_PREV_HASH, hash],
+        [
+          1,
+          ts,
+          eventData.actor,
+          eventData.event_type,
+          JSON.stringify(eventData.payload),
+          GENESIS_PREV_HASH,
+          hash,
+        ],
       );
 
       const res = await app.inject({
@@ -368,7 +376,10 @@ describe("Phase 4 PR 19: Audit Export Routes (apps/control-api/src/routes/audit.
         payload: {
           actor: "sre-alice",
           event_type: "DASHBOARD_PROMOTE_TRIGGERED",
-          payload: { lease_id: "01J9X57YTRPQ8A7F4E12345678", env: "production" },
+          payload: {
+            lease_id: "01J9X57YTRPQ8A7F4E12345678",
+            env: "production",
+          },
         },
       });
 
@@ -388,4 +399,3 @@ describe("Phase 4 PR 19: Audit Export Routes (apps/control-api/src/routes/audit.
     });
   });
 });
-

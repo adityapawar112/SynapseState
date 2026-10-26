@@ -220,11 +220,13 @@ describe("Ed25519 Cryptographic Sign & Verify", () => {
       const leaseEnv = await signLeaseWithSigner(sampleLease, mockSigner);
       expect(verifyLease(leaseEnv, publicKey)).toBe(true);
 
-      const revEnv = await signRevocationWithSigner(sampleRevocation, mockSigner);
+      const revEnv = await signRevocationWithSigner(
+        sampleRevocation,
+        mockSigner,
+      );
       expect(verifyRevocation(revEnv, publicKey)).toBe(true);
     });
   });
-
 
   describe("Property-based testing (fast-check)", () => {
     it("round-trip sign and verify holds for arbitrary valid lease payloads", () => {
@@ -346,7 +348,9 @@ describe("Ed25519 Cryptographic Sign & Verify", () => {
 
     it("rejects non-ed25519 keys or invalid types", () => {
       // RSA Keypair
-      const rsaPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const rsaPair = crypto.generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+      });
 
       expect(() => resolvePublicKey(rsaPair.publicKey)).toThrowError(
         /Expected ed25519 public key, got rsa/,
@@ -355,12 +359,18 @@ describe("Ed25519 Cryptographic Sign & Verify", () => {
         /Expected ed25519 private key, got rsa/,
       );
 
-      const rsaPubPem = rsaPair.publicKey.export({ type: "spki", format: "pem" }) as string;
+      const rsaPubPem = rsaPair.publicKey.export({
+        type: "spki",
+        format: "pem",
+      }) as string;
       expect(() => resolvePublicKey(rsaPubPem)).toThrowError(
         /Expected ed25519 PEM key, got rsa/,
       );
 
-      const rsaPrivPem = rsaPair.privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+      const rsaPrivPem = rsaPair.privateKey.export({
+        type: "pkcs8",
+        format: "pem",
+      }) as string;
       expect(() => resolvePrivateKey(rsaPrivPem)).toThrowError(
         /Expected ed25519 PEM key, got rsa/,
       );
@@ -378,47 +388,81 @@ describe("Ed25519 Cryptographic Sign & Verify", () => {
       expect(() => resolvePrivateKey("invalid-key-string")).toThrow();
 
       // DER buffer for non-ed25519 keys
-      const rsaSpkiDer = rsaPair.publicKey.export({ type: "spki", format: "der" });
-      const rsaPkcs8Der = rsaPair.privateKey.export({ type: "pkcs8", format: "der" });
-      expect(() => resolvePublicKey(rsaSpkiDer)).toThrowError(/Expected ed25519 key, got rsa/);
-      expect(() => resolvePrivateKey(rsaPkcs8Der)).toThrowError(/Expected ed25519 key, got rsa/);
+      const rsaSpkiDer = rsaPair.publicKey.export({
+        type: "spki",
+        format: "der",
+      });
+      const rsaPkcs8Der = rsaPair.privateKey.export({
+        type: "pkcs8",
+        format: "der",
+      });
+      expect(() => resolvePublicKey(rsaSpkiDer)).toThrowError(
+        /Expected ed25519 key, got rsa/,
+      );
+      expect(() => resolvePrivateKey(rsaPkcs8Der)).toThrowError(
+        /Expected ed25519 key, got rsa/,
+      );
 
       // Generic string (PKCS#1) for non-ed25519
-      const rsaPkcs1Pem = rsaPair.publicKey.export({ type: "pkcs1", format: "pem" }) as string;
-      expect(() => resolvePublicKey(rsaPkcs1Pem)).toThrowError(/Expected ed25519/);
+      const rsaPkcs1Pem = rsaPair.publicKey.export({
+        type: "pkcs1",
+        format: "pem",
+      }) as string;
+      expect(() => resolvePublicKey(rsaPkcs1Pem)).toThrowError(
+        /Expected ed25519/,
+      );
     });
 
     it("fails closed in verifyEnvelope on malformed envelopes and signatures", () => {
       expect(verifyLease(null as any, publicKey)).toBe(false);
       expect(verifyLease(undefined as any, publicKey)).toBe(false);
       expect(verifyLease("string" as any, publicKey)).toBe(false);
-      expect(verifyLease({ payload: sampleLease } as any, publicKey)).toBe(false);
-      expect(verifyLease({ payload: sampleLease, sig: 1234 } as any, publicKey)).toBe(false);
+      expect(verifyLease({ payload: sampleLease } as any, publicKey)).toBe(
+        false,
+      );
+      expect(
+        verifyLease({ payload: sampleLease, sig: 1234 } as any, publicKey),
+      ).toBe(false);
 
       // Non-canonical base64url (padding or invalid chars)
-      expect(verifyLease({ payload: sampleLease, sig: "ABCDEF==" }, publicKey)).toBe(false);
+      expect(
+        verifyLease({ payload: sampleLease, sig: "ABCDEF==" }, publicKey),
+      ).toBe(false);
 
       // Signature not exactly 64 bytes
       const shortSig = Buffer.from("short").toString("base64url");
-      expect(verifyLease({ payload: sampleLease, sig: shortSig }, publicKey)).toBe(false);
+      expect(
+        verifyLease({ payload: sampleLease, sig: shortSig }, publicKey),
+      ).toBe(false);
 
       // Non-matching base64url roundtrip (malleable representation)
       const validEnvelope = signLease(sampleLease, privateKey);
       const rawSig = Buffer.from(validEnvelope.sig, "base64url");
       // Add extra padding or non-canonical characters
       const nonCanonical = rawSig.toString("base64url") + "%";
-      expect(verifyLease({ payload: sampleLease, sig: nonCanonical }, publicKey)).toBe(false);
+      expect(
+        verifyLease({ payload: sampleLease, sig: nonCanonical }, publicKey),
+      ).toBe(false);
 
       // Standard base64 with padding (fails BASE64URL_REGEX and roundtrip check)
       const standardBase64WithPadding = rawSig.toString("base64");
-      expect(verifyLease({ payload: sampleLease, sig: standardBase64WithPadding }, publicKey)).toBe(false);
+      expect(
+        verifyLease(
+          { payload: sampleLease, sig: standardBase64WithPadding },
+          publicKey,
+        ),
+      ).toBe(false);
 
       // Signature buffer of wrong length (e.g. 63 bytes or 65 bytes)
       const wrongLenSig = Buffer.alloc(63, 0xaa).toString("base64url");
-      expect(verifyLease({ payload: sampleLease, sig: wrongLenSig }, publicKey)).toBe(false);
+      expect(
+        verifyLease({ payload: sampleLease, sig: wrongLenSig }, publicKey),
+      ).toBe(false);
 
       const wrongLenSig65 = Buffer.alloc(65, 0xaa).toString("base64url");
-      expect(verifyLease({ payload: sampleLease, sig: wrongLenSig65 }, publicKey)).toBe(false);
+      expect(
+        verifyLease({ payload: sampleLease, sig: wrongLenSig65 }, publicKey),
+      ).toBe(false);
     });
   });
 });

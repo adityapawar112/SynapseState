@@ -75,12 +75,9 @@ export async function executeKeyGenerate(params: KeyGenerateParams): Promise<{
 }> {
   validateKid(params.kid);
 
-  const password =
-    params.password ?? process.env.SYNAPSE_KEY_PASSWORD ?? "";
+  const password = params.password ?? process.env.SYNAPSE_KEY_PASSWORD ?? "";
 
-  const outDir = params.dir
-    ? path.resolve(params.dir)
-    : getDefaultKeysDir();
+  const outDir = params.dir ? path.resolve(params.dir) : getDefaultKeysDir();
 
   const roles =
     params.roles && params.roles.length > 0
@@ -108,13 +105,17 @@ export async function executeKeyGenerate(params: KeyGenerateParams): Promise<{
     },
   };
 
-  console.log(pc.green(pc.bold("\n✓ Keypair generated and encrypted successfully!")));
+  console.log(
+    pc.green(pc.bold("\n✓ Keypair generated and encrypted successfully!")),
+  );
   console.log(pc.dim("--------------------------------------------------"));
   console.log(`${pc.bold("Key ID (kid):")}    ${signer.kid}`);
   console.log(`${pc.bold("File Path:")}       ${filePath}`);
   console.log(`${pc.bold("Public Key:")}      ${publicKeyHex}`);
   console.log(pc.dim("--------------------------------------------------"));
-  console.log(pc.cyan("Add the following entry to your Git keyset.json / keyset.yaml:"));
+  console.log(
+    pc.cyan("Add the following entry to your Git keyset.json / keyset.yaml:"),
+  );
   console.log(JSON.stringify(snippet, null, 2) + "\n");
 
   return {
@@ -137,17 +138,19 @@ export async function executeKeyExportPublic(
     targetFile = path.resolve(params.file);
   } else if (params.kid) {
     validateKid(params.kid);
-    const dir = params.dir
-      ? path.resolve(params.dir)
-      : getDefaultKeysDir();
+    const dir = params.dir ? path.resolve(params.dir) : getDefaultKeysDir();
     targetFile = path.join(dir, `${params.kid}.key`);
   } else {
-    throw new Error("Either --kid or --file must be specified for export-public");
+    throw new Error(
+      "Either --kid or --file must be specified for export-public",
+    );
   }
 
   const format = params.format ?? "json";
   if (format !== "json" && format !== "yaml") {
-    throw new Error(`Unsupported format "${format}". Must be "json" or "yaml".`);
+    throw new Error(
+      `Unsupported format "${format}". Must be "json" or "yaml".`,
+    );
   }
 
   const roles =
@@ -202,13 +205,18 @@ export function registerKeyCommands(program: Command): void {
 
   key
     .command("generate")
-    .description("Generate a new Ed25519 keypair encrypted with AES-256-GCM + scrypt")
+    .description(
+      "Generate a new Ed25519 keypair encrypted with AES-256-GCM + scrypt",
+    )
     .requiredOption("-k, --kid <kid>", "Key identifier (e.g. alice-oncall-sre)")
     .option(
       "-p, --password <password>",
       "Passphrase for AES-256-GCM keyfile encryption (WARNING: CLI arguments may be visible in process listings; prefer SYNAPSE_KEY_PASSWORD environment variable)",
     )
-    .option("-d, --dir <dir>", "Output directory for keyfile (defaults to ~/.synapse/keys)")
+    .option(
+      "-d, --dir <dir>",
+      "Output directory for keyfile (defaults to ~/.synapse/keys)",
+    )
     .option(
       "-r, --roles <roles...>",
       "Authorized roles in keyset snippet (default: lease_signer)",
@@ -240,17 +248,29 @@ export function registerKeyCommands(program: Command): void {
 
   key
     .command("export-public")
-    .description("Export public key entry formatted for Git keyset.json / keyset.yaml")
-    .option("-k, --kid <kid>", "Key identifier to locate keyfile in keys directory")
+    .description(
+      "Export public key entry formatted for Git keyset.json / keyset.yaml",
+    )
+    .option(
+      "-k, --kid <kid>",
+      "Key identifier to locate keyfile in keys directory",
+    )
     .option("-f, --file <file>", "Direct path to .key file")
-    .option("-d, --dir <dir>", "Directory containing keyfiles (defaults to ~/.synapse/keys)")
+    .option(
+      "-d, --dir <dir>",
+      "Directory containing keyfiles (defaults to ~/.synapse/keys)",
+    )
     .option("--format <format>", "Output format: json or yaml", "json")
     .option(
       "-r, --roles <roles...>",
       "Authorized roles in keyset snippet (default: lease_signer)",
       ["lease_signer"],
     )
-    .option("-s, --status <status>", "Key lifecycle status (default: active)", "active")
+    .option(
+      "-s, --status <status>",
+      "Key lifecycle status (default: active)",
+      "active",
+    )
     .option(
       "-m, --max-ttl <seconds>",
       "Maximum allowed lease TTL in seconds (default: 3600)",

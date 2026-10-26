@@ -57,7 +57,7 @@ gantt
     Phase 6 - Dashboard and Attribution     :done, p6, after p5, 14d
     section Verification & Performance
     Phase 7 - Advanced E2E & Mutation Tests :done, p7, after p6, 14d
-    Phase 8 - Load Saturation and Soak      :active, p8, after p7, 14d
+    Phase 8 - Load Saturation and Soak      :done, p8, after p7, 14d
 ```
 
 ---
@@ -293,22 +293,22 @@ gantt
 
 **Deliverable:** 10-minute soak testing, saturation cliff identification, bulkhead load-shedding proof, and automated headless screenshot capture during live load. Reference: [docs/benchmarks/load-test-report.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/benchmarks/load-test-report.md).
 
-- **8.1 Multi-Scenario k6 Saturation & Soak Harness (`load/k6/`):**
+- **8.1 Multi-Scenario k6 Saturation & Soak Harness (`load/k6/`):** `[COMPLETED]`
   - Standardized 4-phase Story Arc traffic orchestration: Baseline $\to$ Emergency Break-Glass $\to$ Telemetry Bulkhead Saturation $\to$ Ephemeral Expiry.
   - 10-minute sustained soak test to verify Node.js memory RSS stability under continuous long-polling.
   - Native k6 threshold assertions (`p(95) < 10s`, `http_req_failed < 0.1%`) exiting with code 99 to fail CI on performance regressions; workflow artifact summary export (Decision: Open Question 8; zero auto-commit bots).
-- **8.2 Bulkhead Isolation & Load-Shedding Verification:**
+- **8.2 Bulkhead Isolation & Load-Shedding Verification:** `[COMPLETED]`
   - Empirical proof under 5,000+ evals/s that telemetry saturation sheds load (HTTP 429 on `telemetryPool`) while state delivery (`leasePool`) maintains 100% availability and $<10\text{ms}$ latency.
-- **8.3 Automated Observability Screenshot Pipeline:**
+- **8.3 Automated Observability Screenshot Pipeline:** `[COMPLETED]`
   - Containerized Playwright visual capture (`pnpm run capture:docs`) running in official Docker container (`mcr.microsoft.com/playwright:v1.49.0-jammy`) with pinned fonts for deterministic, platform-independent screenshot generation (Decision: Open Question 10).
   - Captures all 5 monitoring surfaces (Overview, Leases, Flags, Audit Ledger, Grafana) during live load scenarios for README and documentation assets.
-- **Recommended Branches & Pull Requests:**
-  - **PR 30 (`test/k6-soak-and-saturation`):** `test(load): 10-minute soak harness and saturation cliff benchmarks` — `load/k6/*`
-  - **PR 31 (`ci/automated-dashboard-screenshots`):** `ci(docs): automated headless capture of operations portal and Grafana during live load scenarios` — `scratch/capture-dashboards.js`, `docs/assets/*`
+- **Shipped Branches & Pull Requests:**
+  - **PR 30 (`test/k6-soak-and-saturation`):** `test(load): 10-minute soak harness and saturation cliff benchmarks` — `load/k6/*` `[COMPLETED]`
+  - **PR 31 (`ci/automated-dashboard-screenshots`):** `ci(docs): automated headless capture of operations portal and Grafana during live load scenarios` — `scripts/capture-dashboards.mjs`, `docs/assets/*` `[COMPLETED]`
 - **Security & Best Practice Review Checkpoints:**
   - **Bulkhead Immunity:** Confirm zero connection starvation on `leasePool` during telemetry write spikes.
   - **Zero PII in Documentation Visuals:** Assert that captured dashboard screenshots contain only synthetic test personas.
-- **Definition of Done:** Documented saturation cliff report; published Grafana and Next.js screenshots captured during active load testing; zero memory leaks over 10-minute soak.
+- **Definition of Done:** `[VERIFIED]` Documented saturation cliff report; published Grafana and Next.js screenshots captured during active load testing; zero memory leaks over 10-minute soak.
 
 ---
 
@@ -325,6 +325,7 @@ To prevent scope creep and maintain strict project delivery:
 ## 7. Not Yet Specified (Fog of War)
 
 ### Resolved Historical Decisions
+
 - **Open Question 1 (Metadata Reason Convention — [RESOLVED]):** Confirmed in `packages/conformance/src/compatibility.test.ts` and implemented in `packages/sdk/src/provider.ts`. OpenFeature `ResolutionDetails.reason` accepts `"OVERRIDE"`, with override details namespaced under `flagMetadata["synapse.*"]` (`synapse.override`, `synapse.lease_id`, `synapse.issued_by`, `synapse.effective_expiry`).
 - **Open Question 2 (TTL Bounds Calibration — [RESOLVED]):** Calibrated and locked in code following clock-skew chaos drills: `DEFAULT_SKEW_TOLERANCE_MS = 30_000` (30s) in `packages/lease/src/expiry.ts`; default emergency TTL = 30m (1800s); max operator ceiling = 3600s (1h default, up to 24h configurable via keyset policy in `packages/lease/src/schema.ts`). Validated in `test/drills/drill2-clock-skew.test.ts`.
 - **Open Question 3 (PostgreSQL K8s Packaging — [RESOLVED]):** Resolved via decoupled connection secret pattern in `deploy/helm/control-api/values.yaml` (`existingSecret: "synapse-db-credentials"`). Decouples database deployment topology, permitting Bitnami PostgreSQL, CloudNativePG operator, or managed AWS RDS Aurora interchangeably without chart changes.
@@ -334,18 +335,20 @@ To prevent scope creep and maintain strict project delivery:
 - **Open Question 7 (Mutation Score Enforcement Policy — [RESOLVED]):** Resolved in Phase 7 (PR 28 / PR #29). Scoped Stryker Mutator testing strictly to core crypto and evaluation packages (`packages/lease` & `packages/sdk`) with native `--incremental` cache, enforcing $\ge 80\%$ MSI (achieved 83.94% on `lease` and 87.46% on `sdk`).
 
 ### Active Decisions for Phase 8 (Iterated & Simplified)
+
 - **Open Question 8 (Long-Term Soak Benchmark Delta Tracking):** Decide between exporting k6 metrics to a hosted Prometheus/Grafana Cloud endpoint versus committing structured Markdown benchmark summaries into `docs/benchmarks/` for Git-tracked historical regressions.
-  - **Iterated Simplest & Best Answer:** *Native k6 Thresholds + CI Artifact Upload.* Avoid automated bots committing markdown files to Git (which creates merge conflicts, repository bloat, and write-permission headaches). Define native k6 `thresholds` inside the test script (`thresholds: { 'lease_propagation_lag': ['p(95)<10000'], 'http_req_failed': ['rate<0.001'] }`). Violations exit with code 99 and automatically fail CI. Upload raw `summary.json` as a standard GitHub Actions workflow artifact (retained 30 days). Static baselines in `docs/benchmarks/` are updated manually only upon release milestones.
+  - **Iterated Simplest & Best Answer:** _Native k6 Thresholds + CI Artifact Upload._ Avoid automated bots committing markdown files to Git (which creates merge conflicts, repository bloat, and write-permission headaches). Define native k6 `thresholds` inside the test script (`thresholds: { 'lease_propagation_lag': ['p(95)<10000'], 'http_req_failed': ['rate<0.001'] }`). Violations exit with code 99 and automatically fail CI. Upload raw `summary.json` as a standard GitHub Actions workflow artifact (retained 30 days). Static baselines in `docs/benchmarks/` are updated manually only upon release milestones.
 
 ### Emerging Open Questions (Iterated & Simplified)
+
 - **Open Question 9 (Webhook Worker Backpressure & Dead-Letter Policy):** When a downstream subscriber endpoint continuously fails or times out during incident notifications, after how many exponential retries should the outbox worker mark the dispatch as dead-lettered, and should dead-lettered hooks block other pending notifications?
-  - **Iterated Simplest & Best Answer:** *PostgreSQL Row-State Transition with Jittered Backoff.* Retry up to 5 times with exponential backoff + jitter across ~15 minutes (10s, 30s, 2m, 5m, 10m). If all retries fail, update the outbox row to `status: 'dead_letter'`, record `dead_lettered_at`, and increment Prometheus counter `synapse_webhook_dead_letters_total`. Outbox worker continues processing other subscribers concurrently without blocking. Skip building a bespoke HTTP retry endpoint (YAGNI); operators replay dead letters via `synapse webhook replay` or standard SQL `UPDATE`.
+  - **Iterated Simplest & Best Answer:** _PostgreSQL Row-State Transition with Jittered Backoff._ Retry up to 5 times with exponential backoff + jitter across ~15 minutes (10s, 30s, 2m, 5m, 10m). If all retries fail, update the outbox row to `status: 'dead_letter'`, record `dead_lettered_at`, and increment Prometheus counter `synapse_webhook_dead_letters_total`. Outbox worker continues processing other subscribers concurrently without blocking. Skip building a bespoke HTTP retry endpoint (YAGNI); operators replay dead letters via `synapse webhook replay` or standard SQL `UPDATE`.
 - **Open Question 10 (Headless Visual Capture Determinism across Platforms):** How to guarantee that automated dashboard and Grafana screenshots captured in PR 31 avoid subpixel font antialiasing differences across macOS, Windows, and Linux CI runners?
-  - **Iterated Simplest & Best Answer:** *On-Demand Docker One-Liner Script.* Provide `pnpm run capture:docs` wrapping `docker run --rm -v $(pwd):/work -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scratch/capture-dashboards.js`. Screenshots are refreshed on-demand when UI changes occur, eliminating platform font variance and preventing noisy binary image diffs in automated PR runs. CI only validates that committed image paths exist and render cleanly.
+  - **Iterated Simplest & Best Answer:** _On-Demand Docker One-Liner Script._ Provide `pnpm run capture:docs` wrapping `docker run --rm -v $(pwd):/work -w /work mcr.microsoft.com/playwright:v1.49.0-jammy node scratch/capture-dashboards.js`. Screenshots are refreshed on-demand when UI changes occur, eliminating platform font variance and preventing noisy binary image diffs in automated PR runs. CI only validates that committed image paths exist and render cleanly.
 - **Open Question 11 (Purger Target Branch & Review Isolation Strategy):** When `synapse-purger` analyzes a target repository, should it submit Draft PRs directly against the repository default branch (`main`) or route to an intermediate staging branch?
-  - **Iterated Simplest & Best Answer:** *Isolated Draft PR per Dead Flag directly to Default Branch (`main`).* Follow the battle-tested Dependabot/Renovate model: submit an isolated Draft PR per dead flag directly against `main`. Immediately triggers the repository's native CI checks (linters, typecheck, unit tests) and notifies code owners in isolation. Avoids intermediate staging branch synchronization drift and preserves clean `git bisect` history.
+  - **Iterated Simplest & Best Answer:** _Isolated Draft PR per Dead Flag directly to Default Branch (`main`)._ Follow the battle-tested Dependabot/Renovate model: submit an isolated Draft PR per dead flag directly against `main`. Immediately triggers the repository's native CI checks (linters, typecheck, unit tests) and notifies code owners in isolation. Avoids intermediate staging branch synchronization drift and preserves clean `git bisect` history.
 - **Open Question 12 (Telemetry Buffer Bounds Under Extreme TPS Outages):** If a high-throughput application (> 100,000 evaluations/sec) loses network connectivity to the Control API for hours, how should `TelemetryHook` bound in-memory tuple buffer consumption?
-  - **Iterated Simplest & Best Answer:** *Native V8 `Map` with Hard Key Limit.* Rely on a standard JavaScript `Map` with an O(1) guard before inserting new keys: `if (this.counts.size >= 1000 && !this.counts.has(key)) return this.droppedTuples++;`. Zero external LRU cache dependencies, zero heap reallocation, and zero sorting overhead on the hot path. Bounds telemetry memory consumption to $\le 64\text{ KB}$, upholding Invariant 1 (zero application crashes).
+  - **Iterated Simplest & Best Answer:** _Native V8 `Map` with Hard Key Limit._ Rely on a standard JavaScript `Map` with an O(1) guard before inserting new keys: `if (this.counts.size >= 1000 && !this.counts.has(key)) return this.droppedTuples++;`. Zero external LRU cache dependencies, zero heap reallocation, and zero sorting overhead on the hot path. Bounds telemetry memory consumption to $\le 64\text{ KB}$, upholding Invariant 1 (zero application crashes).
 
 ---
 

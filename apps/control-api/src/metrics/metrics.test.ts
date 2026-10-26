@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import Fastify from "fastify";
 import type { Pool } from "pg";
-import {
-  createMetricsRegistry,
-  type SynapseMetrics,
-} from "./index.js";
+import { createMetricsRegistry, type SynapseMetrics } from "./index.js";
 import { metricsRoutes } from "../routes/metrics.js";
 
 describe("Control API Prometheus Metrics (PR 12)", () => {
@@ -30,7 +27,13 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
 
     it("enforces Cardinality Audit: only bounded label dimensions are permitted", async () => {
       const metricDefinitions = await metrics.registry.getMetricsAsJSON();
-      const ALLOWED_LABELS = new Set(["env", "status_code", "reason", "from", "to"]);
+      const ALLOWED_LABELS = new Set([
+        "env",
+        "status_code",
+        "reason",
+        "from",
+        "to",
+      ]);
       const FORBIDDEN_HIGH_CARDINALITY = [
         "user_id",
         "userId",
@@ -48,7 +51,8 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
 
       for (const m of metricDefinitions) {
         // Collect any declared label names
-        const declaredLabels = (m as unknown as { labelNames?: string[] }).labelNames ?? [];
+        const declaredLabels =
+          (m as unknown as { labelNames?: string[] }).labelNames ?? [];
         for (const label of declaredLabels) {
           expect(ALLOWED_LABELS.has(label)).toBe(true);
           expect(FORBIDDEN_HIGH_CARDINALITY.includes(label)).toBe(false);
@@ -67,9 +71,15 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
       const output = await metrics.registry.metrics();
 
       expect(output).toContain('synapse_leases_active{env="prod"} 3');
-      expect(output).toContain('synapse_lease_transitions_total{from="NONE",to="ACTIVE"} 1');
-      expect(output).toContain('synapse_lease_transitions_total{from="ACTIVE",to="REVOKED"} 1');
-      expect(output).toContain('synapse_lease_transitions_total{from="ACTIVE",to="SUPERSEDED"} 1');
+      expect(output).toContain(
+        'synapse_lease_transitions_total{from="NONE",to="ACTIVE"} 1',
+      );
+      expect(output).toContain(
+        'synapse_lease_transitions_total{from="ACTIVE",to="REVOKED"} 1',
+      );
+      expect(output).toContain(
+        'synapse_lease_transitions_total{from="ACTIVE",to="SUPERSEDED"} 1',
+      );
     });
 
     it("observes propagation latency and state poll duration histograms", async () => {
@@ -81,8 +91,12 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
 
       expect(output).toContain("synapse_lease_propagation_seconds_bucket");
       expect(output).toContain("synapse_lease_propagation_seconds_count 1");
-      expect(output).toContain('synapse_state_poll_duration_seconds_count{status_code="200"} 1');
-      expect(output).toContain('synapse_state_poll_duration_seconds_count{status_code="304"} 1');
+      expect(output).toContain(
+        'synapse_state_poll_duration_seconds_count{status_code="200"} 1',
+      );
+      expect(output).toContain(
+        'synapse_state_poll_duration_seconds_count{status_code="304"} 1',
+      );
     });
 
     it("tracks audit ledger health metrics", async () => {
@@ -113,7 +127,9 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
       expect(res.payload).toContain("# HELP synapse_leases_active");
       expect(res.payload).toContain("# TYPE synapse_leases_active gauge");
       expect(res.payload).toContain("# HELP synapse_lease_transitions_total");
-      expect(res.payload).toContain("# TYPE synapse_lease_transitions_total counter");
+      expect(res.payload).toContain(
+        "# TYPE synapse_lease_transitions_total counter",
+      );
       expect(res.payload).toContain("# HELP synapse_audit_pending_age_seconds");
     });
 
@@ -133,10 +149,15 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
     it("fails open on database error: logs warning and returns HTTP 200 with current metrics", async () => {
       const app = Fastify();
       const mockFailingPool = {
-        query: vi.fn().mockRejectedValue(new Error("Connection terminated unexpectedly")),
+        query: vi
+          .fn()
+          .mockRejectedValue(new Error("Connection terminated unexpectedly")),
       } as unknown as Pool;
 
-      await app.register(metricsRoutes, { metrics, leasePool: mockFailingPool });
+      await app.register(metricsRoutes, {
+        metrics,
+        leasePool: mockFailingPool,
+      });
 
       const res = await app.inject({
         method: "GET",
@@ -173,7 +194,9 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
         method: "GET",
         url: "/metrics",
       });
-      expect(metricsRes.payload).toContain("synapse_lease_propagation_seconds_count 1");
+      expect(metricsRes.payload).toContain(
+        "synapse_lease_propagation_seconds_count 1",
+      );
     });
 
     it("records state poll duration histogram when /v1/sdk/state is queried", async () => {
@@ -191,8 +214,9 @@ describe("Control API Prometheus Metrics (PR 12)", () => {
         method: "GET",
         url: "/metrics",
       });
-      expect(metricsRes.payload).toContain('synapse_state_poll_duration_seconds_count{status_code="200"} 1');
+      expect(metricsRes.payload).toContain(
+        'synapse_state_poll_duration_seconds_count{status_code="200"} 1',
+      );
     });
   });
 });
-

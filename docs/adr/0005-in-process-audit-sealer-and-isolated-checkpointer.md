@@ -1,13 +1,14 @@
 # 5. In-Process Audit Sealer with Transaction Locks and Isolated Checkpointer
 
 Date: 2026-10-09  
-Status: Accepted  
+Status: Accepted
 
 ---
 
 ## Context
 
 Audit compliance and non-repudiation require tamper-evident logging of all feature flag overrides and lifecycle events:
+
 1. **Request-Path Bottleneck:** Computing sequential SHA-256 hash chains synchronously in PostgreSQL requires acquiring global transaction locks (e.g. `pg_advisory_xact_lock`), serializing administrative operations and risking write starvation during multi-incident emergencies.
 2. **Daemon Operational Overhead:** Running an independent long-running sealer daemon process increases container count, Helm manifest complexity, and failure monitoring overhead.
 3. **Connection Pooling Hazards:** Session-level advisory locks (`pg_try_advisory_lock`) break under connection poolers like PgBouncer in transaction mode, leading to duplicate sealers or abandoned locks upon connection recycling.
@@ -41,10 +42,12 @@ We chose an **asynchronous in-process audit sealer** combined with **transaction
 ## Consequences
 
 ### Positive
-* Completely eliminates database lock contention from the emergency override creation path.
-* Runs in-process without daemon overhead while remaining 100% compatible with PgBouncer transaction pooling.
-* External anchoring keys remain cryptographically isolated from the network-exposed API process.
-* Ledger integrity can be verified independently from genesis via `synapse audit verify`.
+
+- Completely eliminates database lock contention from the emergency override creation path.
+- Runs in-process without daemon overhead while remaining 100% compatible with PgBouncer transaction pooling.
+- External anchoring keys remain cryptographically isolated from the network-exposed API process.
+- Ledger integrity can be verified independently from genesis via `synapse audit verify`.
 
 ### Negative
-* Audit events experience a slight sealing lag ($\approx 1\text{ second}$), during which unsealed records reside in `audit_pending` before entering `audit_events`.
+
+- Audit events experience a slight sealing lag ($\approx 1\text{ second}$), during which unsealed records reside in `audit_pending` before entering `audit_events`.

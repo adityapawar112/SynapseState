@@ -35,7 +35,7 @@ if (isMainModule) {
         const applied = await runMigrations(leasePool);
         server.log.info(
           { appliedCount: applied.length, applied },
-          "Database migrations applied successfully"
+          "Database migrations applied successfully",
         );
       } catch (err) {
         server.log.error(err, "Failed to apply database migrations on startup");

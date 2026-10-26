@@ -97,7 +97,9 @@ export interface AuditCheckpointResult {
 /**
  * Loads and parses audit events from JSON or JSONL file.
  */
-async function loadEventsFromFile(filePath: string): Promise<AuditEventRecord[]> {
+async function loadEventsFromFile(
+  filePath: string,
+): Promise<AuditEventRecord[]> {
   const content = await fs.readFile(filePath, "utf-8");
   const trimmed = content.trim();
   if (!trimmed) {
@@ -302,7 +304,10 @@ export async function executeAuditVerify(
   const verifiedCount = events.length;
   const fromSeq = verifiedCount > 0 ? Number(events[0]!.seq) : 0;
   const toSeq = verifiedCount > 0 ? Number(events[verifiedCount - 1]!.seq) : 0;
-  const latestHash = verifiedCount > 0 ? String(events[verifiedCount - 1]!.hash) : GENESIS_PREV_HASH;
+  const latestHash =
+    verifiedCount > 0
+      ? String(events[verifiedCount - 1]!.hash)
+      : GENESIS_PREV_HASH;
 
   let checkpointStatus: CheckpointAnchorStatus = "NO_CHECKPOINT";
   let checkpointSeq: number | undefined;
@@ -351,12 +356,15 @@ export async function executeAuditVerify(
           const isSigValid = verifyCheckpointWithKeyset(envelope, keyset);
           if (!isSigValid) {
             checkpointStatus = "INVALID_SIGNATURE";
-            checkpointError = "Checkpoint Ed25519 signature is invalid or corrupted";
+            checkpointError =
+              "Checkpoint Ed25519 signature is invalid or corrupted";
             overallValid = false;
             failureError = failureError || checkpointError;
           } else {
             // Checkpoint signature is cryptographically valid! Cross-verify with event chain
-            const targetEvent = events.find((e) => Number(e.seq) === checkpointSeq);
+            const targetEvent = events.find(
+              (e) => Number(e.seq) === checkpointSeq,
+            );
             if (!targetEvent) {
               checkpointStatus = "MISMATCH";
               checkpointError = `Checkpoint sequence ${checkpointSeq} not found in verified ledger range (${fromSeq} → ${toSeq})`;
@@ -388,10 +396,14 @@ export async function executeAuditVerify(
   let statusHeader: string;
   let rawHeader: string;
   if (!overallValid) {
-    statusHeader = pc.red(pc.bold("✖ AUDIT LEDGER VERIFICATION: FAILED (TAMPERING DETECTED)"));
+    statusHeader = pc.red(
+      pc.bold("✖ AUDIT LEDGER VERIFICATION: FAILED (TAMPERING DETECTED)"),
+    );
     rawHeader = "✖ AUDIT LEDGER VERIFICATION: FAILED (TAMPERING DETECTED)";
   } else if (verifiedCount === 0) {
-    statusHeader = pc.yellow(pc.bold("⚠ AUDIT LEDGER VERIFICATION: NO EVENTS (EMPTY LEDGER)"));
+    statusHeader = pc.yellow(
+      pc.bold("⚠ AUDIT LEDGER VERIFICATION: NO EVENTS (EMPTY LEDGER)"),
+    );
     rawHeader = "⚠ AUDIT LEDGER VERIFICATION: NO EVENTS (EMPTY LEDGER)";
   } else {
     statusHeader = pc.green(pc.bold("✔ AUDIT LEDGER VERIFICATION: PASSED"));
@@ -401,27 +413,72 @@ export async function executeAuditVerify(
   const padRight = Math.max(0, 70 - rawHeader.length);
 
   const lines = [
-    pc.cyan("┌────────────────────────────────────────────────────────────────────────┐"),
+    pc.cyan(
+      "┌────────────────────────────────────────────────────────────────────────┐",
+    ),
     pc.cyan("│ ") + statusHeader + " ".repeat(padRight) + pc.cyan("│"),
-    pc.cyan("├────────────────────────────────────────────────────────────────────────┤"),
-    pc.cyan("│ ") + pc.white(`Verified Events:  `) + pc.bold(String(verifiedCount)).padEnd(52) + pc.cyan("│"),
-    pc.cyan("│ ") + pc.white(`Sequence Span:    `) + `${fromSeq} → ${toSeq}`.padEnd(52) + pc.cyan("│"),
-    pc.cyan("│ ") + pc.white(`Genesis PrevHash: `) + `${GENESIS_PREV_HASH.slice(0, 16)}...${GENESIS_PREV_HASH.slice(-8)}`.padEnd(52) + pc.cyan("│"),
-    pc.cyan("│ ") + pc.white(`Latest Seal Hash: `) + `${latestHash.slice(0, 16)}...${latestHash.slice(-8)}`.padEnd(52) + pc.cyan("│"),
-    pc.cyan("│ ") + pc.white(`Checkpoint Anchor:`) + ` ${formatCheckpointStatus(checkpointStatus)}`.padEnd(52) + pc.cyan("│"),
-    pc.cyan("│ ") + pc.white(`Elapsed Time:     `) + `${elapsedMs} ms`.padEnd(52) + pc.cyan("│"),
+    pc.cyan(
+      "├────────────────────────────────────────────────────────────────────────┤",
+    ),
+    pc.cyan("│ ") +
+      pc.white(`Verified Events:  `) +
+      pc.bold(String(verifiedCount)).padEnd(52) +
+      pc.cyan("│"),
+    pc.cyan("│ ") +
+      pc.white(`Sequence Span:    `) +
+      `${fromSeq} → ${toSeq}`.padEnd(52) +
+      pc.cyan("│"),
+    pc.cyan("│ ") +
+      pc.white(`Genesis PrevHash: `) +
+      `${GENESIS_PREV_HASH.slice(0, 16)}...${GENESIS_PREV_HASH.slice(-8)}`.padEnd(
+        52,
+      ) +
+      pc.cyan("│"),
+    pc.cyan("│ ") +
+      pc.white(`Latest Seal Hash: `) +
+      `${latestHash.slice(0, 16)}...${latestHash.slice(-8)}`.padEnd(52) +
+      pc.cyan("│"),
+    pc.cyan("│ ") +
+      pc.white(`Checkpoint Anchor:`) +
+      ` ${formatCheckpointStatus(checkpointStatus)}`.padEnd(52) +
+      pc.cyan("│"),
+    pc.cyan("│ ") +
+      pc.white(`Elapsed Time:     `) +
+      `${elapsedMs} ms`.padEnd(52) +
+      pc.cyan("│"),
   ];
 
   if (!overallValid && failureError) {
-    lines.push(pc.cyan("├────────────────────────────────────────────────────────────────────────┤"));
-    lines.push(pc.cyan("│ ") + pc.red(pc.bold("FAILURE DETAIL:   ")) + "".padEnd(52) + pc.cyan("│"));
-    lines.push(pc.cyan("│ ") + pc.red(failureError.slice(0, 70)).padEnd(70) + pc.cyan("│"));
+    lines.push(
+      pc.cyan(
+        "├────────────────────────────────────────────────────────────────────────┤",
+      ),
+    );
+    lines.push(
+      pc.cyan("│ ") +
+        pc.red(pc.bold("FAILURE DETAIL:   ")) +
+        "".padEnd(52) +
+        pc.cyan("│"),
+    );
+    lines.push(
+      pc.cyan("│ ") +
+        pc.red(failureError.slice(0, 70)).padEnd(70) +
+        pc.cyan("│"),
+    );
     if (failedSeq !== undefined) {
-      lines.push(pc.cyan("│ ") + pc.yellow(`Failed Sequence:  seq ${failedSeq}`).padEnd(70) + pc.cyan("│"));
+      lines.push(
+        pc.cyan("│ ") +
+          pc.yellow(`Failed Sequence:  seq ${failedSeq}`).padEnd(70) +
+          pc.cyan("│"),
+      );
     }
   }
 
-  lines.push(pc.cyan("└────────────────────────────────────────────────────────────────────────┘"));
+  lines.push(
+    pc.cyan(
+      "└────────────────────────────────────────────────────────────────────────┘",
+    ),
+  );
   const formattedOutput = lines.join("\n");
 
   return {
@@ -454,7 +511,9 @@ function formatCheckpointStatus(status: CheckpointAnchorStatus): string {
     case "MISMATCH":
       return pc.red(pc.bold("MISMATCH (Ledger/Checkpoint Divergence)"));
     case "INVALID_SIGNATURE":
-      return pc.red(pc.bold("INVALID_SIGNATURE (Signature Forgery/Corruption)"));
+      return pc.red(
+        pc.bold("INVALID_SIGNATURE (Signature Forgery/Corruption)"),
+      );
     case "UNAUTHORIZED_SIGNER":
       return pc.red(pc.bold("UNAUTHORIZED_SIGNER (Role Violation)"));
     case "UNKNOWN_KEY":
@@ -482,7 +541,9 @@ export async function executeAuditCheckpoint(
     } else {
       const connStr = params.db || process.env.DATABASE_URL;
       if (!connStr) {
-        throw new Error("No database connection string provided for checkpoint creation");
+        throw new Error(
+          "No database connection string provided for checkpoint creation",
+        );
       }
       pool = new Pool({ connectionString: connStr });
       isCreated = true;
@@ -493,7 +554,9 @@ export async function executeAuditCheckpoint(
         pool.query<{ seq: string | number; hash: string; ts: Date | string }>(
           "SELECT seq, hash, ts FROM audit_events ORDER BY seq DESC LIMIT 1",
         ),
-        pool.query<{ count: string }>("SELECT COUNT(*)::bigint AS count FROM audit_events"),
+        pool.query<{ count: string }>(
+          "SELECT COUNT(*)::bigint AS count FROM audit_events",
+        ),
       ]);
       total = parseInt(countRes.rows[0]?.count ?? "0", 10);
       if (latestRes.rows.length > 0) {
@@ -516,12 +579,17 @@ export async function executeAuditCheckpoint(
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const res = await fetchFn(`${apiUrl.replace(/\/$/, "")}/v1/audit/checkpoint/latest`, {
-      headers,
-    });
+    const res = await fetchFn(
+      `${apiUrl.replace(/\/$/, "")}/v1/audit/checkpoint/latest`,
+      {
+        headers,
+      },
+    );
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error(`Failed to fetch latest audit checkpoint from API: ${errText}`);
+      throw new Error(
+        `Failed to fetch latest audit checkpoint from API: ${errText}`,
+      );
     }
     const data = (await res.json()) as {
       checkpoint_seq: number;
@@ -541,7 +609,8 @@ export async function executeAuditCheckpoint(
   }
 
   // 2. Resolve kid and key
-  const kid = params.kid || process.env.CHECKPOINT_SIGNING_KID || "audit-signer";
+  const kid =
+    params.kid || process.env.CHECKPOINT_SIGNING_KID || "audit-signer";
   const payload: CheckpointPayload = {
     v: 1,
     checkpoint_seq: seq,
@@ -569,7 +638,9 @@ export async function executeAuditCheckpoint(
         throw new Error(`Signer key "${kid}" not found in trusted keyset`);
       }
       // O1: Normalize keyset public key (supports hex, base64url, PEM, SPKI-DER) to 64-char hex
-      const expectedHex = formatPublicKeyToHex(resolvePublicKey(keyEntry.public_key));
+      const expectedHex = formatPublicKeyToHex(
+        resolvePublicKey(keyEntry.public_key),
+      );
       if (expectedHex.toLowerCase() !== signerFingerprint.toLowerCase()) {
         throw new Error(
           `Derived public key fingerprint "${signerFingerprint}" does not match public key "${keyEntry.public_key}" in keyset for kid "${kid}"`,
@@ -637,7 +708,11 @@ export async function executeAuditCheckpoint(
   if (s3Bucket) {
     const s3Region = params.s3Region || process.env.S3_REGION || "us-east-1";
     // O4: Strip leading/trailing slashes and fall back safely if an all-slash string was provided
-    const s3Prefix = (params.s3Prefix || process.env.S3_PREFIX || "checkpoints").replace(/^\/+|\/+$/g, "") || "checkpoints";
+    const s3Prefix =
+      (params.s3Prefix || process.env.S3_PREFIX || "checkpoints").replace(
+        /^\/+|\/+$/g,
+        "",
+      ) || "checkpoints";
 
     const s3Client = params.s3Client ?? new S3Client({ region: s3Region });
 
@@ -699,10 +774,16 @@ export async function executeAuditCheckpoint(
     pc.white(`Signer Kid:      `) + kid,
   ];
   if (signerFingerprint) {
-    lines.push(pc.white(`Signer PubKey:   `) + pc.cyan(`${signerFingerprint.slice(0, 16)}...${signerFingerprint.slice(-8)}`));
+    lines.push(
+      pc.white(`Signer PubKey:   `) +
+        pc.cyan(
+          `${signerFingerprint.slice(0, 16)}...${signerFingerprint.slice(-8)}`,
+        ),
+    );
   }
   lines.push(
-    pc.white(`Saved Targets:   `) + (savedTo.length > 0 ? savedTo.join(", ") : pc.yellow("(none specified)")),
+    pc.white(`Saved Targets:   `) +
+      (savedTo.length > 0 ? savedTo.join(", ") : pc.yellow("(none specified)")),
   );
   const formattedOutput = lines.join("\n");
 
@@ -719,19 +800,33 @@ export async function executeAuditCheckpoint(
 export function registerAuditCommands(program: Command): void {
   const audit = program
     .command("audit")
-    .description("Tamper-evident audit ledger verification and checkpoint anchoring");
+    .description(
+      "Tamper-evident audit ledger verification and checkpoint anchoring",
+    );
 
   audit
     .command("verify")
     .description(
       "Independently recomputes SHA-256 hash chain from genesis and cross-verifies external checkpoints",
     )
-    .option("-f, --file <path>", "Path to exported audit events JSON or JSONL file")
+    .option(
+      "-f, --file <path>",
+      "Path to exported audit events JSON or JSONL file",
+    )
     .option("--api-url <url>", "Control API URL (or SYNAPSE_API_URL)")
-    .option("-t, --token <token>", "Control API authentication Bearer token (or SYNAPSE_API_TOKEN)")
+    .option(
+      "-t, --token <token>",
+      "Control API authentication Bearer token (or SYNAPSE_API_TOKEN)",
+    )
     .option("-d, --db <url>", "PostgreSQL connection string (or DATABASE_URL)")
-    .option("-c, --checkpoint <path-or-url>", "Path or URL to signed checkpoint envelope")
-    .option("-k, --keyset <path>", "Path to trusted keyset.json (or KEYSET_PATH)")
+    .option(
+      "-c, --checkpoint <path-or-url>",
+      "Path or URL to signed checkpoint envelope",
+    )
+    .option(
+      "-k, --keyset <path>",
+      "Path to trusted keyset.json (or KEYSET_PATH)",
+    )
     .option("--json", "Emit structured machine-readable JSON output")
     .action(async (opts) => {
       try {
@@ -745,7 +840,11 @@ export function registerAuditCommands(program: Command): void {
           process.exitCode = 1;
         }
       } catch (err: unknown) {
-        console.error(pc.red(`Audit verification failed: ${err instanceof Error ? err.message : String(err)}`));
+        console.error(
+          pc.red(
+            `Audit verification failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
         process.exitCode = 1;
       }
     });
@@ -756,19 +855,46 @@ export function registerAuditCommands(program: Command): void {
       "Signs periodic checkpoint of latest sealed audit chain and anchors to write-once storage",
     )
     .option("--api-url <url>", "Control API URL (or SYNAPSE_API_URL)")
-    .option("-t, --token <token>", "Control API authentication Bearer token (or SYNAPSE_API_TOKEN)")
+    .option(
+      "-t, --token <token>",
+      "Control API authentication Bearer token (or SYNAPSE_API_TOKEN)",
+    )
     .option("-d, --db <url>", "PostgreSQL connection string (or DATABASE_URL)")
-    .option("-k, --keyset <path>", "Path to trusted keyset.json to verify key binding (or KEYSET_PATH)")
+    .option(
+      "-k, --keyset <path>",
+      "Path to trusted keyset.json to verify key binding (or KEYSET_PATH)",
+    )
     .option("--kid <kid>", "Signer key identifier matching keyset.json")
-    .option("--key <private-key>", "Ed25519 private key (or CHECKPOINT_SIGNING_KEY)")
+    .option(
+      "--key <private-key>",
+      "Ed25519 private key (or CHECKPOINT_SIGNING_KEY)",
+    )
     .option("--key-file <path>", "Path to encrypted keyfile")
     .option("--password <password>", "Passphrase for encrypted keyfile")
-    .option("--passphrase-env <name>", "Environment variable holding passphrase")
-    .option("-o, --out <path>", "Output path for signed checkpoint envelope JSON")
-    .option("--s3-bucket <bucket>", "S3 bucket for immutable checkpoint anchoring (or S3_BUCKET)")
-    .option("--s3-region <region>", "S3 region (or S3_REGION, default us-east-1)")
-    .option("--s3-prefix <prefix>", "S3 prefix (or S3_PREFIX, default checkpoints)")
-    .option("--s3-object-lock", "Enable S3 Object Lock in COMPLIANCE mode (or S3_OBJECT_LOCK)")
+    .option(
+      "--passphrase-env <name>",
+      "Environment variable holding passphrase",
+    )
+    .option(
+      "-o, --out <path>",
+      "Output path for signed checkpoint envelope JSON",
+    )
+    .option(
+      "--s3-bucket <bucket>",
+      "S3 bucket for immutable checkpoint anchoring (or S3_BUCKET)",
+    )
+    .option(
+      "--s3-region <region>",
+      "S3 region (or S3_REGION, default us-east-1)",
+    )
+    .option(
+      "--s3-prefix <prefix>",
+      "S3 prefix (or S3_PREFIX, default checkpoints)",
+    )
+    .option(
+      "--s3-object-lock",
+      "Enable S3 Object Lock in COMPLIANCE mode (or S3_OBJECT_LOCK)",
+    )
     .option("--json", "Emit structured machine-readable JSON output")
     .action(async (opts) => {
       try {
@@ -779,7 +905,11 @@ export function registerAuditCommands(program: Command): void {
           console.log(result.formattedOutput);
         }
       } catch (err: unknown) {
-        console.error(pc.red(`Audit checkpoint creation failed: ${err instanceof Error ? err.message : String(err)}`));
+        console.error(
+          pc.red(
+            `Audit checkpoint creation failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
         process.exitCode = 1;
       }
     });

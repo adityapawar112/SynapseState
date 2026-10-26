@@ -1,13 +1,14 @@
 # 7. Per-Flag Directory Storage and Pull-Based Incident Attribution
 
 Date: 2026-10-09  
-Status: Accepted  
+Status: Accepted
 
 ---
 
 ## Context
 
 Operational stability and incident ergonomics require solving two acute workflows:
+
 1. **Git Promotion Collisions:** Storing all flag configurations in a single monolithic `flags.yaml` registry caused Git merge collisions when independent SREs promoted overrides on different flags concurrently. Moving to per-flag files removes collision risks, but requires handling Kubernetes ConfigMap naming constraints (`[-._a-zA-Z0-9]+`), case-sensitivity collisions on developer filesystems (e.g. Windows vs. Linux), single-file delegate provider ingestion, and clear boundaries for non-Git flag providers.
 2. **Incident Attribution Complexity:** Implementing push-based webhooks from Alertmanager required complex webhook parsers, Grafana service tokens, and chat glue before validating core attribution value. Furthermore, relying entirely on the Control API during an incident created a single point of failure.
 
@@ -33,9 +34,9 @@ We chose **per-flag directory storage with build-time merging** and a **pull-bas
    - **Shared Pure Ranker:** Attribution ranking is implemented as a deterministic pure function in a shared core package:
      ```typescript
      export function rankSuspects(
-       events: ChangeEvent[], 
-       evaluations: FlagEvaluationRecord[], 
-       targetService: string
+       events: ChangeEvent[],
+       evaluations: FlagEvaluationRecord[],
+       targetService: string,
      ): RankedSuspect[];
      ```
      Scoring correlates temporal recency with service-specific evaluation volume from `flag_usage_daily`.
@@ -48,14 +49,16 @@ We chose **per-flag directory storage with build-time merging** and a **pull-bas
 ## Consequences
 
 ### Positive
-* Zero Git merge conflicts across independent flag promotions.
-* Attribution operates reliably both online and offline during major control-plane outages.
-* Eliminates third-party webhook glue, parsers, and chat tokens from the MVP.
-* Clean separation of concerns with a reusable, pure ranking engine.
+
+- Zero Git merge conflicts across independent flag promotions.
+- Attribution operates reliably both online and offline during major control-plane outages.
+- Eliminates third-party webhook glue, parsers, and chat tokens from the MVP.
+- Clean separation of concerns with a reusable, pure ranking engine.
 
 ### Negative
-* OpenFeature delegate providers requiring a single file path require a build-time merge step (`flags/<env>/*.yaml` $\to$ `dist/<env>/flags.json`).
-* Automated promotion in v1 requires a Git-backed baseline provider.
+
+- OpenFeature delegate providers requiring a single file path require a build-time merge step (`flags/<env>/*.yaml` $\to$ `dist/<env>/flags.json`).
+- Automated promotion in v1 requires a Git-backed baseline provider.
 
 ---
 

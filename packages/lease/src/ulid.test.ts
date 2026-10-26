@@ -63,4 +63,3 @@ describe("generateUlid in @synapsestate/lease", () => {
     expect(id1 < id2).toBe(true);
   });
 });
-

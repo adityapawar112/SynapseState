@@ -8,11 +8,7 @@
   "testRunner": "vitest",
   "testRunnerNodeArgs": ["--experimental-vm-modules"],
   "coverageAnalysis": "perTest",
-  "mutate": [
-    "src/lease-store.ts",
-    "src/provider.ts",
-    "src/telemetry-hook.ts"
-  ],
+  "mutate": ["src/lease-store.ts", "src/provider.ts", "src/telemetry-hook.ts"],
   "vitest": {
     "configFile": "vitest.config.ts",
     "related": false

@@ -98,7 +98,9 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
       "propagation_lag_ms",
       "dropped_count",
     ]);
-    expect(Object.keys(batch!).every((k) => allowedBatchKeys.has(k))).toBe(true);
+    expect(Object.keys(batch!).every((k) => allowedBatchKeys.has(k))).toBe(
+      true,
+    );
 
     for (const metric of batch!.metrics) {
       const keys = Object.keys(metric).sort();
@@ -255,7 +257,9 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [callUrl, callInit] = fetchMock.mock.calls[0];
-    expect(callUrl).toBe("https://control-api.synapse.internal/v1/telemetry/batches");
+    expect(callUrl).toBe(
+      "https://control-api.synapse.internal/v1/telemetry/batches",
+    );
     expect(callInit.method).toBe("POST");
     expect(callInit.headers).toEqual({
       "Content-Type": "application/json",
@@ -404,15 +408,44 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
     const hook = new TelemetryHook();
 
     // Add combinations in reverse order
-    hook.after(createMockHookContext("b-flag"), { flagKey: "b-flag", variant: "v1", reason: "OVERRIDE", value: "v1", flagMetadata: {} });
-    hook.after(createMockHookContext("a-flag"), { flagKey: "a-flag", variant: "v2", reason: "DEFAULT", value: "v2", flagMetadata: {} });
-    hook.after(createMockHookContext("a-flag"), { flagKey: "a-flag", variant: "v1", reason: "TARGETING_MATCH", value: "v1", flagMetadata: {} });
-    hook.after(createMockHookContext("a-flag"), { flagKey: "a-flag", variant: "v1", reason: "DEFAULT", value: "v1", flagMetadata: {} });
+    hook.after(createMockHookContext("b-flag"), {
+      flagKey: "b-flag",
+      variant: "v1",
+      reason: "OVERRIDE",
+      value: "v1",
+      flagMetadata: {},
+    });
+    hook.after(createMockHookContext("a-flag"), {
+      flagKey: "a-flag",
+      variant: "v2",
+      reason: "DEFAULT",
+      value: "v2",
+      flagMetadata: {},
+    });
+    hook.after(createMockHookContext("a-flag"), {
+      flagKey: "a-flag",
+      variant: "v1",
+      reason: "TARGETING_MATCH",
+      value: "v1",
+      flagMetadata: {},
+    });
+    hook.after(createMockHookContext("a-flag"), {
+      flagKey: "a-flag",
+      variant: "v1",
+      reason: "DEFAULT",
+      value: "v1",
+      flagMetadata: {},
+    });
 
     const batch = await hook.flush();
     expect(batch?.metrics).toEqual([
       { flag_key: "a-flag", variant: "v1", reason: "DEFAULT", count: 1 },
-      { flag_key: "a-flag", variant: "v1", reason: "TARGETING_MATCH", count: 1 },
+      {
+        flag_key: "a-flag",
+        variant: "v1",
+        reason: "TARGETING_MATCH",
+        count: 1,
+      },
       { flag_key: "a-flag", variant: "v2", reason: "DEFAULT", count: 1 },
       { flag_key: "b-flag", variant: "v1", reason: "OVERRIDE", count: 1 },
     ]);
@@ -437,14 +470,19 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
 
     const batch = await hook.flush();
     expect(batch).toBeDefined();
-    expect(warnFn).toHaveBeenCalledWith(expect.stringContaining("Error in custom telemetry onFlush callback"));
+    expect(warnFn).toHaveBeenCalledWith(
+      expect.stringContaining("Error in custom telemetry onFlush callback"),
+    );
   });
 
   it("idempotently handles start() when timer is already active and stops cleanly", async () => {
     vi.useFakeTimers();
     try {
       const flushSpy = vi.fn();
-      const hook = new TelemetryHook({ flushIntervalMs: 10_000, onFlush: flushSpy });
+      const hook = new TelemetryHook({
+        flushIntervalMs: 10_000,
+        onFlush: flushSpy,
+      });
       hook.start();
       // Second start should be a no-op
       expect(() => hook.start()).not.toThrow();
@@ -453,7 +491,13 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
       vi.advanceTimersByTime(10_000);
       expect(flushSpy).toHaveBeenCalledTimes(0); // empty map doesn't trigger onFlush
 
-      hook.after(createMockHookContext("test"), { flagKey: "test", value: true, variant: "on", reason: "OVERRIDE", flagMetadata: {} });
+      hook.after(createMockHookContext("test"), {
+        flagKey: "test",
+        value: true,
+        variant: "on",
+        reason: "OVERRIDE",
+        flagMetadata: {},
+      });
       vi.advanceTimersByTime(10_000);
       expect(flushSpy).toHaveBeenCalledTimes(1);
 
@@ -477,20 +521,58 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
     });
 
     // 1. Flush when droppedCount is 0: must not log bulkhead warning
-    hook.after(createMockHookContext("f1"), { flagKey: "f1", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    hook.after(createMockHookContext("f1"), {
+      flagKey: "f1",
+      value: true,
+      variant: "on",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
     await hook.flush();
     expect(warnFn).not.toHaveBeenCalled();
 
     // 2. Drop 3 tuples beyond capacity 2: must log warning with count 3
-    hook.after(createMockHookContext("k1"), { flagKey: "k1", value: 1, variant: "1", reason: "DEFAULT", flagMetadata: {} });
-    hook.after(createMockHookContext("k2"), { flagKey: "k2", value: 2, variant: "2", reason: "DEFAULT", flagMetadata: {} });
-    hook.after(createMockHookContext("k3"), { flagKey: "k3", value: 3, variant: "3", reason: "DEFAULT", flagMetadata: {} });
-    hook.after(createMockHookContext("k4"), { flagKey: "k4", value: 4, variant: "4", reason: "DEFAULT", flagMetadata: {} });
-    hook.after(createMockHookContext("k5"), { flagKey: "k5", value: 5, variant: "5", reason: "DEFAULT", flagMetadata: {} });
+    hook.after(createMockHookContext("k1"), {
+      flagKey: "k1",
+      value: 1,
+      variant: "1",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
+    hook.after(createMockHookContext("k2"), {
+      flagKey: "k2",
+      value: 2,
+      variant: "2",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
+    hook.after(createMockHookContext("k3"), {
+      flagKey: "k3",
+      value: 3,
+      variant: "3",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
+    hook.after(createMockHookContext("k4"), {
+      flagKey: "k4",
+      value: 4,
+      variant: "4",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
+    hook.after(createMockHookContext("k5"), {
+      flagKey: "k5",
+      value: 5,
+      variant: "5",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
 
     await hook.flush();
     expect(warnFn).toHaveBeenCalledWith(
-      expect.stringContaining("[SynapseState] Telemetry bulkhead limit reached: dropped 3 distinct metric tuples in window"),
+      expect.stringContaining(
+        "[SynapseState] Telemetry bulkhead limit reached: dropped 3 distinct metric tuples in window",
+      ),
     );
   });
 
@@ -505,7 +587,13 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
     const hookNoUrl = new TelemetryHook({
       fetch: fetchMock as any,
     });
-    hookNoUrl.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    hookNoUrl.after(createMockHookContext("f"), {
+      flagKey: "f",
+      value: true,
+      variant: "on",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
     await hookNoUrl.flush();
     expect(fetchMock).not.toHaveBeenCalled();
 
@@ -514,7 +602,13 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
       controlApiUrl: "http://localhost:3000",
       fetch: fetchMock as any,
     });
-    hookNoToken.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    hookNoToken.after(createMockHookContext("f"), {
+      flagKey: "f",
+      value: true,
+      variant: "on",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
     await hookNoToken.flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const lastCall = fetchMock.mock.calls[0];
@@ -529,23 +623,41 @@ describe("TelemetryHook (Invariant 5 & Zero-Context Privacy)", () => {
       serviceToken: "secret-token-xyz",
       fetch: fetchMock as any,
     });
-    hookWithToken.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    hookWithToken.after(createMockHookContext("f"), {
+      flagKey: "f",
+      value: true,
+      variant: "on",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
     await hookWithToken.flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][1].headers["Authorization"]).toBe("Bearer secret-token-xyz");
+    expect(fetchMock.mock.calls[0][1].headers["Authorization"]).toBe(
+      "Bearer secret-token-xyz",
+    );
 
     // 4. When fetch throws network error: logs warning with exact message
     const warnFn = vi.fn();
-    const throwingFetch = vi.fn().mockRejectedValue(new Error("Network ECONNREFUSED"));
+    const throwingFetch = vi
+      .fn()
+      .mockRejectedValue(new Error("Network ECONNREFUSED"));
     const hookThrowing = new TelemetryHook({
       controlApiUrl: "http://localhost:3000",
       fetch: throwingFetch as any,
       logger: { debug: vi.fn(), info: vi.fn(), warn: warnFn, error: vi.fn() },
     });
-    hookThrowing.after(createMockHookContext("f"), { flagKey: "f", value: true, variant: "on", reason: "DEFAULT", flagMetadata: {} });
+    hookThrowing.after(createMockHookContext("f"), {
+      flagKey: "f",
+      value: true,
+      variant: "on",
+      reason: "DEFAULT",
+      flagMetadata: {},
+    });
     await hookThrowing.flush();
     expect(warnFn).toHaveBeenCalledWith(
-      expect.stringContaining("[SynapseState] Failed to export telemetry batch to http://localhost:3000: Network ECONNREFUSED"),
+      expect.stringContaining(
+        "[SynapseState] Failed to export telemetry batch to http://localhost:3000: Network ECONNREFUSED",
+      ),
     );
   });
 });

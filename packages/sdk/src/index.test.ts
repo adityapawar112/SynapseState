@@ -40,4 +40,3 @@ describe("SDK Package Public API Surface", () => {
     expect(LEASE_DOMAIN_PREFIX).toBe("synapsestate/lease/v1\n");
   });
 });
-

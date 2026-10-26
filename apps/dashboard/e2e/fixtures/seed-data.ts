@@ -12,7 +12,9 @@ const FIXED_ED25519_PRIVATE_KEY_PEM = `-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIO9uJSxND55Q+Seb6cdQZYTmYF8qsj/YtTy8AhK1kTFE
 -----END PRIVATE KEY-----`;
 
-export const operatorPrivateKey = crypto.createPrivateKey(FIXED_ED25519_PRIVATE_KEY_PEM);
+export const operatorPrivateKey = crypto.createPrivateKey(
+  FIXED_ED25519_PRIVATE_KEY_PEM,
+);
 export const operatorPublicKey = crypto.createPublicKey(operatorPrivateKey);
 
 export interface SeedDataResult {
@@ -23,7 +25,11 @@ export interface SeedDataResult {
   expiredLeasePayload: LeasePayload;
   expiredLeaseEnvelope: LeaseEnvelope;
   allLeases: LeaseEnvelope[];
-  flagEvaluations: Array<{ flag_key: string; variant: string; eval_count: number }>;
+  flagEvaluations: Array<{
+    flag_key: string;
+    variant: string;
+    eval_count: number;
+  }>;
   auditEvents: Array<{
     seq: number;
     ts: string;
@@ -74,7 +80,10 @@ export function buildSeedData(baseTime = new Date()): SeedDataResult {
     kid: "ops-emergency-key",
     nonce: "seed-nonce-near-002",
   };
-  const nearExpiryLeaseEnvelope = signLease(nearExpiryLeasePayload, operatorPrivateKey);
+  const nearExpiryLeaseEnvelope = signLease(
+    nearExpiryLeasePayload,
+    operatorPrivateKey,
+  );
 
   // 3. Expired Lease for legacy-inventory-sync (issued 10m ago, ttl 60s -> expired 9m ago)
   const expiredLeasePayload: LeasePayload = {
@@ -89,7 +98,10 @@ export function buildSeedData(baseTime = new Date()): SeedDataResult {
     kid: "ops-emergency-key",
     nonce: "seed-nonce-exp-003",
   };
-  const expiredLeaseEnvelope = signLease(expiredLeasePayload, operatorPrivateKey);
+  const expiredLeaseEnvelope = signLease(
+    expiredLeasePayload,
+    operatorPrivateKey,
+  );
 
   const allLeases: LeaseEnvelope[] = [
     activeLeaseEnvelope,
@@ -106,7 +118,11 @@ export function buildSeedData(baseTime = new Date()): SeedDataResult {
     { flag_key: "search-ranker-algo", variant: "bm25", eval_count: 1200 },
     { flag_key: "search-ranker-algo", variant: "vector", eval_count: 1150 },
     // Active lease flag
-    { flag_key: "checkout-v2-optimization", variant: "pipeline-b", eval_count: 3500 },
+    {
+      flag_key: "checkout-v2-optimization",
+      variant: "pipeline-b",
+      eval_count: 3500,
+    },
   ];
 
   // Audit ledger chained events
@@ -209,12 +225,42 @@ export async function seedPostgresDatabase(clientOrPool: {
 
   // 1. Seed Flags
   const flags = [
-    { key: "checkout-v2-optimization", env: "prod", class: "release", owner: "checkout-team" },
-    { key: "payment-gateway-timeout", env: "prod", class: "killswitch", owner: "payments-team" },
-    { key: "legacy-inventory-sync", env: "prod", class: "permanent", owner: "logistics-team" },
-    { key: "recommendations-model-v2", env: "prod", class: "release", owner: "ai-team" },
-    { key: "search-ranker-algo", env: "prod", class: "release", owner: "search-team" },
-    { key: "staging-experimental-feature", env: "staging", class: "release", owner: "platform-team" },
+    {
+      key: "checkout-v2-optimization",
+      env: "prod",
+      class: "release",
+      owner: "checkout-team",
+    },
+    {
+      key: "payment-gateway-timeout",
+      env: "prod",
+      class: "killswitch",
+      owner: "payments-team",
+    },
+    {
+      key: "legacy-inventory-sync",
+      env: "prod",
+      class: "permanent",
+      owner: "logistics-team",
+    },
+    {
+      key: "recommendations-model-v2",
+      env: "prod",
+      class: "release",
+      owner: "ai-team",
+    },
+    {
+      key: "search-ranker-algo",
+      env: "prod",
+      class: "release",
+      owner: "search-team",
+    },
+    {
+      key: "staging-experimental-feature",
+      env: "staging",
+      class: "release",
+      owner: "platform-team",
+    },
   ];
 
   for (const f of flags) {
@@ -222,7 +268,7 @@ export async function seedPostgresDatabase(clientOrPool: {
       `INSERT INTO flags (key, env, class, owner, description, registry_version)
        VALUES ($1, $2, $3, $4, 'E2E Seed Flag', 1)
        ON CONFLICT (key, env) DO NOTHING`,
-      [f.key, f.env, f.class, f.owner]
+      [f.key, f.env, f.class, f.owner],
     );
   }
 
@@ -246,9 +292,12 @@ export async function seedPostgresDatabase(clientOrPool: {
       seed.activeLeaseEnvelope.sig,
       seed.activeLeasePayload.issued_at,
       seed.activeLeasePayload.ttl_seconds,
-      new Date(new Date(seed.activeLeasePayload.issued_at).getTime() + seed.activeLeasePayload.ttl_seconds * 1000),
+      new Date(
+        new Date(seed.activeLeasePayload.issued_at).getTime() +
+          seed.activeLeasePayload.ttl_seconds * 1000,
+      ),
       seed.activeLeasePayload.kid,
-    ]
+    ],
   );
 
   await clientOrPool.query(
@@ -268,9 +317,12 @@ export async function seedPostgresDatabase(clientOrPool: {
       seed.nearExpiryLeaseEnvelope.sig,
       seed.nearExpiryLeasePayload.issued_at,
       seed.nearExpiryLeasePayload.ttl_seconds,
-      new Date(new Date(seed.nearExpiryLeasePayload.issued_at).getTime() + seed.nearExpiryLeasePayload.ttl_seconds * 1000),
+      new Date(
+        new Date(seed.nearExpiryLeasePayload.issued_at).getTime() +
+          seed.nearExpiryLeasePayload.ttl_seconds * 1000,
+      ),
       seed.nearExpiryLeasePayload.kid,
-    ]
+    ],
   );
 
   await clientOrPool.query(
@@ -290,9 +342,12 @@ export async function seedPostgresDatabase(clientOrPool: {
       seed.expiredLeaseEnvelope.sig,
       seed.expiredLeasePayload.issued_at,
       seed.expiredLeasePayload.ttl_seconds,
-      new Date(new Date(seed.expiredLeasePayload.issued_at).getTime() + seed.expiredLeasePayload.ttl_seconds * 1000),
+      new Date(
+        new Date(seed.expiredLeasePayload.issued_at).getTime() +
+          seed.expiredLeasePayload.ttl_seconds * 1000,
+      ),
       seed.expiredLeasePayload.kid,
-    ]
+    ],
   );
 
   // 3. Seed Flag Usage Daily
@@ -303,7 +358,7 @@ export async function seedPostgresDatabase(clientOrPool: {
        VALUES ($1, 'prod', 'demo-shop', $2, $3, $4, NOW() - INTERVAL '1 day', NOW())
        ON CONFLICT (flag_key, env, service, variant, usage_date)
        DO UPDATE SET eval_count = $4, last_seen = NOW()`,
-      [evalItem.flag_key, evalItem.variant, today, evalItem.eval_count]
+      [evalItem.flag_key, evalItem.variant, today, evalItem.eval_count],
     );
   }
 
@@ -314,7 +369,15 @@ export async function seedPostgresDatabase(clientOrPool: {
     await clientOrPool.query(
       `INSERT INTO audit_events (seq, ts, actor, event_type, payload, prev_hash, hash)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
-      [ev.seq, ev.ts, ev.actor, ev.event_type, JSON.stringify(ev.payload), ev.prev_hash, ev.hash]
+      [
+        ev.seq,
+        ev.ts,
+        ev.actor,
+        ev.event_type,
+        JSON.stringify(ev.payload),
+        ev.prev_hash,
+        ev.hash,
+      ],
     );
   }
 }

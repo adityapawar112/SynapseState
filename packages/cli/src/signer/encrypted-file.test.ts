@@ -26,11 +26,12 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
       const kid = "alice-oncall-test";
       const password = "super-secure-incident-passphrase-2026!";
 
-      const { signer, filePath, publicKeyHex } = await EncryptedKeyfileSigner.generate({
-        kid,
-        password,
-        outDir: tempDir,
-      });
+      const { signer, filePath, publicKeyHex } =
+        await EncryptedKeyfileSigner.generate({
+          kid,
+          password,
+          outDir: tempDir,
+        });
 
       expect(signer.kid).toBe(kid);
       expect(publicKeyHex).toMatch(/^[0-9a-f]{64}$/);
@@ -162,7 +163,10 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
       const buf = Buffer.from(raw.ciphertext, "base64url");
       buf[0] ^= 0xff;
       raw.ciphertext = buf.toString("base64url");
-      await fs.writeFile(filePath, JSON.stringify(raw), { mode: 0o600, encoding: "utf8" });
+      await fs.writeFile(filePath, JSON.stringify(raw), {
+        mode: 0o600,
+        encoding: "utf8",
+      });
 
       await expect(
         EncryptedKeyfileSigner.load({
@@ -183,7 +187,10 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
       const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
       // Tamper with kid
       raw.kid = "tampered-kid";
-      await fs.writeFile(filePath, JSON.stringify(raw), { mode: 0o600, encoding: "utf8" });
+      await fs.writeFile(filePath, JSON.stringify(raw), {
+        mode: 0o600,
+        encoding: "utf8",
+      });
 
       await expect(
         EncryptedKeyfileSigner.load({
@@ -227,7 +234,10 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
       const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
       // Simulate downgrade attack with N=1024
       raw.kdf.params.N = 1024;
-      await fs.writeFile(filePath, JSON.stringify(raw), { mode: 0o600, encoding: "utf8" });
+      await fs.writeFile(filePath, JSON.stringify(raw), {
+        mode: 0o600,
+        encoding: "utf8",
+      });
 
       await expect(
         EncryptedKeyfileSigner.load({
@@ -247,7 +257,10 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
 
       const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
       raw.cipher.iv = Buffer.from("short").toString("base64url"); // 5 bytes instead of 12
-      await fs.writeFile(filePath, JSON.stringify(raw), { mode: 0o600, encoding: "utf8" });
+      await fs.writeFile(filePath, JSON.stringify(raw), {
+        mode: 0o600,
+        encoding: "utf8",
+      });
 
       await expect(
         EncryptedKeyfileSigner.load({
@@ -268,14 +281,19 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
       const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
       // Swap out public_key in unencrypted header with a fake 64-char hex key
       raw.public_key = "00".repeat(32);
-      await fs.writeFile(filePath, JSON.stringify(raw), { mode: 0o600, encoding: "utf8" });
+      await fs.writeFile(filePath, JSON.stringify(raw), {
+        mode: 0o600,
+        encoding: "utf8",
+      });
 
       await expect(
         EncryptedKeyfileSigner.load({
           filePath,
           password: "password123!",
         }),
-      ).rejects.toThrow(/public key in keyfile header does not match decrypted private key/i);
+      ).rejects.toThrow(
+        /public key in keyfile header does not match decrypted private key/i,
+      );
     });
   });
 
@@ -327,7 +345,10 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
 
     it("readMetadata rejects corrupted JSON or invalid public key hex", async () => {
       const corruptFile = path.join(tempDir, "corrupted.key");
-      await fs.writeFile(corruptFile, "{not-json", { mode: 0o600, encoding: "utf8" });
+      await fs.writeFile(corruptFile, "{not-json", {
+        mode: 0o600,
+        encoding: "utf8",
+      });
 
       await expect(
         EncryptedKeyfileSigner.readMetadata(corruptFile),
@@ -388,7 +409,9 @@ describe("EncryptedKeyfileSigner (packages/cli/src/signer/encrypted-file.ts)", (
         await EncryptedKeyfileSigner.checkPermissions(fakeFilePath);
 
         expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("Windows does not support POSIX 0600 permissions"),
+          expect.stringContaining(
+            "Windows does not support POSIX 0600 permissions",
+          ),
         );
       } finally {
         Object.defineProperty(process, "platform", { value: originalPlatform });

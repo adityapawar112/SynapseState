@@ -12,10 +12,7 @@ import type {
   TelemetryMetricItem,
 } from "./types.js";
 import { generateUlid } from "./ulid.js";
-import {
-  type SynapseSdkMetrics,
-  safeInvokeMetricCallback,
-} from "./metrics.js";
+import { type SynapseSdkMetrics, safeInvokeMetricCallback } from "./metrics.js";
 
 export const DEFAULT_TELEMETRY_FLUSH_INTERVAL_MS = 300_000; // 5 minutes
 export const DEFAULT_TELEMETRY_MAX_DISTINCT_METRICS = 5000;
@@ -234,8 +231,12 @@ export class TelemetryHook implements Hook {
       window_start: currentWindowStart,
       window_end: currentWindowEnd,
       metrics,
-      ...(propagationLagMs !== undefined ? { propagation_lag_ms: propagationLagMs } : {}),
-      ...(currentDroppedCount > 0 ? { dropped_count: currentDroppedCount } : {}),
+      ...(propagationLagMs !== undefined
+        ? { propagation_lag_ms: propagationLagMs }
+        : {}),
+      ...(currentDroppedCount > 0
+        ? { dropped_count: currentDroppedCount }
+        : {}),
     };
 
     // Invoke custom onFlush hook if registered

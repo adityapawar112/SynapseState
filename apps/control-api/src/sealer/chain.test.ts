@@ -44,7 +44,7 @@ describe("Audit Ledger Chain Math & Verification (chain.ts)", () => {
         payload: { a: 1, b: 2, nested: { x: 10, y: 20 } },
         seq: 1,
         ts,
-      })
+      }),
     );
   });
 
@@ -67,7 +67,7 @@ describe("Audit Ledger Chain Math & Verification (chain.ts)", () => {
     };
 
     expect(canonicalizeAuditEvent(eventWithDate)).toBe(
-      canonicalizeAuditEvent(eventWithString)
+      canonicalizeAuditEvent(eventWithString),
     );
   });
 

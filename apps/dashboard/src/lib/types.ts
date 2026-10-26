@@ -14,7 +14,8 @@ export interface OidcSessionUser {
   expiresAt: string;
 }
 
-export type LeaseStatus = "ACTIVE" | "REVOKED" | "EXPIRED" | "SUPERSEDED" | "PROMOTED";
+export type LeaseStatus =
+  "ACTIVE" | "REVOKED" | "EXPIRED" | "SUPERSEDED" | "PROMOTED";
 
 export interface ActiveLeaseView {
   leaseId: string;

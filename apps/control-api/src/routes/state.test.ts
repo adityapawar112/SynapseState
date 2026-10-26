@@ -34,7 +34,7 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
           role: "operator",
           max_ttl_seconds: 3600,
         },
-      })
+      }),
     );
 
     app = buildServer({
@@ -53,7 +53,7 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
   beforeEach(async () => {
     await leasePool.query(
       "DELETE FROM revocations WHERE lease_id IN (SELECT lease_id FROM leases WHERE env = $1)",
-      [env]
+      [env],
     );
     await leasePool.query("DELETE FROM leases WHERE env = $1", [env]);
     await leasePool.query("DELETE FROM change_events WHERE env = $1", [env]);
@@ -201,7 +201,7 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
         kid: "sre-alice",
         nonce: crypto.randomBytes(16).toString("base64url"),
       },
-      operatorKey.privateKey
+      operatorKey.privateKey,
     );
     await app.inject({
       method: "POST",
@@ -351,4 +351,3 @@ describe("State Delivery & Long-Polling Route (GET /v1/sdk/state)", () => {
     expect(invalidEnvRes.statusCode).toBe(400);
   });
 });
-

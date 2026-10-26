@@ -521,7 +521,10 @@ export async function executeLeaseList(
       for (const file of files) {
         if (!file.endsWith(".json")) continue;
         try {
-          const content = await fs.readFile(path.join(offlineDir, file), "utf8");
+          const content = await fs.readFile(
+            path.join(offlineDir, file),
+            "utf8",
+          );
           const parsedJson = JSON.parse(content);
           const parseResult = LeaseEnvelopeSchema.safeParse(parsedJson);
           if (parseResult.success) {
@@ -574,9 +577,7 @@ export async function executeLeaseList(
   }
 
   if (activeLeases.length === 0) {
-    return pc.dim(
-      `No active emergency leases found for environment "${env}".`,
-    );
+    return pc.dim(`No active emergency leases found for environment "${env}".`);
   }
 
   const table = new Table({
@@ -695,7 +696,9 @@ export async function executeLeaseRevoke(
     throw new Error(errMsg);
   }
 
-  console.log(pc.green(pc.bold(`\n✓ Lease ${params.id} revoked successfully!`)));
+  console.log(
+    pc.green(pc.bold(`\n✓ Lease ${params.id} revoked successfully!`)),
+  );
   console.log(pc.dim("--------------------------------------------------"));
   console.log(`${pc.bold("Lease ID:")}       ${params.id}`);
   console.log(`${pc.bold("Revoked At:")}     ${payload.revoked_at}`);
@@ -844,25 +847,39 @@ function parseIntegerOption(
 export function registerLeaseCommands(program: Command): void {
   const lease = program
     .command("lease")
-    .description("Manage emergency break-glass leases and air-gapped overrides");
+    .description(
+      "Manage emergency break-glass leases and air-gapped overrides",
+    );
 
   lease
     .command("create")
     .description(
       "Create and submit a signed emergency break-glass lease with server time synchronization",
     )
-    .requiredOption("-e, --env <env>", "Target environment (e.g. prod, staging)")
+    .requiredOption(
+      "-e, --env <env>",
+      "Target environment (e.g. prod, staging)",
+    )
     .requiredOption("-f, --flag <key>", "Feature flag key (e.g. checkout-v2)")
-    .option("-v, --value <val>", "Override value (true, false, number, or JSON)")
+    .option(
+      "-v, --value <val>",
+      "Override value (true, false, number, or JSON)",
+    )
     .option("--variant <variant>", "Alias for --value")
-    .requiredOption("-r, --reason <text>", "Mandatory operational incident justification")
+    .requiredOption(
+      "-r, --reason <text>",
+      "Mandatory operational incident justification",
+    )
     .option(
       "-t, --ttl <seconds>",
       "Lease lifetime in seconds (default: 1800, max: 86400)",
       (v) => parseIntegerOption(v, "--ttl", 1, 86400),
       1800,
     )
-    .option("-k, --kid <kid>", "Key identifier to sign the lease (e.g. alice-oncall-sre)")
+    .option(
+      "-k, --kid <kid>",
+      "Key identifier to sign the lease (e.g. alice-oncall-sre)",
+    )
     .option("--key-file <path>", "Direct path to encrypted .key file")
     .option(
       "-p, --password <pass>",
@@ -900,14 +917,20 @@ export function registerLeaseCommands(program: Command): void {
     )
     .action(async (opts) => {
       try {
-        if (opts.value !== undefined && opts.variant !== undefined && opts.value !== opts.variant) {
+        if (
+          opts.value !== undefined &&
+          opts.variant !== undefined &&
+          opts.value !== opts.variant
+        ) {
           console.warn(
             `[WARNING] Both --value and --variant were supplied with differing values ('${opts.value}' vs '${opts.variant}'). Using --value ('${opts.value}').`,
           );
         }
         const rawValue = opts.value ?? opts.variant;
         if (rawValue === undefined) {
-          throw new Error("error: required option '-v, --value <val>' (or '--variant <val>') not specified");
+          throw new Error(
+            "error: required option '-v, --value <val>' (or '--variant <val>') not specified",
+          );
         }
         const res = await executeLeaseCreate({
           env: opts.env,
@@ -938,10 +961,20 @@ export function registerLeaseCommands(program: Command): void {
 
   lease
     .command("list")
-    .description("List active emergency leases from Control API or offline emergency directory")
-    .option("-e, --env <env>", "Target environment filter (default: prod)", "prod")
+    .description(
+      "List active emergency leases from Control API or offline emergency directory",
+    )
+    .option(
+      "-e, --env <env>",
+      "Target environment filter (default: prod)",
+      "prod",
+    )
     .option("--json", "Output machine-readable JSON array", false)
-    .option("--offline", "Read from local emergency-leases directory instead of Control API", false)
+    .option(
+      "--offline",
+      "Read from local emergency-leases directory instead of Control API",
+      false,
+    )
     .option(
       "--offline-dir <dir>",
       "Directory for offline emergency leases (default: /etc/synapse/emergency-leases)",
@@ -970,7 +1003,10 @@ export function registerLeaseCommands(program: Command): void {
   lease
     .command("revoke")
     .description("Revoke an active emergency lease by ID")
-    .requiredOption("-i, --id <lease_id>", "Lease identifier (26-character Crockford ULID)")
+    .requiredOption(
+      "-i, --id <lease_id>",
+      "Lease identifier (26-character Crockford ULID)",
+    )
     .requiredOption("-r, --reason <text>", "Operational reason for revocation")
     .option("-k, --kid <kid>", "Key identifier used to sign the revocation")
     .option("--key-file <path>", "Direct path to encrypted .key file")
@@ -1009,10 +1045,19 @@ export function registerLeaseCommands(program: Command): void {
     .description(
       "Generate signed Kubernetes ConfigMap YAML or apply directly to node during Control API outage",
     )
-    .requiredOption("-e, --env <env>", "Target environment (e.g. prod, staging)")
+    .requiredOption(
+      "-e, --env <env>",
+      "Target environment (e.g. prod, staging)",
+    )
     .requiredOption("-f, --flag <key>", "Feature flag key (e.g. checkout-v2)")
-    .requiredOption("-v, --value <val>", "Override value (true, false, number, or JSON)")
-    .requiredOption("-r, --reason <text>", "Mandatory operational incident justification")
+    .requiredOption(
+      "-v, --value <val>",
+      "Override value (true, false, number, or JSON)",
+    )
+    .requiredOption(
+      "-r, --reason <text>",
+      "Mandatory operational incident justification",
+    )
     .option(
       "-t, --ttl <seconds>",
       "Lease lifetime in seconds (default: 1800, max: 86400)",
@@ -1029,8 +1074,15 @@ export function registerLeaseCommands(program: Command): void {
       "--passphrase-env <var>",
       "Environment variable name containing the keyfile passphrase",
     )
-    .option("-n, --namespace <ns>", "Kubernetes namespace (default: default)", "default")
-    .option("-o, --out-file <path>", "Output file path for generated ConfigMap YAML")
+    .option(
+      "-n, --namespace <ns>",
+      "Kubernetes namespace (default: default)",
+      "default",
+    )
+    .option(
+      "-o, --out-file <path>",
+      "Output file path for generated ConfigMap YAML",
+    )
     .option("--apply", "Write directly to local emergency directory", false)
     .option(
       "--emergency-dir <dir>",

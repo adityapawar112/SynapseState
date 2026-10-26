@@ -26,8 +26,11 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { error: "UNAUTHORIZED", message: "Session required to promote emergency lease to Git" },
-      { status: 401 }
+      {
+        error: "UNAUTHORIZED",
+        message: "Session required to promote emergency lease to Git",
+      },
+      { status: 401 },
     );
   }
 
@@ -49,9 +52,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "CSRF_FORBIDDEN",
-          message: "Valid x-synapse-csrf token header is required for mutation requests",
+          message:
+            "Valid x-synapse-csrf token header is required for mutation requests",
         },
-        { status: 403 }
+        { status: 403 },
       );
     }
   }
@@ -63,7 +67,7 @@ export async function POST(request: NextRequest) {
         error: "FORBIDDEN",
         message: `Role "${user.role}" is not authorized to promote emergency leases to Git. Operator or Admin required.`,
       },
-      { status: 403 }
+      { status: 403 },
     );
   }
 
@@ -76,7 +80,7 @@ export async function POST(request: NextRequest) {
   if (!body.leaseId) {
     return NextResponse.json(
       { error: "INVALID_REQUEST", message: "leaseId is required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -92,7 +96,7 @@ export async function POST(request: NextRequest) {
         payload: { leaseId: body.leaseId, env: body.env, simulated: true },
       })
       .catch((err) =>
-        console.warn("[promote/route] Failed to record audit event:", err)
+        console.warn("[promote/route] Failed to record audit event:", err),
       );
 
     return NextResponse.json({
@@ -125,7 +129,7 @@ export async function POST(request: NextRequest) {
         },
       })
       .catch((err) =>
-        console.warn("[promote/route] Failed to record audit event:", err)
+        console.warn("[promote/route] Failed to record audit event:", err),
       );
 
     return NextResponse.json({
@@ -138,7 +142,8 @@ export async function POST(request: NextRequest) {
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
     const existingPrUrl = (err as { existingPrUrl?: string })?.existingPrUrl;
-    const message = err instanceof Error ? err.message : "Control API rejected promotion";
+    const message =
+      err instanceof Error ? err.message : "Control API rejected promotion";
 
     if (code === "STALE_PR_CONFLICT") {
       return NextResponse.json(
@@ -147,17 +152,16 @@ export async function POST(request: NextRequest) {
           message,
           existingPrUrl: existingPrUrl || undefined,
         },
-        { status: 409 }
+        { status: 409 },
       );
     }
-
 
     return NextResponse.json(
       {
         error: "PROMOTION_FAILED",
         message,
       },
-      { status: 502 }
+      { status: 502 },
     );
   }
 }

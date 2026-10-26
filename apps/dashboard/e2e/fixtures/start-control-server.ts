@@ -7,7 +7,11 @@ import { seedPostgresDatabase } from "./seed-data.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-async function isPortOpen(host: string, port: number, timeoutMs = 1000): Promise<boolean> {
+async function isPortOpen(
+  host: string,
+  port: number,
+  timeoutMs = 1000,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
     let status = false;
@@ -48,7 +52,7 @@ async function main() {
 
   if (pgAvailable) {
     console.log(
-      `[start-control-server] PostgreSQL detected at ${host}:${port}. Seeding and starting real control-api...`
+      `[start-control-server] PostgreSQL detected at ${host}:${port}. Seeding and starting real control-api...`,
     );
     const pool = new pg.Pool({ connectionString: dbUrl });
     try {
@@ -83,7 +87,7 @@ async function main() {
             process.env.SYNAPSE_API_TOKEN ||
             "synapse-e2e-master-token-value-2026",
         },
-      }
+      },
     );
 
     process.on("SIGTERM", () => proc.kill("SIGTERM"));
@@ -91,7 +95,7 @@ async function main() {
     proc.on("exit", (code) => process.exit(code ?? 0));
   } else {
     console.log(
-      `[start-control-server] PostgreSQL not detected on ${host}:${port}. Launching contract-compliant mock Control API server...`
+      `[start-control-server] PostgreSQL not detected on ${host}:${port}. Launching contract-compliant mock Control API server...`,
     );
     await import("./mock-control-server.js");
   }

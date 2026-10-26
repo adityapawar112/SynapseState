@@ -44,7 +44,10 @@ export const DEFAULT_FIXTURES_DIR = path.resolve(__dirname, "../fixtures");
 /**
  * Loads and parses a JSON fixture file from the conformance fixtures directory.
  */
-export function readFixtureJson<T>(relativePath: string, fixturesDir = DEFAULT_FIXTURES_DIR): T {
+export function readFixtureJson<T>(
+  relativePath: string,
+  fixturesDir = DEFAULT_FIXTURES_DIR,
+): T {
   const fullPath = path.join(fixturesDir, relativePath);
   const content = fs.readFileSync(fullPath, "utf8");
   return JSON.parse(content) as T;
@@ -65,12 +68,17 @@ export function loadTrustedKeyset(fixturesDir = DEFAULT_FIXTURES_DIR): Keyset {
  * - empty_keyset.json (authoritative revoke-all-keys directive)
  * - invalid_keyset.json (malformed key bytes, unauthorized roles, invalid syntax)
  */
-export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): ConformanceSuiteReport {
+export function runKeysetVectors(
+  fixturesDir = DEFAULT_FIXTURES_DIR,
+): ConformanceSuiteReport {
   const results: VectorResult[] = [];
 
   // 1. Valid keyset
   try {
-    const validContent = fs.readFileSync(path.join(fixturesDir, "keysets/valid_keyset.json"), "utf8");
+    const validContent = fs.readFileSync(
+      path.join(fixturesDir, "keysets/valid_keyset.json"),
+      "utf8",
+    );
     const validKeyset = parseKeysetJson(validContent);
     const keyCount = Object.keys(validKeyset).length;
 
@@ -104,7 +112,9 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
       vectorId: "valid_keyset",
       type: "keyset",
       passed,
-      message: passed ? undefined : "Valid keyset failed deep property validation",
+      message: passed
+        ? undefined
+        : "Valid keyset failed deep property validation",
       actualStatus: passed ? "VALID" : "INVALID",
       expectedStatus: "VALID",
     });
@@ -121,7 +131,10 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
 
   // 2. Empty keyset (authoritative revoke-all-keys directive `{}`)
   try {
-    const emptyContent = fs.readFileSync(path.join(fixturesDir, "keysets/empty_keyset.json"), "utf8");
+    const emptyContent = fs.readFileSync(
+      path.join(fixturesDir, "keysets/empty_keyset.json"),
+      "utf8",
+    );
     const emptyKeyset = parseKeysetJson(emptyContent);
     const passed = Object.keys(emptyKeyset).length === 0;
     results.push({
@@ -145,7 +158,12 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
 
   // 3. Invalid keyset vectors
   const invalidData = readFixtureJson<{
-    cases: Array<{ id: string; description: string; raw: string; expectedError: string }>;
+    cases: Array<{
+      id: string;
+      description: string;
+      raw: string;
+      expectedError: string;
+    }>;
   }>("keysets/invalid_keyset.json", fixturesDir);
 
   for (const c of invalidData.cases) {
@@ -167,7 +185,9 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
         vectorId: c.id,
         type: "keyset",
         passed,
-        message: passed ? undefined : `Expected ${c.expectedError}, received ${errorName}`,
+        message: passed
+          ? undefined
+          : `Expected ${c.expectedError}, received ${errorName}`,
         expectedStatus: c.expectedError as VectorStatusCode,
         actualStatus: errorName as VectorStatusCode,
       });
@@ -193,14 +213,16 @@ export function runKeysetVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformanc
  * - future_dated_leases.json
  * - unknown_kid_leases.json
  */
-export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): ConformanceSuiteReport {
+export function runLeaseVectors(
+  fixturesDir = DEFAULT_FIXTURES_DIR,
+): ConformanceSuiteReport {
   const results: VectorResult[] = [];
   const trustedKeyset = loadTrustedKeyset(fixturesDir);
 
   // 1. Valid leases (enforcing authoritative keyset-policy seam)
   const validData = readFixtureJson<{ cases: ValidLeaseVector[] }>(
     "leases/valid_leases.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of validData.cases) {
     let passed = true;
@@ -218,7 +240,10 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       passed = false;
       message = `Expected flag_key "${c.expected.flagKey}", got "${c.envelope.payload.flag_key}"`;
     }
-    if (JSON.stringify(c.envelope.payload.value) !== JSON.stringify(c.expected.resolvedValue)) {
+    if (
+      JSON.stringify(c.envelope.payload.value) !==
+      JSON.stringify(c.expected.resolvedValue)
+    ) {
       passed = false;
       message = `Expected resolvedValue ${JSON.stringify(c.expected.resolvedValue)}, got ${JSON.stringify(c.envelope.payload.value)}`;
     }
@@ -247,7 +272,12 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
         ttlSeconds: c.envelope.payload.ttl_seconds,
         ...c.clockParams,
       });
-      if (!expiry.isValid || expiry.status !== "VALID" || expiry.remainingEffectiveMs <= 0 || !active) {
+      if (
+        !expiry.isValid ||
+        expiry.status !== "VALID" ||
+        expiry.remainingEffectiveMs <= 0 ||
+        !active
+      ) {
         passed = false;
         message = `Dual-clock expiry evaluation failed: status=${expiry.status}, active=${active}`;
       }
@@ -266,7 +296,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   // 2. Tampered payload leases (must fail signature verification via keyset seam)
   const tamperedPayloadData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
     "leases/tampered_payload_leases.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of tamperedPayloadData.cases) {
     const envelope = c.envelope as LeaseEnvelope;
@@ -297,7 +327,9 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       vectorId: c.id,
       type: "lease",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -306,7 +338,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   // 3. Tampered signature leases
   const tamperedSigData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
     "leases/tampered_sig_leases.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of tamperedSigData.cases) {
     let passed = false;
@@ -338,7 +370,9 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       vectorId: c.id,
       type: "lease",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -347,7 +381,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   // 4. Cross-domain leases (Domain Separation Invariant)
   const crossDomainData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
     "leases/cross_domain_leases.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of crossDomainData.cases) {
     const envelope = c.envelope as LeaseEnvelope;
@@ -368,11 +402,23 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       // and rejected strictly by LEASE_DOMAIN_PREFIX separation.
       let domainAuthentic = false;
       if (c.id === "cross_domain_signed_with_revocation_prefix") {
-        domainAuthentic = verifyEnvelope(REVOCATION_DOMAIN_PREFIX, envelope, key.public_key);
+        domainAuthentic = verifyEnvelope(
+          REVOCATION_DOMAIN_PREFIX,
+          envelope,
+          key.public_key,
+        );
       } else if (c.id === "cross_domain_signed_with_keyrevocation_prefix") {
-        domainAuthentic = verifyEnvelope(KEYREVOCATION_DOMAIN_PREFIX, envelope, key.public_key);
+        domainAuthentic = verifyEnvelope(
+          KEYREVOCATION_DOMAIN_PREFIX,
+          envelope,
+          key.public_key,
+        );
       } else if (c.id === "cross_domain_signed_with_bogus_prefix") {
-        domainAuthentic = verifyEnvelope("synapsestate/audit/v1\n", envelope, key.public_key);
+        domainAuthentic = verifyEnvelope(
+          "synapsestate/audit/v1\n",
+          envelope,
+          key.public_key,
+        );
       } else if (c.id === "cross_domain_signed_with_empty_prefix") {
         domainAuthentic = verifyEnvelope("", envelope, key.public_key);
       }
@@ -391,7 +437,9 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       vectorId: c.id,
       type: "lease",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -400,7 +448,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   // 5. Expired wall-clock leases (Dual-Clock Expiry Invariant 3)
   const expiredData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
     "leases/expired_wall_clock_leases.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of expiredData.cases) {
     const envelope = c.envelope as LeaseEnvelope;
@@ -426,14 +474,20 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
         ...c.clockParams,
       });
       actualStatus = expiry.status as VectorStatusCode;
-      passed = !expiry.isValid && !active && expiry.remainingEffectiveMs === 0 && expiry.status === c.expectedFailure;
+      passed =
+        !expiry.isValid &&
+        !active &&
+        expiry.remainingEffectiveMs === 0 &&
+        expiry.status === c.expectedFailure;
     }
 
     results.push({
       vectorId: c.id,
       type: "lease",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -442,7 +496,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   // 6. Future-dated leases (Dual-Clock Expiry Invariant 3)
   const futureData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
     "leases/future_dated_leases.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of futureData.cases) {
     const envelope = c.envelope as LeaseEnvelope;
@@ -468,14 +522,20 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
         ...c.clockParams,
       });
       actualStatus = expiry.status as VectorStatusCode;
-      passed = !expiry.isValid && !active && expiry.remainingEffectiveMs === 0 && expiry.status === c.expectedFailure;
+      passed =
+        !expiry.isValid &&
+        !active &&
+        expiry.remainingEffectiveMs === 0 &&
+        expiry.status === c.expectedFailure;
     }
 
     results.push({
       vectorId: c.id,
       type: "lease",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -484,7 +544,7 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
   // 7. Unknown Kid leases (Keyset Policy Seam)
   const unknownKidData = readFixtureJson<{ cases: InvalidLeaseVector[] }>(
     "leases/unknown_kid_leases.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of unknownKidData.cases) {
     const envelope = c.envelope as LeaseEnvelope;
@@ -511,7 +571,9 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
       vectorId: c.id,
       type: "lease",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -531,14 +593,16 @@ export function runLeaseVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Conformance
  * - valid_revocations.json
  * - invalid_revocations.json
  */
-export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): ConformanceSuiteReport {
+export function runRevocationVectors(
+  fixturesDir = DEFAULT_FIXTURES_DIR,
+): ConformanceSuiteReport {
   const results: VectorResult[] = [];
   const trustedKeyset = loadTrustedKeyset(fixturesDir);
 
   // 1. Valid revocations (enforcing authoritative keyset-policy seam)
   const validData = readFixtureJson<{ cases: ValidRevocationVector[] }>(
     "revocations/valid_revocations.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of validData.cases) {
     let passed = true;
@@ -564,7 +628,8 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
     const revOk = verifyRevocationWithKeyset(c.envelope, trustedKeyset);
     if (!revOk) {
       passed = false;
-      message = "Authoritative verifyRevocationWithKeyset failed for valid revocation";
+      message =
+        "Authoritative verifyRevocationWithKeyset failed for valid revocation";
     }
 
     results.push({
@@ -580,7 +645,7 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
   // 2. Invalid revocations
   const invalidData = readFixtureJson<{ cases: InvalidRevocationVector[] }>(
     "revocations/invalid_revocations.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of invalidData.cases) {
     let passed = false;
@@ -607,14 +672,23 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
           if (!revOk) {
             // Cryptographic domain proof check for cross-domain case
             if (c.id === "revocation_cross_domain_lease_prefix") {
-              const authenticUnderLeasePrefix = verifyEnvelope(LEASE_DOMAIN_PREFIX, envelope, key.public_key);
-              actualStatus = authenticUnderLeasePrefix ? "DOMAIN_SEPARATION_MISMATCH" : "SIGNATURE_CORRUPTED";
-              passed = c.expectedFailure === "DOMAIN_SEPARATION_MISMATCH" && authenticUnderLeasePrefix;
+              const authenticUnderLeasePrefix = verifyEnvelope(
+                LEASE_DOMAIN_PREFIX,
+                envelope,
+                key.public_key,
+              );
+              actualStatus = authenticUnderLeasePrefix
+                ? "DOMAIN_SEPARATION_MISMATCH"
+                : "SIGNATURE_CORRUPTED";
+              passed =
+                c.expectedFailure === "DOMAIN_SEPARATION_MISMATCH" &&
+                authenticUnderLeasePrefix;
             } else {
               actualStatus = "SIGNATURE_INVALID";
               passed =
                 c.expectedFailure === "SIGNATURE_INVALID" ||
-                (c.expectedFailure as string) === "SIGNATURE_VERIFICATION_FAILED";
+                (c.expectedFailure as string) ===
+                  "SIGNATURE_VERIFICATION_FAILED";
             }
           } else {
             actualStatus = "VALID_SIGNATURE";
@@ -627,7 +701,9 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
       vectorId: c.id,
       type: "revocation",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -647,14 +723,16 @@ export function runRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Confor
  * - valid_key_revocations.json
  * - invalid_key_revocations.json
  */
-export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): ConformanceSuiteReport {
+export function runKeyRevocationVectors(
+  fixturesDir = DEFAULT_FIXTURES_DIR,
+): ConformanceSuiteReport {
   const results: VectorResult[] = [];
   const trustedKeyset = loadTrustedKeyset(fixturesDir);
 
   // 1. Valid key revocations (enforcing authoritative keyset-policy seam & key_revoker role)
   const validData = readFixtureJson<{ cases: ValidKeyRevocationVector[] }>(
     "key_revocations/valid_key_revocations.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of validData.cases) {
     let passed = true;
@@ -679,10 +757,15 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
 
     // Authoritative Keyset-Policy Seam: verifyKeyRevocationWithKeyset (ARCHITECTURE.md:286)
     // Enforces: revoked_by_kid in keyset, active key status, canRevokeKey (requires key_revoker role), Ed25519 signature
-    const keyRevOk = verifyKeyRevocationWithKeyset(c.envelope, trustedKeyset, signerKid);
+    const keyRevOk = verifyKeyRevocationWithKeyset(
+      c.envelope,
+      trustedKeyset,
+      signerKid,
+    );
     if (!keyRevOk) {
       passed = false;
-      message = "Authoritative verifyKeyRevocationWithKeyset failed for valid key revocation";
+      message =
+        "Authoritative verifyKeyRevocationWithKeyset failed for valid key revocation";
     }
 
     results.push({
@@ -698,7 +781,7 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
   // 2. Invalid key revocations
   const invalidData = readFixtureJson<{ cases: InvalidKeyRevocationVector[] }>(
     "key_revocations/invalid_key_revocations.json",
-    fixturesDir
+    fixturesDir,
   );
   for (const c of invalidData.cases) {
     let passed = false;
@@ -723,17 +806,30 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
           actualStatus = "UNAUTHORIZED_SIGNER";
           passed = c.expectedFailure === "UNAUTHORIZED_SIGNER";
         } else {
-          const sigOk = verifyKeyRevocationWithKeyset(envelope, trustedKeyset, signerKid);
+          const sigOk = verifyKeyRevocationWithKeyset(
+            envelope,
+            trustedKeyset,
+            signerKid,
+          );
           if (!sigOk) {
             if (c.id === "key_revocation_cross_domain") {
-              const authenticUnderLeasePrefix = verifyEnvelope(LEASE_DOMAIN_PREFIX, envelope, key.public_key);
-              actualStatus = authenticUnderLeasePrefix ? "DOMAIN_SEPARATION_MISMATCH" : "SIGNATURE_CORRUPTED";
-              passed = c.expectedFailure === "DOMAIN_SEPARATION_MISMATCH" && authenticUnderLeasePrefix;
+              const authenticUnderLeasePrefix = verifyEnvelope(
+                LEASE_DOMAIN_PREFIX,
+                envelope,
+                key.public_key,
+              );
+              actualStatus = authenticUnderLeasePrefix
+                ? "DOMAIN_SEPARATION_MISMATCH"
+                : "SIGNATURE_CORRUPTED";
+              passed =
+                c.expectedFailure === "DOMAIN_SEPARATION_MISMATCH" &&
+                authenticUnderLeasePrefix;
             } else {
               actualStatus = "SIGNATURE_INVALID";
               passed =
                 c.expectedFailure === "SIGNATURE_INVALID" ||
-                (c.expectedFailure as string) === "SIGNATURE_VERIFICATION_FAILED";
+                (c.expectedFailure as string) ===
+                  "SIGNATURE_VERIFICATION_FAILED";
             }
           } else {
             actualStatus = "VALID_SIGNATURE";
@@ -746,7 +842,9 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
       vectorId: c.id,
       type: "key_revocation",
       passed,
-      message: passed ? undefined : `Expected ${c.expectedFailure}, got ${actualStatus}`,
+      message: passed
+        ? undefined
+        : `Expected ${c.expectedFailure}, got ${actualStatus}`,
       actualStatus,
       expectedStatus: c.expectedFailure as VectorStatusCode,
     });
@@ -764,7 +862,9 @@ export function runKeyRevocationVectors(fixturesDir = DEFAULT_FIXTURES_DIR): Con
 /**
  * Runs the complete conformance test suite across keysets, leases, revocations, and key revocations.
  */
-export function runConformanceSuite(fixturesDir = DEFAULT_FIXTURES_DIR): ConformanceSuiteReport {
+export function runConformanceSuite(
+  fixturesDir = DEFAULT_FIXTURES_DIR,
+): ConformanceSuiteReport {
   const keysetReport = runKeysetVectors(fixturesDir);
   const leaseReport = runLeaseVectors(fixturesDir);
   const revocationReport = runRevocationVectors(fixturesDir);

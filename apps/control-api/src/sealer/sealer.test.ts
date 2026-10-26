@@ -3,7 +3,11 @@ import { Registry } from "prom-client";
 import { leasePool } from "../db/pool.js";
 import { tryAuditSealerLock } from "../db/transaction.js";
 import { AuditSealer } from "./sealer.js";
-import { verifyAuditChain, GENESIS_PREV_HASH, type AuditEventRecord } from "./chain.js";
+import {
+  verifyAuditChain,
+  GENESIS_PREV_HASH,
+  type AuditEventRecord,
+} from "./chain.js";
 
 describe("In-Process Audit Sealer (sealer.ts)", () => {
   let customRegistry: Registry;
@@ -47,12 +51,14 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     expect(result.lastHash).toBeDefined();
 
     // Verify audit_pending is completely empty
-    const pendingCheck = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_pending;");
+    const pendingCheck = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_pending;",
+    );
     expect(pendingCheck.rows[0]?.count).toBe(0);
 
     // Verify audit_events contains 3 sealed records
     const sealedEvents = await leasePool.query<AuditEventRecord>(
-      "SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events ORDER BY seq ASC;"
+      "SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events ORDER BY seq ASC;",
     );
     expect(sealedEvents.rows.length).toBe(3);
 
@@ -66,7 +72,9 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     expect(verification.valid).toBe(true);
 
     // Verify underlying sequence advanced with explicit seq assignment
-    const seqCheck = await leasePool.query("SELECT last_value FROM audit_events_seq_seq;");
+    const seqCheck = await leasePool.query(
+      "SELECT last_value FROM audit_events_seq_seq;",
+    );
     expect(Number(seqCheck.rows[0]?.last_value)).toBe(3);
   });
 
@@ -75,7 +83,7 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     for (let i = 1; i <= 5; i++) {
       await leasePool.query(
         "INSERT INTO audit_pending (actor, event_type, payload) VALUES ($1, $2, $3)",
-        [`actor-${i}`, "LEASE_CREATED", JSON.stringify({ item: i })]
+        [`actor-${i}`, "LEASE_CREATED", JSON.stringify({ item: i })],
       );
     }
 
@@ -90,7 +98,9 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     expect(batch1.sealedCount).toBe(2);
     expect(batch1.lastSeq).toBe(2);
 
-    let pendingCount = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_pending;");
+    let pendingCount = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_pending;",
+    );
     expect(pendingCount.rows[0]?.count).toBe(3);
 
     // Batch 2 (seals 2, leaves 1)
@@ -98,7 +108,9 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     expect(batch2.sealedCount).toBe(2);
     expect(batch2.lastSeq).toBe(4);
 
-    pendingCount = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_pending;");
+    pendingCount = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_pending;",
+    );
     expect(pendingCount.rows[0]?.count).toBe(1);
 
     // Batch 3 (seals 1, leaves 0)
@@ -106,12 +118,14 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     expect(batch3.sealedCount).toBe(1);
     expect(batch3.lastSeq).toBe(5);
 
-    pendingCount = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_pending;");
+    pendingCount = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_pending;",
+    );
     expect(pendingCount.rows[0]?.count).toBe(0);
 
     // Entire chain of 5 events should verify from genesis
     const allSealed = await leasePool.query<AuditEventRecord>(
-      "SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events ORDER BY seq ASC;"
+      "SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events ORDER BY seq ASC;",
     );
     expect(allSealed.rows.length).toBe(5);
 
@@ -164,14 +178,20 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
       registry: customRegistry,
     });
 
-    await expect(failingSealer.sealOnce()).rejects.toThrow("Simulated failure during batch insertion");
+    await expect(failingSealer.sealOnce()).rejects.toThrow(
+      "Simulated failure during batch insertion",
+    );
 
     // Verify audit_pending still contains the unsealed record
-    const pendingCheck = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_pending;");
+    const pendingCheck = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_pending;",
+    );
     expect(pendingCheck.rows[0]?.count).toBe(1);
 
     // Verify audit_events has 0 records
-    const eventsCheck = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_events;");
+    const eventsCheck = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_events;",
+    );
     expect(eventsCheck.rows[0]?.count).toBe(0);
   });
 
@@ -186,7 +206,7 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     const gauge = sealer.getPendingAgeGauge();
     expect(typeof gauge.set).toBe("function");
     let metricValue = (await customRegistry.getMetricsAsJSON()).find(
-      (m) => m.name === "synapse_audit_pending_age_seconds"
+      (m) => m.name === "synapse_audit_pending_age_seconds",
     );
     expect(metricValue?.values[0]?.value).toBe(0);
 
@@ -199,7 +219,7 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     // Update gauge without sealing
     await sealer.updatePendingAgeMetric();
     metricValue = (await customRegistry.getMetricsAsJSON()).find(
-      (m) => m.name === "synapse_audit_pending_age_seconds"
+      (m) => m.name === "synapse_audit_pending_age_seconds",
     );
     const recordedLag = metricValue?.values[0]?.value ?? 0;
     expect(recordedLag).toBeGreaterThanOrEqual(14);
@@ -207,7 +227,7 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     // Seal the event and check that lag resets to 0
     await sealer.sealOnce();
     metricValue = (await customRegistry.getMetricsAsJSON()).find(
-      (m) => m.name === "synapse_audit_pending_age_seconds"
+      (m) => m.name === "synapse_audit_pending_age_seconds",
     );
     expect(metricValue?.values[0]?.value).toBe(0);
   });
@@ -241,10 +261,14 @@ describe("In-Process Audit Sealer (sealer.ts)", () => {
     expect(sealer.isSealerRunning()).toBe(false);
 
     // Verify row was sealed
-    const pendingCheck = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_pending;");
+    const pendingCheck = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_pending;",
+    );
     expect(pendingCheck.rows[0]?.count).toBe(0);
 
-    const sealedCheck = await leasePool.query("SELECT COUNT(*)::int AS count FROM audit_events;");
+    const sealedCheck = await leasePool.query(
+      "SELECT COUNT(*)::int AS count FROM audit_events;",
+    );
     expect(sealedCheck.rows[0]?.count).toBe(1);
   });
 });

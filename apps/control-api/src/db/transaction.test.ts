@@ -32,7 +32,7 @@ describe("Transaction & Advisory Lock Helpers", () => {
     const res = await withTransaction(leasePool, async (client) => {
       const insert = await client.query(
         "INSERT INTO test_transaction_items (val) VALUES ($1) RETURNING *",
-        [insertedVal]
+        [insertedVal],
       );
       return insert.rows[0];
     });
@@ -41,7 +41,7 @@ describe("Transaction & Advisory Lock Helpers", () => {
 
     const check = await leasePool.query(
       "SELECT * FROM test_transaction_items WHERE val = $1",
-      [insertedVal]
+      [insertedVal],
     );
     expect(check.rows.length).toBe(1);
   });
@@ -53,15 +53,15 @@ describe("Transaction & Advisory Lock Helpers", () => {
       withTransaction(leasePool, async (client) => {
         await client.query(
           "INSERT INTO test_transaction_items (val) VALUES ($1)",
-          [rolledBackVal]
+          [rolledBackVal],
         );
         throw new Error("Simulated failure inside transaction");
-      })
+      }),
     ).rejects.toThrow("Simulated failure inside transaction");
 
     const check = await leasePool.query(
       "SELECT * FROM test_transaction_items WHERE val = $1",
-      [rolledBackVal]
+      [rolledBackVal],
     );
     expect(check.rows.length).toBe(0);
   });

@@ -16,7 +16,7 @@ export function getSessionSecret(): string {
   if (!secret) {
     if (process.env.NODE_ENV === "production") {
       throw new Error(
-        "CRITICAL SECURITY CONFIGURATION ERROR: SESSION_SECRET environment variable must be set in production"
+        "CRITICAL SECURITY CONFIGURATION ERROR: SESSION_SECRET environment variable must be set in production",
       );
     }
     return "development-only-session-secret-min-32-chars-long";
@@ -85,14 +85,17 @@ export function base64UrlToString(base64url: string): string {
 /**
  * Imports an HMAC key using standard WebCrypto API.
  */
-async function getHmacKey(secret: string, usages: KeyUsage[]): Promise<CryptoKey> {
+async function getHmacKey(
+  secret: string,
+  usages: KeyUsage[],
+): Promise<CryptoKey> {
   const enc = new TextEncoder();
   return await globalThis.crypto.subtle.importKey(
     "raw",
     enc.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    usages
+    usages,
   );
 }
 
@@ -104,7 +107,7 @@ export async function signData(data: string, secret: string): Promise<string> {
   const sigBuf = await globalThis.crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(data)
+    new TextEncoder().encode(data),
   );
   return bytesToBase64Url(new Uint8Array(sigBuf));
 }
@@ -115,7 +118,7 @@ export async function signData(data: string, secret: string): Promise<string> {
 export async function verifySignature(
   data: string,
   signatureBase64Url: string,
-  secret: string
+  secret: string,
 ): Promise<boolean> {
   try {
     const key = await getHmacKey(secret, ["verify"]);
@@ -124,7 +127,7 @@ export async function verifySignature(
       "HMAC",
       key,
       sigBytes as unknown as BufferSource,
-      new TextEncoder().encode(data)
+      new TextEncoder().encode(data),
     );
   } catch {
     return false;
@@ -136,7 +139,7 @@ export async function verifySignature(
  */
 export async function createSessionToken(
   user: OidcSessionUser,
-  secret: string = getSessionSecret()
+  secret: string = getSessionSecret(),
 ): Promise<string> {
   const payloadStr = JSON.stringify(user);
   const encodedPayload = stringToBase64Url(payloadStr);
@@ -150,7 +153,7 @@ export async function createSessionToken(
  */
 export async function verifySessionToken(
   token: string,
-  secret: string = getSessionSecret()
+  secret: string = getSessionSecret(),
 ): Promise<OidcSessionUser | null> {
   if (!token || typeof token !== "string") {
     return null;
@@ -189,22 +192,32 @@ export async function verifySessionToken(
  */
 export function resolveUserRole(
   user: { login: string; teams?: string[]; email?: string },
-  config: AuthConfig
+  config: AuthConfig,
 ): UserRole {
   const login = user.login.toLowerCase();
   const userTeams = new Set((user.teams || []).map((t) => t.toLowerCase()));
 
-  const adminUsers = new Set((config.adminUsers || []).map((u) => u.toLowerCase()));
+  const adminUsers = new Set(
+    (config.adminUsers || []).map((u) => u.toLowerCase()),
+  );
   const adminTeams = config.adminTeams || [];
 
-  if (adminUsers.has(login) || adminTeams.some((t) => userTeams.has(t.toLowerCase()))) {
+  if (
+    adminUsers.has(login) ||
+    adminTeams.some((t) => userTeams.has(t.toLowerCase()))
+  ) {
     return "admin";
   }
 
-  const operatorUsers = new Set((config.operatorUsers || []).map((u) => u.toLowerCase()));
+  const operatorUsers = new Set(
+    (config.operatorUsers || []).map((u) => u.toLowerCase()),
+  );
   const operatorTeams = config.operatorTeams || [];
 
-  if (operatorUsers.has(login) || operatorTeams.some((t) => userTeams.has(t.toLowerCase()))) {
+  if (
+    operatorUsers.has(login) ||
+    operatorTeams.some((t) => userTeams.has(t.toLowerCase()))
+  ) {
     return "operator";
   }
 
@@ -214,7 +227,9 @@ export function resolveUserRole(
 /**
  * Provides a mock development session user for local testing without external OIDC providers.
  */
-export function getDevSessionUser(role: UserRole = "operator"): OidcSessionUser {
+export function getDevSessionUser(
+  role: UserRole = "operator",
+): OidcSessionUser {
   return {
     id: `dev-${role}-id`,
     login: `dev-${role}`,
@@ -233,7 +248,7 @@ export function getDevSessionUser(role: UserRole = "operator"): OidcSessionUser 
  */
 export async function generateCsrfToken(
   sessionId: string,
-  secret: string = getSessionSecret()
+  secret: string = getSessionSecret(),
 ): Promise<string> {
   return signData(`csrf:${sessionId}`, secret);
 }
@@ -244,7 +259,7 @@ export async function generateCsrfToken(
 export async function validateCsrfToken(
   csrfToken: string,
   sessionId: string,
-  secret: string = getSessionSecret()
+  secret: string = getSessionSecret(),
 ): Promise<boolean> {
   if (!csrfToken || !sessionId || !secret) {
     return false;

@@ -54,7 +54,7 @@ export class ControlApiClient {
 
   private async fetchJson<T>(
     endpoint: string,
-    init: RequestInit = {}
+    init: RequestInit = {},
   ): Promise<T | null> {
     const url = `${this.baseUrl}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
     const headers: Record<string, string> = {
@@ -100,16 +100,18 @@ export class ControlApiClient {
     }
 
     const data = await this.fetchJson<StateDeliveryPayload>(
-      `/v1/sdk/state?env=${encodeURIComponent(env)}&wait=0`
+      `/v1/sdk/state?env=${encodeURIComponent(env)}&wait=0`,
     );
 
     if (!data || !Array.isArray(data.active_leases)) {
       return [];
     }
 
-    const referenceTime = data.server_time ? new Date(data.server_time) : new Date();
+    const referenceTime = data.server_time
+      ? new Date(data.server_time)
+      : new Date();
     return data.active_leases.map((envelope) =>
-      calculateLeaseExpiryView(envelope, referenceTime)
+      calculateLeaseExpiryView(envelope, referenceTime),
     );
   }
 
@@ -123,15 +125,21 @@ export class ControlApiClient {
     }
 
     const data = await this.fetchJson<LeasesPayload>(
-      `/v1/leases?env=${encodeURIComponent(env)}`
+      `/v1/leases?env=${encodeURIComponent(env)}`,
     );
 
     if (data && Array.isArray(data.leases)) {
-      const referenceTime = data.server_time ? new Date(data.server_time) : new Date();
-      return data.leases.map((envelope) => calculateLeaseExpiryView(envelope, referenceTime));
+      const referenceTime = data.server_time
+        ? new Date(data.server_time)
+        : new Date();
+      return data.leases.map((envelope) =>
+        calculateLeaseExpiryView(envelope, referenceTime),
+      );
     }
 
-    console.warn(`[ControlApiClient] Failed to fetch inventory from /v1/leases?env=${env}, falling back to /v1/sdk/state`);
+    console.warn(
+      `[ControlApiClient] Failed to fetch inventory from /v1/leases?env=${env}, falling back to /v1/sdk/state`,
+    );
     return this.fetchActiveLeases(env);
   }
 
@@ -139,11 +147,13 @@ export class ControlApiClient {
    * Fetches audit trail events from GET /v1/audit/events
    */
   async fetchAuditEvents(
-    options: AuditEventsQueryOptions = {}
+    options: AuditEventsQueryOptions = {},
   ): Promise<AuditEventsResponse> {
     const params = new URLSearchParams();
-    if (options.fromSeq !== undefined) params.set("from_seq", String(options.fromSeq));
-    if (options.toSeq !== undefined) params.set("to_seq", String(options.toSeq));
+    if (options.fromSeq !== undefined)
+      params.set("from_seq", String(options.fromSeq));
+    if (options.toSeq !== undefined)
+      params.set("to_seq", String(options.toSeq));
     if (options.limit !== undefined) params.set("limit", String(options.limit));
 
     interface RawAuditRecord {
@@ -169,22 +179,24 @@ export class ControlApiClient {
     }
 
     const data = await this.fetchJson<RawAuditResponse>(
-      `/v1/audit/events?${params.toString()}`
+      `/v1/audit/events?${params.toString()}`,
     );
 
     if (!data || !Array.isArray(data.events)) {
       return { events: [], total: 0, hasMore: false };
     }
 
-    const events: AuditLedgerRecord[] = data.events.map((r: RawAuditRecord) => ({
-      seq: r.seq,
-      ts: r.ts || r.timestamp || new Date().toISOString(),
-      actor: r.actor || r.actorKid || "unknown",
-      eventType: r.event_type || r.eventType || "AUDIT_RECORD",
-      payload: r.payload || {},
-      prevHash: r.prev_hash || r.prevHash || "",
-      hash: r.hash || r.eventHash || "",
-    }));
+    const events: AuditLedgerRecord[] = data.events.map(
+      (r: RawAuditRecord) => ({
+        seq: r.seq,
+        ts: r.ts || r.timestamp || new Date().toISOString(),
+        actor: r.actor || r.actorKid || "unknown",
+        eventType: r.event_type || r.eventType || "AUDIT_RECORD",
+        payload: r.payload || {},
+        prevHash: r.prev_hash || r.prevHash || "",
+        hash: r.hash || r.eventHash || "",
+      }),
+    );
 
     return {
       events,
@@ -204,7 +216,9 @@ export class ControlApiClient {
       timestamp: string | null;
     }
 
-    const data = await this.fetchJson<RawCheckpoint>("/v1/audit/checkpoint/latest");
+    const data = await this.fetchJson<RawCheckpoint>(
+      "/v1/audit/checkpoint/latest",
+    );
 
     if (!data) {
       return {
@@ -218,7 +232,9 @@ export class ControlApiClient {
     const raw = data as unknown as Record<string, unknown>;
     return {
       checkpointSeq: Number(data.checkpoint_seq ?? raw.checkpointSeq ?? 0),
-      checkpointHash: String(data.checkpoint_hash ?? raw.checkpointHash ?? "genesis"),
+      checkpointHash: String(
+        data.checkpoint_hash ?? raw.checkpointHash ?? "genesis",
+      ),
       sealedCount: Number(data.sealed_count ?? raw.sealedCount ?? 0),
       timestamp: data.timestamp ?? (raw.timestamp as string | null) ?? null,
     };
@@ -240,7 +256,7 @@ export class ControlApiClient {
 
     const [changes, activeLeases] = await Promise.all([
       this.fetchJson<RawChangesResponse>(
-        `/v1/changes?env=${encodeURIComponent(env)}&since=30d&limit=200`
+        `/v1/changes?env=${encodeURIComponent(env)}&since=30d&limit=200`,
       ),
       this.fetchActiveLeases(env),
     ]);
@@ -261,7 +277,7 @@ export class ControlApiClient {
         const variants = flagsMap.get(item.flag_key)!;
         variants.set(
           item.variant,
-          (variants.get(item.variant) || 0) + item.eval_count
+          (variants.get(item.variant) || 0) + item.eval_count,
         );
       }
     }
@@ -276,12 +292,17 @@ export class ControlApiClient {
     const results: FlagInventoryView[] = [];
 
     for (const [flagKey, variantsMap] of flagsMap.entries()) {
-      const variantCounts = Array.from(variantsMap.entries()).map(([variant, count]) => ({
-        variant,
-        count,
-      }));
+      const variantCounts = Array.from(variantsMap.entries()).map(
+        ([variant, count]) => ({
+          variant,
+          count,
+        }),
+      );
 
-      const totalEvaluations = variantCounts.reduce((acc, c) => acc + c.count, 0);
+      const totalEvaluations = variantCounts.reduce(
+        (acc, c) => acc + c.count,
+        0,
+      );
       const variants = calculateVariantDistribution(variantCounts);
       const quiescence = evaluateFlagQuiescence(variants, totalEvaluations);
 
@@ -304,10 +325,12 @@ export class ControlApiClient {
   /**
    * Compiles the full dashboard overview for the header and landing page
    */
-  async fetchDashboardOverview(env: string = "prod"): Promise<DashboardOverview> {
+  async fetchDashboardOverview(
+    env: string = "prod",
+  ): Promise<DashboardOverview> {
     const [stateRes, changesRes, checkpoint] = await Promise.all([
       this.fetchJson<{ server_time?: string; active_leases?: LeaseEnvelope[] }>(
-        `/v1/sdk/state?env=${encodeURIComponent(env)}&wait=0`
+        `/v1/sdk/state?env=${encodeURIComponent(env)}&wait=0`,
       ),
       this.fetchJson<{
         evaluations?: Array<{ flag_key: string; eval_count: number }>;
@@ -318,12 +341,12 @@ export class ControlApiClient {
     const isHealthy = stateRes !== null;
     const serverTime = stateRes?.server_time || new Date().toISOString();
     const activeLeases = (stateRes?.active_leases || []).map((env) =>
-      calculateLeaseExpiryView(env, new Date(serverTime))
+      calculateLeaseExpiryView(env, new Date(serverTime)),
     );
 
     const totalEvaluations24h = (changesRes?.evaluations || []).reduce(
       (acc, e) => acc + (e.eval_count || 0),
-      0
+      0,
     );
 
     const uniqueFlags = new Set<string>();
@@ -350,7 +373,7 @@ export class ControlApiClient {
    */
   async revokeLease(
     leaseId: string,
-    envelope: RevocationEnvelope
+    envelope: RevocationEnvelope,
   ): Promise<{ lease_id: string; state: string }> {
     const url = `${this.baseUrl}/v1/leases/${encodeURIComponent(leaseId)}/revoke`;
     const res = await fetch(url, {
@@ -364,7 +387,9 @@ export class ControlApiClient {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Revocation request failed" }));
+      const err = await res
+        .json()
+        .catch(() => ({ error: "Revocation request failed" }));
       throw new Error(err.error || `Failed to revoke lease: ${res.statusText}`);
     }
 
@@ -376,7 +401,7 @@ export class ControlApiClient {
    */
   async promoteLease(
     leaseId: string,
-    options: { env?: string; actor?: string } = {}
+    options: { env?: string; actor?: string } = {},
   ): Promise<{ lease_id: string; pr_url: string; branch: string }> {
     const url = `${this.baseUrl}/v1/leases/${encodeURIComponent(leaseId)}/promote`;
     const res = await fetch(url, {
@@ -390,11 +415,17 @@ export class ControlApiClient {
     });
 
     if (!res.ok) {
-      const err = await res
-        .json()
-        .catch(() => ({ error: "Promotion request failed", message: `Failed to promote lease: ${res.statusText}` }));
-      const error = new Error(err.message || err.error || `Failed to promote lease: ${res.statusText}`);
-      (error as unknown as { code?: string; existingPrUrl?: string }).code = err.error;
+      const err = await res.json().catch(() => ({
+        error: "Promotion request failed",
+        message: `Failed to promote lease: ${res.statusText}`,
+      }));
+      const error = new Error(
+        err.message ||
+          err.error ||
+          `Failed to promote lease: ${res.statusText}`,
+      );
+      (error as unknown as { code?: string; existingPrUrl?: string }).code =
+        err.error;
       const prUrl = err.existing_pr_url || err.promote_pr_url;
       if (prUrl) {
         (error as unknown as { existingPrUrl?: string }).existingPrUrl = prUrl;
@@ -402,8 +433,11 @@ export class ControlApiClient {
       throw error;
     }
 
-
-    return (await res.json()) as { lease_id: string; pr_url: string; branch: string };
+    return (await res.json()) as {
+      lease_id: string;
+      pr_url: string;
+      branch: string;
+    };
   }
 
   /**
@@ -421,7 +455,9 @@ export class ControlApiClient {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          ...(this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : {}),
+          ...(this.apiToken
+            ? { Authorization: `Bearer ${this.apiToken}` }
+            : {}),
         },
         body: JSON.stringify({
           actor: event.actor,
@@ -432,7 +468,7 @@ export class ControlApiClient {
 
       if (!res.ok) {
         console.warn(
-          `[ControlApiClient] Failed to stage audit event "${event.eventType}" for actor "${event.actor}" (HTTP ${res.status})`
+          `[ControlApiClient] Failed to stage audit event "${event.eventType}" for actor "${event.actor}" (HTTP ${res.status})`,
         );
         return false;
       }
@@ -441,7 +477,7 @@ export class ControlApiClient {
     } catch (err) {
       console.warn(
         `[ControlApiClient] Failed to reach Control API to stage audit event "${event.eventType}" for actor "${event.actor}":`,
-        err
+        err,
       );
       return false;
     }
@@ -452,4 +488,3 @@ export class ControlApiClient {
  * Singleton client instance for Server Components and route handlers
  */
 export const controlApiClient = new ControlApiClient();
-

@@ -28,8 +28,11 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { error: "UNAUTHORIZED", message: "Session required to revoke emergency lease" },
-      { status: 401 }
+      {
+        error: "UNAUTHORIZED",
+        message: "Session required to revoke emergency lease",
+      },
+      { status: 401 },
     );
   }
 
@@ -51,9 +54,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "CSRF_FORBIDDEN",
-          message: "Valid x-synapse-csrf token header is required for mutation requests",
+          message:
+            "Valid x-synapse-csrf token header is required for mutation requests",
         },
-        { status: 403 }
+        { status: 403 },
       );
     }
   }
@@ -65,7 +69,7 @@ export async function POST(request: NextRequest) {
         error: "FORBIDDEN",
         message: `Role "${user.role}" is not authorized to revoke emergency leases. Operator or Admin required.`,
       },
-      { status: 403 }
+      { status: 403 },
     );
   }
 
@@ -91,7 +95,7 @@ export async function POST(request: NextRequest) {
   if (!body.leaseId || !body.reason) {
     return NextResponse.json(
       { error: "INVALID_REQUEST", message: "leaseId and reason are required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -109,7 +113,7 @@ export async function POST(request: NextRequest) {
             "Air-Gapped Trust Root Invariant 2: Web tier does not store Ed25519 private keys. In production, run 'synapse lease revoke <id>' from your authorized workstation or provide a signed 'envelope'.",
           cliCommand: `synapse lease revoke ${body.leaseId} --reason "${body.reason}"`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -127,7 +131,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await controlApiClient.revokeLease(body.leaseId, revocationEnvelope);
+    const result = await controlApiClient.revokeLease(
+      body.leaseId,
+      revocationEnvelope,
+    );
 
     await controlApiClient
       .recordAuditEvent({
@@ -136,7 +143,7 @@ export async function POST(request: NextRequest) {
         payload: { leaseId: body.leaseId, reason: body.reason },
       })
       .catch((err) =>
-        console.warn("[revoke/route] Failed to record audit event:", err)
+        console.warn("[revoke/route] Failed to record audit event:", err),
       );
 
     return NextResponse.json({
@@ -153,7 +160,11 @@ export async function POST(request: NextRequest) {
       void controlApiClient.recordAuditEvent({
         actor: user.login,
         eventType: "DASHBOARD_REVOKE_TRIGGERED",
-        payload: { leaseId: body.leaseId, reason: body.reason, simulated: true },
+        payload: {
+          leaseId: body.leaseId,
+          reason: body.reason,
+          simulated: true,
+        },
       });
 
       return NextResponse.json({
@@ -166,13 +177,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-
     return NextResponse.json(
       {
         error: "REVOCATION_FAILED",
-        message: err instanceof Error ? err.message : "Control API rejected revocation",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Control API rejected revocation",
       },
-      { status: 502 }
+      { status: 502 },
     );
   }
 }

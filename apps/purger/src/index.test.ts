@@ -59,4 +59,3 @@ describe("Purger Package Exports", () => {
     expect(purger.formatPurgerAuditJson).toBeTypeOf("function");
   });
 });
-

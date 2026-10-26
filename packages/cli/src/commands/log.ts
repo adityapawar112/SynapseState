@@ -67,7 +67,9 @@ export function parseSince(sinceStr: string, now: Date = new Date()): Date {
 
     const targetTime = now.getTime() - ms;
     if (!Number.isFinite(targetTime) || targetTime < 0) {
-      throw new Error(`Duration or timestamp '${sinceStr}' results in an out-of-range date`);
+      throw new Error(
+        `Duration or timestamp '${sinceStr}' results in an out-of-range date`,
+      );
     }
     return new Date(targetTime);
   }
@@ -77,7 +79,9 @@ export function parseSince(sinceStr: string, now: Date = new Date()): Date {
     return parsed;
   }
 
-  throw new Error(`Invalid duration or timestamp format for 'since': "${sinceStr}"`);
+  throw new Error(
+    `Invalid duration or timestamp format for 'since': "${sinceStr}"`,
+  );
 }
 
 /**
@@ -121,7 +125,9 @@ function parseIntegerOption(
  * Default git runner executing git via execFile.
  */
 async function defaultGitRunner(args: string[], cwd?: string): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, { cwd: cwd ?? process.cwd() });
+  const { stdout } = await execFileAsync("git", args, {
+    cwd: cwd ?? process.cwd(),
+  });
   return stdout;
 }
 
@@ -133,7 +139,10 @@ async function inspectLocalGitCommits(
   sinceDate: Date,
   limit: number,
   cwd?: string,
-  gitRunner: (args: string[], cwd?: string) => Promise<string> = defaultGitRunner,
+  gitRunner: (
+    args: string[],
+    cwd?: string,
+  ) => Promise<string> = defaultGitRunner,
 ): Promise<ChangeEvent[]> {
   const sinceIso = sinceDate.toISOString();
   const flagPath = `flags/${env}/`;
@@ -155,8 +164,12 @@ async function inspectLocalGitCommits(
     );
 
     const lines = rawOutput.split(/\r?\n/);
-    let currentCommit: { hash: string; author: string; date: string; subject: string } | null =
-      null;
+    let currentCommit: {
+      hash: string;
+      author: string;
+      date: string;
+      subject: string;
+    } | null = null;
     // Use negative IDs for synthetic git events to prevent collision with database IDs
     let syntheticId = -1000;
 
@@ -178,17 +191,27 @@ async function inspectLocalGitCommits(
       } else if (currentCommit && line.startsWith(flagPath)) {
         // Strict lowercase matching per ADR 0007 charset
         const fileSubPath = line.slice(flagPath.length);
-        const match = /^([a-z0-9](?:[-a-z0-9]*[a-z0-9])?)\.yaml$/.exec(fileSubPath);
+        const match = /^([a-z0-9](?:[-a-z0-9]*[a-z0-9])?)\.yaml$/.exec(
+          fileSubPath,
+        );
         if (match) {
           const flagKey = match[1];
 
           // Attempt to load local flag schema to infer defaultVariant if available (B2)
           let payloadValue: unknown = undefined;
           try {
-            const yamlPath = path.join(cwd ?? process.cwd(), flagPath, `${flagKey}.yaml`);
+            const yamlPath = path.join(
+              cwd ?? process.cwd(),
+              flagPath,
+              `${flagKey}.yaml`,
+            );
             const yamlContent = await fs.readFile(yamlPath, "utf8");
             const parsedYaml = YAML.parse(yamlContent);
-            if (parsedYaml && typeof parsedYaml === "object" && parsedYaml.defaultVariant !== undefined) {
+            if (
+              parsedYaml &&
+              typeof parsedYaml === "object" &&
+              parsedYaml.defaultVariant !== undefined
+            ) {
               payloadValue = parsedYaml.defaultVariant;
             }
           } catch {
@@ -300,13 +323,21 @@ export async function executeLog(params: LogParams): Promise<LogResult> {
 
     const leaseDirs: string[] = params.offlineDirs ?? [
       ...(params.offlineDir ? [params.offlineDir] : []),
-      ...(process.env.SYNAPSE_EMERGENCY_LEASES_DIR ? [process.env.SYNAPSE_EMERGENCY_LEASES_DIR] : []),
+      ...(process.env.SYNAPSE_EMERGENCY_LEASES_DIR
+        ? [process.env.SYNAPSE_EMERGENCY_LEASES_DIR]
+        : []),
       path.join(os.homedir(), ".synapse", "emergency-leases"),
       "/etc/synapse/emergency-leases",
     ];
 
     const [gitEvents, leaseEvents] = await Promise.all([
-      inspectLocalGitCommits(env, sinceDate, limit, params.offlineGitCwd, params.gitRunner),
+      inspectLocalGitCommits(
+        env,
+        sinceDate,
+        limit,
+        params.offlineGitCwd,
+        params.gitRunner,
+      ),
       inspectLocalEmergencyLeases(env, sinceDate, leaseDirs),
     ]);
 
@@ -467,8 +498,11 @@ export async function executeLog(params: LogParams): Promise<LogResult> {
         }
 
         const occurredStr = formatRelativeTime(s.occurred_at, nowMs);
-        const evalCountStr = s.eval_count > 0 ? s.eval_count.toLocaleString() : pc.dim("0");
-        const suggestedValStr = pc.bold(String(s.suggested_action.suggested_value));
+        const evalCountStr =
+          s.eval_count > 0 ? s.eval_count.toLocaleString() : pc.dim("0");
+        const suggestedValStr = pc.bold(
+          String(s.suggested_action.suggested_value),
+        );
 
         table.push([
           rankStr,
@@ -486,7 +520,9 @@ export async function executeLog(params: LogParams): Promise<LogResult> {
       lines.push("");
 
       // Top Suspect Mitigations (Ready-to-run)
-      lines.push(pc.bold(pc.underline("Top Suspect Mitigations (Ready-to-run):")));
+      lines.push(
+        pc.bold(pc.underline("Top Suspect Mitigations (Ready-to-run):")),
+      );
       const topCount = Math.min(suspects.length, 3);
       for (let i = 0; i < topCount; i++) {
         const s = suspects[i];
@@ -523,12 +559,18 @@ export async function executeLog(params: LogParams): Promise<LogResult> {
 export function registerLogCommands(program: Command): void {
   program
     .command("log")
-    .description("Investigate recent feature flag changes and rank incident suspect flags")
+    .description(
+      "Investigate recent feature flag changes and rank incident suspect flags",
+    )
     .option(
       "-s, --service <name>",
       "Target service experiencing degradation (e.g. checkout-service)",
     )
-    .option("-e, --env <env>", "Target environment (default: production or SYNAPSE_ENV)", "production")
+    .option(
+      "-e, --env <env>",
+      "Target environment (default: production or SYNAPSE_ENV)",
+      "production",
+    )
     .option(
       "--since <duration>",
       "Duration window (e.g. 15m, 30m, 2h, 1d; default: 30m)",

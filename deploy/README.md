@@ -105,7 +105,7 @@ Production SRE dashboard structured into 4 operational domains:
 1. **Active Incident & Overrides Overview:**
    - Stat: `synapse_leases_active{env}` — active break-glass leases per environment (target: 0 in steady state).
    - Timeseries: `sum by (from, to) (rate(synapse_lease_transitions_total[5m]))` — lifecycle state transitions rate.
-   - Table: Active leases and transition event volume breakdown. *Note on TTL countdowns:* Per-lease remaining TTL is intentionally omitted from Prometheus metrics to adhere strictly to Invariant 5 (bounded cardinality without `lease_id` series). Operators inspect per-lease expiration and TTL status via `synapse lease list`.
+   - Table: Active leases and transition event volume breakdown. _Note on TTL countdowns:_ Per-lease remaining TTL is intentionally omitted from Prometheus metrics to adhere strictly to Invariant 5 (bounded cardinality without `lease_id` series). Operators inspect per-lease expiration and TTL status via `synapse lease list`.
 2. **SLO & Latency Performance:**
    - Timeseries: Histogram quantiles ($p50, p95, p99$) of `synapse_lease_propagation_seconds` with a $10\text{s}$ threshold marker (Target SLO: $p95 \le 10\text{s}$).
    - Timeseries: Dual-axis state poll request rate (req/s) and $p95$ duration (s) grouped by HTTP status code (`synapse_state_poll_duration_seconds`).

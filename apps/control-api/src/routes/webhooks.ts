@@ -421,7 +421,8 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
   fastify.post("/v1/webhooks/alertmanager", async (req, reply) => {
     // 1. Secret validation
     const alertSecret =
-      options.alertmanagerWebhookSecret ?? process.env.ALERTMANAGER_WEBHOOK_SECRET;
+      options.alertmanagerWebhookSecret ??
+      process.env.ALERTMANAGER_WEBHOOK_SECRET;
 
     if (!alertSecret) {
       req.log.warn(
@@ -513,7 +514,9 @@ export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (
         alert.labels?.repo ||
         "";
 
-      const parsedStartsAt = alert.startsAt ? new Date(alert.startsAt) : new Date();
+      const parsedStartsAt = alert.startsAt
+        ? new Date(alert.startsAt)
+        : new Date();
       const startsAtDate = Number.isFinite(parsedStartsAt.getTime())
         ? parsedStartsAt
         : new Date();
@@ -778,7 +781,9 @@ function formatRelativeTime(
   nowInput: Date | number = Date.now(),
 ): string {
   const time =
-    dateInput instanceof Date ? dateInput.getTime() : new Date(dateInput).getTime();
+    dateInput instanceof Date
+      ? dateInput.getTime()
+      : new Date(dateInput).getTime();
   const now = typeof nowInput === "number" ? nowInput : nowInput.getTime();
   if (!Number.isFinite(time)) return "recently";
 
@@ -834,4 +839,3 @@ export interface AlertmanagerPayload {
   receiver?: string;
   alerts?: AlertmanagerAlert[];
 }
-

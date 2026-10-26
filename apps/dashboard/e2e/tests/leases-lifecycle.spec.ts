@@ -13,7 +13,7 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
     await operatorPage.goto("/leases");
 
     const activeCountdown = operatorPage.locator(
-      "#lease-countdown-01J9X57YTRPQ8A7F4E00112233"
+      "#lease-countdown-01J9X57YTRPQ8A7F4E00112233",
     );
     await expect(activeCountdown).toBeVisible();
 
@@ -40,7 +40,7 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
           const text = (await activeCountdown.textContent())?.trim() || "";
           return parseSeconds(text);
         },
-        { timeout: 8000, intervals: [500, 1000] }
+        { timeout: 8000, intervals: [500, 1000] },
       )
       .toBeLessThan(initialSeconds);
   });
@@ -61,7 +61,7 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
 
     // Content assertion: only the near-expiry lease card should be displayed
     await expect(
-      operatorPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00445566")
+      operatorPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00445566"),
     ).toBeVisible();
     await expect(operatorPage.locator("[id^='lease-card-']")).toHaveCount(1);
 
@@ -72,13 +72,13 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
 
     // Content assertion: only the expired lease card should be displayed
     await expect(
-      operatorPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00778899")
+      operatorPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00778899"),
     ).toBeVisible();
     await expect(operatorPage.locator("[id^='lease-card-']")).toHaveCount(1);
 
     // Expired lease card should never display a Revoke button (prevents accidental revoke-expired)
     const expiredRevokeBtn = operatorPage.locator(
-      "#revoke-btn-01J9X57YTRPQ8A7F4E00778899"
+      "#revoke-btn-01J9X57YTRPQ8A7F4E00778899",
     );
     await expect(expiredRevokeBtn).toHaveCount(0);
 
@@ -96,7 +96,7 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
     await operatorPage.goto("/leases");
 
     const revokeBtn = operatorPage.locator(
-      "#revoke-btn-01J9X57YTRPQ8A7F4E00112233"
+      "#revoke-btn-01J9X57YTRPQ8A7F4E00112233",
     );
     await expect(revokeBtn).toBeVisible();
     await revokeBtn.click();
@@ -109,7 +109,9 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
     await expect(kidInput).toHaveValue(/ops-emergency-key|.+/);
 
     // Fill revocation reason
-    await reasonInput.fill("Incident #4891 resolved: Primary database memory stabilized");
+    await reasonInput.fill(
+      "Incident #4891 resolved: Primary database memory stabilized",
+    );
 
     // In production, web tier never holds Ed25519 signing keys (Charter Invariant 2).
     // The operator provides a workstation-signed envelope.
@@ -123,10 +125,12 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
         revoked_at: new Date().toISOString(),
         kid: "ops-emergency-key",
       },
-      operatorPrivateKey
+      operatorPrivateKey,
     );
 
-    const attachBtn = operatorPage.locator("button:has-text('Attach Workstation-Signed Envelope')");
+    const attachBtn = operatorPage.locator(
+      "button:has-text('Attach Workstation-Signed Envelope')",
+    );
     await attachBtn.click();
     const envelopeInput = operatorPage.locator("#revoke-envelope-input");
     await envelopeInput.fill(JSON.stringify(envelope));
@@ -147,22 +151,26 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
     await expect(successAlert).not.toBeVisible();
 
     // Side-Effect Assertion 1: Verify Control API removes active lease from active SDK state
-    const sdkRes = await request.get("http://localhost:3000/v1/sdk/state?env=prod");
+    const sdkRes = await request.get(
+      "http://localhost:3000/v1/sdk/state?env=prod",
+    );
     expect(sdkRes.status()).toBe(200);
     const sdkData = await sdkRes.json();
     const activeLeaseInSdk = (sdkData.active_leases || []).find(
       (l: { payload?: { lease_id?: string } }) =>
-        l.payload?.lease_id === "01J9X57YTRPQ8A7F4E00112233"
+        l.payload?.lease_id === "01J9X57YTRPQ8A7F4E00112233",
     );
     expect(activeLeaseInSdk).toBeUndefined();
 
     // Verify GET /v1/leases inventory shows revoked state
-    const leasesRes = await request.get("http://localhost:3000/v1/leases?env=prod");
+    const leasesRes = await request.get(
+      "http://localhost:3000/v1/leases?env=prod",
+    );
     expect(leasesRes.status()).toBe(200);
     const leasesData = await leasesRes.json();
     const revokedLease = (leasesData.leases || []).find(
       (l: { payload?: { lease_id?: string } }) =>
-        l.payload?.lease_id === "01J9X57YTRPQ8A7F4E00112233"
+        l.payload?.lease_id === "01J9X57YTRPQ8A7F4E00112233",
     );
     if (revokedLease && (revokedLease as { state?: string }).state) {
       expect((revokedLease as { state?: string }).state).toBe("REVOKED");
@@ -177,7 +185,7 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
         async () => {
           const auditRes = await request.get(
             "http://localhost:3000/v1/audit/events",
-            { headers: authHeaders }
+            { headers: authHeaders },
           );
           if (auditRes.status() === 200) {
             const auditData = await auditRes.json();
@@ -189,28 +197,28 @@ test.describe("Leases Lifecycle & Real-Time Dual-Clock Countdown (PR 27)", () =>
                 (e.event_type === "LEASE_REVOKED" ||
                   e.event_type === "DASHBOARD_REVOKE_TRIGGERED") &&
                 (e.payload?.lease_id === "01J9X57YTRPQ8A7F4E00112233" ||
-                  e.payload?.leaseId === "01J9X57YTRPQ8A7F4E00112233")
+                  e.payload?.leaseId === "01J9X57YTRPQ8A7F4E00112233"),
             );
             if (found) return true;
           }
 
           // Also check change_events feed
           const changesRes = await request.get(
-            "http://localhost:3000/v1/changes?env=prod"
+            "http://localhost:3000/v1/changes?env=prod",
           );
           if (changesRes.status() === 200) {
             const changesData = await changesRes.json();
             const foundChange = (changesData.events || []).find(
               (e: { event_type?: string; flag_key?: string }) =>
                 e.event_type === "LEASE_REVOKED" &&
-                e.flag_key === "checkout-v2-optimization"
+                e.flag_key === "checkout-v2-optimization",
             );
             if (foundChange) return true;
           }
 
           return false;
         },
-        { timeout: 5000, intervals: [300, 500] }
+        { timeout: 5000, intervals: [300, 500] },
       )
       .toBe(true);
   });
