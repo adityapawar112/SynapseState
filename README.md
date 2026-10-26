@@ -240,7 +240,7 @@ All state delivery and evaluation paths are validated against continuous benchma
 - [CONTRIBUTING.md](CONTRIBUTING.md) — Developer setup, monorepo workflows, and testing instructions
 - [docs/limitations.md](docs/limitations.md) — Documented system boundaries, fail-modes, and trade-offs
 - [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md) — Microbenchmarks measuring wrapper overhead
-- [docs/handoff-phase8-pr30-31-load-testing-and-observability.md](docs/handoff-phase8-pr30-31-load-testing-and-observability.md) — Phase 8 handoff for k6 soak suites and containerized dashboard capture (PRs 30–31)
+- [docs/benchmarks/load-test-report.md](docs/benchmarks/load-test-report.md) — Production load saturation & soak benchmark results
 - [docs/runbooks/propagation-latency.md](docs/runbooks/propagation-latency.md) — Incident runbook for lease propagation degradation
 - [docs/adr/](docs/adr/) — Architectural Decision Records
 

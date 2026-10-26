@@ -291,7 +291,7 @@ gantt
 
 ### Phase 8: Production Load Saturation, Soak Benchmarks & Observability Visuals (Weeks 15 – 16)
 
-**Deliverable:** 10-minute soak testing, saturation cliff identification, bulkhead load-shedding proof, and automated headless screenshot capture during live load. Reference: [docs/handoff-phase8-pr30-31-load-testing-and-observability.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/handoff-phase8-pr30-31-load-testing-and-observability.md).
+**Deliverable:** 10-minute soak testing, saturation cliff identification, bulkhead load-shedding proof, and automated headless screenshot capture during live load. Reference: [docs/benchmarks/load-test-report.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/benchmarks/load-test-report.md).
 
 - **8.1 Multi-Scenario k6 Saturation & Soak Harness (`load/k6/`):**
   - Standardized 4-phase Story Arc traffic orchestration: Baseline $\to$ Emergency Break-Glass $\to$ Telemetry Bulkhead Saturation $\to$ Ephemeral Expiry.
