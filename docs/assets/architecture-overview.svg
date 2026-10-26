@@ -141,5 +141,5 @@
 
   <!-- TelemetryHook -> Control API (Batch Egress) -->
   <path d="M 140,460 V 475 Q 140,483 148,483 H 640 Q 648,483 648,460 V 180 Q 648,172 656,172 H 677" fill="none" stroke="#888888" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrow)" />
-  <text x="540" y="478" class="edge-label">Async Flush POST /v1/telemetry</text>
+  <text x="515" y="478" class="edge-label">Async Flush POST /v1/telemetry/batches</text>
 </svg>

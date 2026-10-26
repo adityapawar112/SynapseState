@@ -81,7 +81,7 @@
   <text x="540" y="156" class="badge-text">GIT RECONCILIATION</text>
 
   <text x="535" y="180" class="step-desc">Operator initiates promote.</text>
-  <text x="535" y="196" class="step-desc">Generates JSON diff in Git.</text>
+  <text x="535" y="196" class="step-desc">Generates YAML diff in Git.</text>
   <text x="535" y="212" class="step-desc">Opens Draft PR on GitHub.</text>
 
   <rect x="532" y="240" width="180" height="42" rx="3" fill="#ffffff" stroke="#bfdbfe" stroke-width="1" />

@@ -58,7 +58,7 @@
   <rect x="55" y="240" width="130" height="18" rx="2" fill="#059669" />
   <text x="60" y="252" class="badge-text">CLOCK B • WALL-CLOCK</text>
   <text x="195" y="254" class="label-title">Date.now() / Absolute Epoch Milliseconds</text>
-  <text x="55" y="278" class="label-desc">Bounds absolute lifespan across multi-pod restarts and cold boots with deterministic SKEW_TOLERANCE (5 seconds).</text>
+  <text x="55" y="278" class="label-desc">Bounds absolute lifespan across multi-pod restarts and cold boots with deterministic SKEW_TOLERANCE (30 seconds).</text>
 
   <!-- Timeline Axis 2 -->
   <line x1="160" y1="310" x2="840" y2="310" stroke="#d4d4d8" stroke-width="2" />
@@ -75,7 +75,7 @@
   <rect x="610" y="304" width="60" height="12" fill="rgba(234,179,8,0.25)" />
   <line x1="670" y1="298" x2="670" y2="322" stroke="#d97706" stroke-width="2.5" />
   <circle cx="670" cy="310" r="5" fill="#d97706" />
-  <text x="670" y="330" class="axis-label" text-anchor="middle" fill="#d97706">wall_ceiling (+5s skew)</text>
+  <text x="670" y="330" class="axis-label" text-anchor="middle" fill="#d97706">wall_ceiling (+30s skew)</text>
 
   <!-- ========================================================================= -->
   <!-- RESULT BAR: ZERO SURVIVAL GUARANTEE                                       -->
