@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { leasePool, telemetryPool, closePools, getPoolOptions, createPool } from "./pool.js";
+import {
+  leasePool,
+  telemetryPool,
+  closePools,
+  getPoolOptions,
+  createPool,
+} from "./pool.js";
 import { Pool } from "pg";
 
 describe("Database Connection Pool Isolation", () => {
@@ -21,10 +27,14 @@ describe("Database Connection Pool Isolation", () => {
   });
 
   it("connects and executes queries independently across both pools", async () => {
-    const leaseRes = await leasePool.query("SELECT 'lease' AS pool_name, 1 AS value");
+    const leaseRes = await leasePool.query(
+      "SELECT 'lease' AS pool_name, 1 AS value",
+    );
     expect(leaseRes.rows[0]).toEqual({ pool_name: "lease", value: 1 });
 
-    const telemetryRes = await telemetryPool.query("SELECT 'telemetry' AS pool_name, 2 AS value");
+    const telemetryRes = await telemetryPool.query(
+      "SELECT 'telemetry' AS pool_name, 2 AS value",
+    );
     expect(telemetryRes.rows[0]).toEqual({ pool_name: "telemetry", value: 2 });
   });
 

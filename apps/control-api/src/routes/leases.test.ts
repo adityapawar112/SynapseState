@@ -593,7 +593,6 @@ describe("Lease Ingestion & Revocation Routes", () => {
       );
     });
 
-
     it("returns 409 Conflict when lease is REVOKED", async () => {
       const leaseId = generateUlid();
       await leasePool.query(
@@ -695,7 +694,6 @@ describe("Lease Ingestion & Revocation Routes", () => {
         "https://github.com/org/repo/pull/333",
       );
     });
-
 
     it("promotes EXPIRED lease: calls reconciler and returns 202 Accepted", async () => {
       const leaseId = generateUlid();
@@ -801,7 +799,11 @@ describe("Lease Ingestion & Revocation Routes", () => {
       );
 
       mockReconciler.promoteLease.mockRejectedValueOnce(
-        new FlagDefinitionParseError(payload.flag_key, env, "tab character not allowed"),
+        new FlagDefinitionParseError(
+          payload.flag_key,
+          env,
+          "tab character not allowed",
+        ),
       );
 
       const res = await app.inject({

@@ -49,7 +49,9 @@ export function canonicalizeAuditEvent(event: AuditEventData): string {
     normalizedTs = event.ts.toISOString();
   } else {
     const d = new Date(event.ts);
-    normalizedTs = Number.isNaN(d.getTime()) ? String(event.ts) : d.toISOString();
+    normalizedTs = Number.isNaN(d.getTime())
+      ? String(event.ts)
+      : d.toISOString();
   }
 
   const canonicalObject = {
@@ -67,7 +69,10 @@ export function canonicalizeAuditEvent(event: AuditEventData): string {
  * Computes the SHA-256 hash for an event chained to a previous hash:
  * hash_n = SHA-256(prev_hash || RFC8785Canonical(event_n))
  */
-export function computeEventHash(prevHash: string, event: AuditEventData): string {
+export function computeEventHash(
+  prevHash: string,
+  event: AuditEventData,
+): string {
   const canonicalBytes = canonicalizeAuditEvent(event);
   return createHash("sha256")
     .update(prevHash + canonicalBytes)
@@ -114,7 +119,10 @@ export function verifyAuditChain(
   }
 
   // Invariant 7 (C1): Ledger must start at genesis seq 1 to prevent prefix-truncation attacks
-  if (initialPrevHash === GENESIS_PREV_HASH && opts.requireGenesisStart !== false) {
+  if (
+    initialPrevHash === GENESIS_PREV_HASH &&
+    opts.requireGenesisStart !== false
+  ) {
     const firstSeq = Number(events[0]!.seq);
     if (firstSeq !== 1) {
       return {

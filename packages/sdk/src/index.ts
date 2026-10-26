@@ -69,4 +69,3 @@ export type {
 
 // Re-export cryptographic lease foundation
 export * from "@synapsestate/lease";
-

@@ -104,7 +104,9 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
     expect(suspects).toHaveLength(2);
     expect(suspects[0].flag_key).toBe("flag-recent");
     expect(suspects[1].flag_key).toBe("flag-older");
-    expect(suspects[0].recency_score).toBeGreaterThan(suspects[1].recency_score);
+    expect(suspects[0].recency_score).toBeGreaterThan(
+      suspects[1].recency_score,
+    );
     expect(suspects[0].score).toBeGreaterThan(suspects[1].score);
   });
 
@@ -137,7 +139,12 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
       { flag_key: "flag-idle", variant: "false", eval_count: 0 },
     ];
 
-    const suspects = rankSuspects(events, evaluations, "checkout-service", FIXED_NOW);
+    const suspects = rankSuspects(
+      events,
+      evaluations,
+      "checkout-service",
+      FIXED_NOW,
+    );
     expect(suspects).toHaveLength(2);
     expect(suspects[0].flag_key).toBe("flag-active");
     expect(suspects[0].volume_score).toBe(100);
@@ -310,10 +317,17 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
         },
       ];
 
-      const [suspect] = rankSuspects(events, [], "service; touch /tmp/pwn", FIXED_NOW);
+      const [suspect] = rankSuspects(
+        events,
+        [],
+        "service; touch /tmp/pwn",
+        FIXED_NOW,
+      );
       expect(suspect.suggested_action.command).not.toContain("touch /tmp/pwn");
       // The service should be safely quoted or sanitized
-      expect(suspect.suggested_action.command).toContain("service__touch__tmp_pwn");
+      expect(suspect.suggested_action.command).toContain(
+        "service__touch__tmp_pwn",
+      );
     });
 
     it("suggests off when previous value was on (and vice-versa)", () => {
@@ -366,12 +380,25 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
       ];
 
       const evaluations: FlagEvaluationRecord[] = [
-        { flag_key: "search-algorithm", variant: "canary-ml", eval_count: 5000 },
+        {
+          flag_key: "search-algorithm",
+          variant: "canary-ml",
+          eval_count: 5000,
+        },
         { flag_key: "search-algorithm", variant: "control", eval_count: 45000 },
-        { flag_key: "search-algorithm", variant: "experimental-v2", eval_count: 1000 },
+        {
+          flag_key: "search-algorithm",
+          variant: "experimental-v2",
+          eval_count: 1000,
+        },
       ];
 
-      const [suspect] = rankSuspects(events, evaluations, "search-service", FIXED_NOW);
+      const [suspect] = rankSuspects(
+        events,
+        evaluations,
+        "search-service",
+        FIXED_NOW,
+      );
       expect(suspect.suggested_action.suggested_value).toBe("control");
       expect(suspect.current_variant).toBe("canary-ml");
       expect(suspect.suggested_action.command).toContain(
@@ -459,7 +486,9 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
       expect(suspects).toHaveLength(1);
       expect(suspects[0].event_type).toBe("LEASE_REVOKED");
       expect(suspects[0].actor).toBe("sre-bob");
-      expect(suspects[0].occurred_at).toBe(new Date(FIXED_NOW - 5 * 60 * 1000).toISOString());
+      expect(suspects[0].occurred_at).toBe(
+        new Date(FIXED_NOW - 5 * 60 * 1000).toISOString(),
+      );
     });
   });
 
@@ -530,7 +559,9 @@ describe("Incident Attribution Ranker (packages/cli/src/ranker.ts)", () => {
 
       const [suspect] = rankSuspects(events, [], "checkout-service", FIXED_NOW);
       expect(suspect).toBeDefined();
-      expect(suspect.suggested_action.command).toContain("--env 'prod; evil$(touch /tmp/pwn)'");
+      expect(suspect.suggested_action.command).toContain(
+        "--env 'prod; evil$(touch /tmp/pwn)'",
+      );
     });
   });
 });

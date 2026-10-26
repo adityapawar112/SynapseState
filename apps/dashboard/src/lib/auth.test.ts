@@ -40,7 +40,9 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
 
       try {
         const secret = getSessionSecret();
-        expect(secret).toBe("development-only-session-secret-min-32-chars-long");
+        expect(secret).toBe(
+          "development-only-session-secret-min-32-chars-long",
+        );
       } finally {
         setNodeEnv(origEnv);
         if (origSecret) process.env.SESSION_SECRET = origSecret;
@@ -55,7 +57,9 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
       setNodeEnv("production");
 
       try {
-        expect(() => getSessionSecret()).toThrow(/SESSION_SECRET environment variable must be set in production/);
+        expect(() => getSessionSecret()).toThrow(
+          /SESSION_SECRET environment variable must be set in production/,
+        );
       } finally {
         setNodeEnv(origEnv);
         if (origSecret) process.env.SESSION_SECRET = origSecret;
@@ -81,9 +85,13 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
       const [payload, sig] = token.split(".");
 
       // Tamper with payload (e.g. elevate role to admin)
-      const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
+      const decoded = JSON.parse(
+        Buffer.from(payload, "base64url").toString("utf-8"),
+      );
       decoded.role = "admin";
-      const tamperedPayload = Buffer.from(JSON.stringify(decoded)).toString("base64url");
+      const tamperedPayload = Buffer.from(JSON.stringify(decoded)).toString(
+        "base64url",
+      );
       const tamperedToken = `${tamperedPayload}.${sig}`;
 
       const result = await verifySessionToken(tamperedToken, testSecret);
@@ -122,7 +130,10 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
     });
 
     it("resolves admin role when user belongs to an admin team", () => {
-      const role = resolveUserRole({ login: "bob", teams: ["platform-admins"] }, config);
+      const role = resolveUserRole(
+        { login: "bob", teams: ["platform-admins"] },
+        config,
+      );
       expect(role).toBe("admin");
     });
 
@@ -132,12 +143,18 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
     });
 
     it("resolves operator role when user belongs to an operator team", () => {
-      const role = resolveUserRole({ login: "dave", teams: ["sre-oncall"] }, config);
+      const role = resolveUserRole(
+        { login: "dave", teams: ["sre-oncall"] },
+        config,
+      );
       expect(role).toBe("operator");
     });
 
     it("defaults to viewer role for unrecognized users", () => {
-      const role = resolveUserRole({ login: "guest-user", teams: ["general"] }, config);
+      const role = resolveUserRole(
+        { login: "guest-user", teams: ["general"] },
+        config,
+      );
       expect(role).toBe("viewer");
     });
   });
@@ -164,8 +181,12 @@ describe("Dashboard Auth & RBAC Session Validator", () => {
       expect(typeof csrf).toBe("string");
 
       expect(await validateCsrfToken(csrf, sessionId, testSecret)).toBe(true);
-      expect(await validateCsrfToken(csrf, "different-session", testSecret)).toBe(false);
-      expect(await validateCsrfToken("invalid-csrf", sessionId, testSecret)).toBe(false);
+      expect(
+        await validateCsrfToken(csrf, "different-session", testSecret),
+      ).toBe(false);
+      expect(
+        await validateCsrfToken("invalid-csrf", sessionId, testSecret),
+      ).toBe(false);
     });
   });
 });

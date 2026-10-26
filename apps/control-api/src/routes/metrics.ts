@@ -17,7 +17,7 @@ export interface MetricsRoutesOptions {
  */
 export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
   fastify,
-  options
+  options,
 ) => {
   const metrics = options.metrics ?? getMetricsRegistry();
   const pool = options.leasePool;
@@ -35,14 +35,17 @@ export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
             `SELECT env, COUNT(*)::bigint AS count 
              FROM leases 
              WHERE state = 'ACTIVE' AND expires_at > NOW() 
-             GROUP BY env;`
+             GROUP BY env;`,
           ),
-          pool.query<{ count: string | number; oldest_created_at: Date | string | null }>(
+          pool.query<{
+            count: string | number;
+            oldest_created_at: Date | string | null;
+          }>(
             `SELECT COUNT(*)::bigint AS count, MIN(created_at) AS oldest_created_at 
-             FROM audit_pending;`
+             FROM audit_pending;`,
           ),
           pool.query<{ max_seq: string | number }>(
-            "SELECT COALESCE(MAX(seq), 0)::bigint AS max_seq FROM audit_events;"
+            "SELECT COALESCE(MAX(seq), 0)::bigint AS max_seq FROM audit_events;",
           ),
         ]);
 
@@ -72,7 +75,10 @@ export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
         }
       } catch (err) {
         // Defensive error containment: scrape continues even if database query fails
-        fastify.log.warn({ err }, "[GET /metrics] Warning refreshing database metrics during scrape");
+        fastify.log.warn(
+          { err },
+          "[GET /metrics] Warning refreshing database metrics during scrape",
+        );
       }
     }
 

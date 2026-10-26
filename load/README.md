@@ -123,6 +123,7 @@ k6 run -e PROFILE=spike load/k6/mixed-stress.js
 ### 4.4 Standardized 4-Phase Story Arc Traffic Orchestration (`load/k6/story-arc.js`)
 
 Orchestrates a complete operational incident lifecycle across 4 distinct phases:
+
 1. **Phase 1: Steady-State Baseline**: 100 concurrent SDKs long-polling with ETag caching (95%+ HTTP 304 quiet responses, 0 active leases).
 2. **Phase 2: 2 AM Incident Break-Glass Override**: SRE signs emergency lease (`checkout-v2-flow` = `true`). Control API broadcasts invalidation; SDKs wake up and ingest within $<500\text{ms}$ ($p95 \le 10\text{ s}$ SLO).
 3. **Phase 3: Bulkhead Saturation & Load-Shedding**: High-volume telemetry batch flushes (5,000+ evals/sec). Proves Invariant 1 bulkhead isolation: `telemetryPool` sheds load with HTTP 429 while `leasePool` state delivery remains 100% available with 0 drops.

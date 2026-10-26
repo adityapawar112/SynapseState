@@ -27,7 +27,7 @@ describe("Database Migrations & Schema Invariants", () => {
 
     // Check schema_migrations has all 7 recorded
     const migRows = await leasePool.query<{ name: string }>(
-      "SELECT name FROM schema_migrations ORDER BY name ASC"
+      "SELECT name FROM schema_migrations ORDER BY name ASC",
     );
     expect(migRows.rows.map((r: { name: string }) => r.name)).toEqual([
       "001_create_leases.sql",
@@ -48,7 +48,13 @@ describe("Database Migrations & Schema Invariants", () => {
     await leasePool.query(
       `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
        VALUES ($1, $2, $3, $4, $5, 'ACTIVE', NOW(), 1800, NOW() + INTERVAL '30 minutes', 'kid_test_1')`,
-      [`01HQ001_${Date.now()}`, flagKey, env, JSON.stringify({ variant: "on" }), "sig_1"]
+      [
+        `01HQ001_${Date.now()}`,
+        flagKey,
+        env,
+        JSON.stringify({ variant: "on" }),
+        "sig_1",
+      ],
     );
 
     // Insert second ACTIVE lease for same (flag_key, env) -> MUST fail unique constraint
@@ -56,21 +62,33 @@ describe("Database Migrations & Schema Invariants", () => {
       leasePool.query(
         `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
          VALUES ($1, $2, $3, $4, $5, 'ACTIVE', NOW(), 1800, NOW() + INTERVAL '30 minutes', 'kid_test_2')`,
-        [`01HQ002_${Date.now()}`, flagKey, env, JSON.stringify({ variant: "off" }), "sig_2"]
-      )
+        [
+          `01HQ002_${Date.now()}`,
+          flagKey,
+          env,
+          JSON.stringify({ variant: "off" }),
+          "sig_2",
+        ],
+      ),
     ).rejects.toThrow(/idx_active_lease_per_flag_env/);
 
     // But inserting a non-ACTIVE (e.g. SUPERSEDED or EXPIRED) lease for same (flag_key, env) succeeds
     await leasePool.query(
       `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
        VALUES ($1, $2, $3, $4, $5, 'EXPIRED', NOW(), 1800, NOW(), 'kid_test_3')`,
-      [`01HQ003_${Date.now()}`, flagKey, env, JSON.stringify({ variant: "off" }), "sig_3"]
+      [
+        `01HQ003_${Date.now()}`,
+        flagKey,
+        env,
+        JSON.stringify({ variant: "off" }),
+        "sig_3",
+      ],
     );
   });
 
   it("verifies fillfactor = 70 on flag_usage_daily for HOT optimization", async () => {
     const res = await leasePool.query<{ reloptions: string[] | null }>(
-      `SELECT reloptions FROM pg_class WHERE relname = 'flag_usage_daily'`
+      `SELECT reloptions FROM pg_class WHERE relname = 'flag_usage_daily'`,
     );
     expect(res.rows.length).toBe(1);
     expect(res.rows[0]?.reloptions).toContain("fillfactor=70");
@@ -78,9 +96,11 @@ describe("Database Migrations & Schema Invariants", () => {
 
   it("verifies all expected tables and compound indexes exist", async () => {
     const tablesRes = await leasePool.query<{ table_name: string }>(
-      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
     );
-    const tableNames = tablesRes.rows.map((r: { table_name: string }) => r.table_name);
+    const tableNames = tablesRes.rows.map(
+      (r: { table_name: string }) => r.table_name,
+    );
 
     expect(tableNames).toContain("flags");
     expect(tableNames).toContain("leases");
@@ -95,9 +115,11 @@ describe("Database Migrations & Schema Invariants", () => {
 
     // Indexes
     const indexesRes = await leasePool.query<{ indexname: string }>(
-      `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`
+      `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`,
     );
-    const indexNames = indexesRes.rows.map((r: { indexname: string }) => r.indexname);
+    const indexNames = indexesRes.rows.map(
+      (r: { indexname: string }) => r.indexname,
+    );
 
     expect(indexNames).toContain("idx_active_lease_per_flag_env");
     expect(indexNames).toContain("idx_leases_expires_at");
@@ -114,8 +136,8 @@ describe("Database Migrations & Schema Invariants", () => {
       leasePool.query(
         `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
          VALUES ($1, $2, 'dev', '{}', 'sig', 'EXPIRED', NOW(), 0, NOW(), 'kid')`,
-        [`01HQ_TTL0_${Date.now()}`, flagKey]
-      )
+        [`01HQ_TTL0_${Date.now()}`, flagKey],
+      ),
     ).rejects.toThrow(/check constraint|leases_ttl_seconds_check/i);
 
     // ttl_seconds = 86401 (exceeds 24 hours max) -> fails check constraint
@@ -123,8 +145,8 @@ describe("Database Migrations & Schema Invariants", () => {
       leasePool.query(
         `INSERT INTO leases (lease_id, flag_key, env, payload, sig, state, issued_at, ttl_seconds, expires_at, created_by_kid)
          VALUES ($1, $2, 'dev', '{}', 'sig', 'EXPIRED', NOW(), 86401, NOW(), 'kid')`,
-        [`01HQ_TTL86401_${Date.now()}`, flagKey]
-      )
+        [`01HQ_TTL86401_${Date.now()}`, flagKey],
+      ),
     ).rejects.toThrow(/check constraint|leases_ttl_seconds_check/i);
   });
 
@@ -133,7 +155,7 @@ describe("Database Migrations & Schema Invariants", () => {
     const valid = await leasePool.query(
       `INSERT INTO change_events (event_type, env, flag_key, actor, payload)
        VALUES ('LEASE_CREATED', 'production', 'flag_alpha', 'operator_1', '{"variant":"b"}')
-       RETURNING id, event_type`
+       RETURNING id, event_type`,
     );
     expect(valid.rows[0]?.event_type).toBe("LEASE_CREATED");
 
@@ -141,8 +163,8 @@ describe("Database Migrations & Schema Invariants", () => {
     await expect(
       leasePool.query(
         `INSERT INTO change_events (event_type, env, flag_key, actor, payload)
-         VALUES ('RANDOM_EVENT', 'production', 'flag_alpha', 'operator_1', '{}')`
-      )
+         VALUES ('RANDOM_EVENT', 'production', 'flag_alpha', 'operator_1', '{}')`,
+      ),
     ).rejects.toThrow(/check constraint|change_events_event_type_check/i);
   });
 
@@ -151,7 +173,7 @@ describe("Database Migrations & Schema Invariants", () => {
     const pending = await leasePool.query(
       `INSERT INTO audit_pending (actor, event_type, payload)
        VALUES ('sre_oncall', 'EMERGENCY_OVERRIDE_CREATED', '{"lease_id":"test_1"}')
-       RETURNING id, actor, event_type, payload`
+       RETURNING id, actor, event_type, payload`,
     );
     expect(pending.rows[0]?.actor).toBe("sre_oncall");
     expect(pending.rows[0]?.event_type).toBe("EMERGENCY_OVERRIDE_CREATED");
@@ -160,7 +182,7 @@ describe("Database Migrations & Schema Invariants", () => {
     const sealed = await leasePool.query(
       `INSERT INTO audit_events (ts, actor, event_type, payload, prev_hash, hash)
        VALUES (NOW(), 'sealer', 'EMERGENCY_OVERRIDE_CREATED', '{"lease_id":"test_1"}', 'GENESIS_0', 'HASH_1')
-       RETURNING seq, prev_hash, hash`
+       RETURNING seq, prev_hash, hash`,
     );
     expect(sealed.rows[0]?.prev_hash).toBe("GENESIS_0");
     expect(sealed.rows[0]?.hash).toBe("HASH_1");
@@ -168,13 +190,14 @@ describe("Database Migrations & Schema Invariants", () => {
 
   it("verifies api_tokens stores SHA-256 token hash and roles array", async () => {
     const tokenId = `tok_${Date.now()}`;
-    const tokenHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const tokenHash =
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     const token = await leasePool.query<{ token_id: string; roles: string[] }>(
       `INSERT INTO api_tokens (token_id, token_hash, service_name, env, roles)
        VALUES ($1, $2, 'checkout-service', 'production', ARRAY['read:state', 'write:telemetry'])
        RETURNING token_id, roles`,
-      [tokenId, tokenHash]
+      [tokenId, tokenHash],
     );
 
     expect(token.rows[0]?.token_id).toBe(tokenId);

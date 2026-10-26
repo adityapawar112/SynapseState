@@ -39,9 +39,15 @@ describe("API Route: GET /api/auth/github", () => {
     const redirectUrl = new URL(location!);
     expect(redirectUrl.origin).toBe("https://github.com");
     expect(redirectUrl.pathname).toBe("/login/oauth/authorize");
-    expect(redirectUrl.searchParams.get("client_id")).toBe("test-github-client-id");
-    expect(redirectUrl.searchParams.get("scope")).toBe("read:user read:org user:email");
-    expect(redirectUrl.searchParams.get("redirect_uri")).toBe("http://localhost:3000/api/auth/callback");
+    expect(redirectUrl.searchParams.get("client_id")).toBe(
+      "test-github-client-id",
+    );
+    expect(redirectUrl.searchParams.get("scope")).toBe(
+      "read:user read:org user:email",
+    );
+    expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:3000/api/auth/callback",
+    );
 
     const state = redirectUrl.searchParams.get("state");
     expect(state).toHaveLength(64); // 32 hex bytes = 64 chars

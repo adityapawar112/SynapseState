@@ -13,10 +13,18 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
   describe("parseSince", () => {
     it("parses relative durations in s, m, h, d", () => {
       const now = new Date("2026-10-16T12:00:00.000Z");
-      expect(parseSince("30s", now).toISOString()).toBe("2026-10-16T11:59:30.000Z");
-      expect(parseSince("15m", now).toISOString()).toBe("2026-10-16T11:45:00.000Z");
-      expect(parseSince("2h", now).toISOString()).toBe("2026-10-16T10:00:00.000Z");
-      expect(parseSince("1d", now).toISOString()).toBe("2026-10-15T12:00:00.000Z");
+      expect(parseSince("30s", now).toISOString()).toBe(
+        "2026-10-16T11:59:30.000Z",
+      );
+      expect(parseSince("15m", now).toISOString()).toBe(
+        "2026-10-16T11:45:00.000Z",
+      );
+      expect(parseSince("2h", now).toISOString()).toBe(
+        "2026-10-16T10:00:00.000Z",
+      );
+      expect(parseSince("1d", now).toISOString()).toBe(
+        "2026-10-15T12:00:00.000Z",
+      );
     });
 
     it("parses ISO timestamps", () => {
@@ -25,7 +33,9 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
     });
 
     it("throws on invalid since format", () => {
-      expect(() => parseSince("invalid-time")).toThrow(/Invalid duration or timestamp format/i);
+      expect(() => parseSince("invalid-time")).toThrow(
+        /Invalid duration or timestamp format/i,
+      );
     });
 
     it("throws on out-of-range since duration", () => {
@@ -124,7 +134,9 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
     });
 
     it("throws helpful error advising --offline when Control API is unreachable", async () => {
-      const mockFetch = vi.fn().mockRejectedValue(new Error("fetch failed: ECONNREFUSED"));
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValue(new Error("fetch failed: ECONNREFUSED"));
 
       await expect(
         executeLog({
@@ -159,7 +171,9 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
     let emergencyDir: string;
 
     beforeEach(async () => {
-      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapse-cli-log-test-"));
+      tempDir = await fs.mkdtemp(
+        path.join(os.tmpdir(), "synapse-cli-log-test-"),
+      );
       emergencyDir = path.join(tempDir, "emergency-leases");
       await fs.mkdir(emergencyDir, { recursive: true });
     });
@@ -230,7 +244,9 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
       // Verify git-flag without local schema file emits <TYPE> instead of hardcoding false (B2)
       expect(res.suspects[1].flag_key).toBe("git-flag");
       expect(res.suspects[1].suggested_action.suggested_value).toBe("<TYPE>");
-      expect(res.suspects[1].suggested_action.reason).toContain("Flag type unknown");
+      expect(res.suspects[1].suggested_action.reason).toContain(
+        "Flag type unknown",
+      );
     });
 
     it("infers defaultVariant from local flag YAML file when available in offline mode (B2)", async () => {
@@ -268,7 +284,9 @@ describe("Incident Investigation & Log Commands (packages/cli/src/commands/log.t
     });
 
     it("handles missing git directory or git error gracefully in offline mode", async () => {
-      const failingGitRunner = vi.fn().mockRejectedValue(new Error("fatal: not a git repository"));
+      const failingGitRunner = vi
+        .fn()
+        .mockRejectedValue(new Error("fatal: not a git repository"));
 
       const res = await executeLog({
         service: "checkout-service",

@@ -374,12 +374,16 @@ describe("Keyset Parser & Validator", () => {
 
   describe("KeysetParser Error Invariants & Edge Cases", () => {
     it("preserves custom Error class names and error causes", () => {
-      const parseErr = new KeysetParseError("bad json", { cause: new Error("inner") });
+      const parseErr = new KeysetParseError("bad json", {
+        cause: new Error("inner"),
+      });
       expect(parseErr.name).toBe("KeysetParseError");
       expect(parseErr.message).toBe("bad json");
       expect(parseErr.cause).toBeDefined();
 
-      const valErr = new KeysetValidationError("bad schema", { cause: new Error("inner") });
+      const valErr = new KeysetValidationError("bad schema", {
+        cause: new Error("inner"),
+      });
       expect(valErr.name).toBe("KeysetValidationError");
       expect(valErr.message).toBe("bad schema");
       expect(valErr.cause).toBeDefined();
@@ -409,7 +413,9 @@ describe("Keyset Parser & Validator", () => {
 
     it("rejects reserved prototype identifiers lexically and via JSON reviver", () => {
       const lexicalPayload = '{"__proto__": {"polluted": true}}';
-      expect(() => parseKeysetJson(lexicalPayload)).toThrowError(KeysetValidationError);
+      expect(() => parseKeysetJson(lexicalPayload)).toThrowError(
+        KeysetValidationError,
+      );
       expect(() => parseKeysetJson(lexicalPayload)).toThrowError(
         "Keyset JSON contains forbidden reserved prototype identifier (__proto__, constructor, or prototype)",
       );
@@ -426,7 +432,9 @@ describe("Keyset Parser & Validator", () => {
         expect.unreachable("should have thrown");
       } catch (err) {
         expect(err).toBeInstanceOf(KeysetParseError);
-        expect((err as KeysetParseError).message).toContain("Failed to parse keyset JSON");
+        expect((err as KeysetParseError).message).toContain(
+          "Failed to parse keyset JSON",
+        );
         expect((err as KeysetParseError).cause).toBeDefined();
       }
     });
@@ -448,7 +456,10 @@ describe("Keyset Parser & Validator", () => {
 
     it("rejects reserved kid names via reviver and invalid kid patterns", () => {
       // Unicode-escaped constructor bypasses lexical check and hits reviver
-      const unicodeConstructor = '{"\\u0063onstructor": {"public_key": "' + hexPublicKey + '", "role": "operator"}}';
+      const unicodeConstructor =
+        '{"\\u0063onstructor": {"public_key": "' +
+        hexPublicKey +
+        '", "role": "operator"}}';
       expect(() => parseKeysetJson(unicodeConstructor)).toThrowError(
         'Keyset JSON contains forbidden reserved identifier: "constructor"',
       );
@@ -470,20 +481,27 @@ describe("Keyset Parser & Validator", () => {
         expect.unreachable("should have thrown");
       } catch (err) {
         expect(err).toBeInstanceOf(KeysetValidationError);
-        expect((err as Error).message).toContain("Keyset failed schema validation: alice-key");
+        expect((err as Error).message).toContain(
+          "Keyset failed schema validation: alice-key",
+        );
       }
     });
 
     it("rejects invalid Ed25519 public key and sets cause", () => {
       const invalidKeyJson = JSON.stringify({
-        "alice-key": { public_key: "not-a-valid-ed25519-key", role: "operator" },
+        "alice-key": {
+          public_key: "not-a-valid-ed25519-key",
+          role: "operator",
+        },
       });
       try {
         parseKeysetJson(invalidKeyJson);
         expect.unreachable("should have thrown");
       } catch (err) {
         expect(err).toBeInstanceOf(KeysetValidationError);
-        expect((err as Error).message).toContain('Invalid Ed25519 public key for kid "alice-key"');
+        expect((err as Error).message).toContain(
+          'Invalid Ed25519 public key for kid "alice-key"',
+        );
         expect((err as KeysetValidationError).cause).toBeDefined();
       }
     });
@@ -538,7 +556,10 @@ describe("Keyset Parser & Validator", () => {
       expect(verifyRevocationWithKeyset(envelope, keyset)).toBe(false);
 
       // Unknown kid
-      const unknownEnv = signRevocation({ ...revPayload, kid: "unknown-kid" }, privateKey);
+      const unknownEnv = signRevocation(
+        { ...revPayload, kid: "unknown-kid" },
+        privateKey,
+      );
       expect(verifyRevocationWithKeyset(unknownEnv, keyset)).toBe(false);
 
       // Null envelope
@@ -566,11 +587,17 @@ describe("Keyset Parser & Validator", () => {
       expect(verifyKeyRevocationWithKeyset(envelope, keyset)).toBe(false);
 
       // Unknown kid
-      const unknownEnv = signKeyRevocation({ ...keyRevPayload, revoked_by_kid: "unknown-admin" }, privateKey);
+      const unknownEnv = signKeyRevocation(
+        { ...keyRevPayload, revoked_by_kid: "unknown-admin" },
+        privateKey,
+      );
       expect(verifyKeyRevocationWithKeyset(unknownEnv, keyset)).toBe(false);
 
       // Missing revoked_by_kid and no signerKid passed
-      const missingKidEnv = signKeyRevocation({ ...keyRevPayload, revoked_by_kid: "" }, privateKey);
+      const missingKidEnv = signKeyRevocation(
+        { ...keyRevPayload, revoked_by_kid: "" },
+        privateKey,
+      );
       expect(verifyKeyRevocationWithKeyset(missingKidEnv, keyset)).toBe(false);
 
       // Null envelope

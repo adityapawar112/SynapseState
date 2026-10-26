@@ -1,5 +1,13 @@
 import crypto from "node:crypto";
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
 import type { FastifyInstance } from "fastify";
 import { generateUlid } from "@synapsestate/sdk";
 import { buildServer } from "../app.js";
@@ -633,7 +641,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       payload: JSON.stringify({
         version: "4",
         status: "firing",
-        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate" } }],
+        alerts: [
+          { status: "firing", labels: { alertname: "HighHttp5xxRate" } },
+        ],
       }),
     });
 
@@ -652,7 +662,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       payload: JSON.stringify({
         version: "4",
         status: "firing",
-        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate" } }],
+        alerts: [
+          { status: "firing", labels: { alertname: "HighHttp5xxRate" } },
+        ],
       }),
     });
 
@@ -671,7 +683,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       payload: JSON.stringify({
         version: "4",
         status: "firing",
-        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate", env } }],
+        alerts: [
+          { status: "firing", labels: { alertname: "HighHttp5xxRate", env } },
+        ],
       }),
     });
 
@@ -689,7 +703,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       payload: JSON.stringify({
         version: "4",
         status: "firing",
-        alerts: [{ status: "firing", labels: { alertname: "HighHttp5xxRate", env } }],
+        alerts: [
+          { status: "firing", labels: { alertname: "HighHttp5xxRate", env } },
+        ],
       }),
     });
 
@@ -725,7 +741,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       payload: JSON.stringify({
         version: "4",
         status: "resolved",
-        alerts: [{ status: "resolved", labels: { alertname: "HighHttp5xxRate", env } }],
+        alerts: [
+          { status: "resolved", labels: { alertname: "HighHttp5xxRate", env } },
+        ],
       }),
     });
 
@@ -776,7 +794,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       actor: string;
       event_type: string;
       payload: { alertname: string; service: string; env: string };
-    }>("SELECT actor, event_type, payload FROM audit_pending WHERE event_type = 'INCIDENT_ALERT_RECEIVED'");
+    }>(
+      "SELECT actor, event_type, payload FROM audit_pending WHERE event_type = 'INCIDENT_ALERT_RECEIVED'",
+    );
 
     expect(auditRes.rows.length).toBe(1);
     expect(auditRes.rows[0].event_type).toBe("INCIDENT_ALERT_RECEIVED");
@@ -853,9 +873,7 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
     expect(body.attributions[0].remediation_command).toContain(
       `synapse lease create --flag ${flagKey}`,
     );
-    expect(body.attributions[0].remediation_command).toContain(
-      `--env ${env}`,
-    );
+    expect(body.attributions[0].remediation_command).toContain(`--env ${env}`);
 
     // Verify both INCIDENT_ALERT_RECEIVED and INCIDENT_ATTRIBUTION_EMITTED in audit_pending
     const auditRes = await leasePool.query<{
@@ -890,7 +908,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       ],
     );
 
-    const mockCreateAnnotation = vi.fn().mockResolvedValue({ id: 42, message: "Annotation added" });
+    const mockCreateAnnotation = vi
+      .fn()
+      .mockResolvedValue({ id: 42, message: "Annotation added" });
     const mockGrafanaClient = { createAnnotation: mockCreateAnnotation };
 
     const appWithGrafana = buildServer({
@@ -935,7 +955,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       expect(callArg.tags).toContain("suspected-flag");
       expect(callArg.tags).toContain(`env:${env}`);
       expect(callArg.tags).toContain(`service:${service}`);
-      expect(callArg.text).toContain(`[SynapseState Alert Correlation] Suspected flag: ${flagKey}`);
+      expect(callArg.text).toContain(
+        `[SynapseState Alert Correlation] Suspected flag: ${flagKey}`,
+      );
       expect(callArg.text).toContain("Remediation: synapse lease create");
     } finally {
       await appWithGrafana.close();
@@ -958,7 +980,9 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
       ],
     );
 
-    const mockCreateAnnotation = vi.fn().mockRejectedValue(new Error("ETIMEDOUT: Grafana unreachable"));
+    const mockCreateAnnotation = vi
+      .fn()
+      .mockRejectedValue(new Error("ETIMEDOUT: Grafana unreachable"));
     const mockGrafanaClient = { createAnnotation: mockCreateAnnotation };
 
     const appWithGrafanaFail = buildServer({
@@ -1158,4 +1182,3 @@ describe("Alertmanager Incident Webhook Route (POST /v1/webhooks/alertmanager) -
     }
   });
 });
-

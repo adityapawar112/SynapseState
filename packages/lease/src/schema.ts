@@ -164,7 +164,10 @@ export const CheckpointPayloadSchema = z.object({
   checkpoint_seq: z.number().int().nonnegative(),
   checkpoint_hash: z
     .string()
-    .regex(/^[0-9a-f]{64}$/, "checkpoint_hash must be a 64-char lowercase hex SHA-256 string"),
+    .regex(
+      /^[0-9a-f]{64}$/,
+      "checkpoint_hash must be a 64-char lowercase hex SHA-256 string",
+    ),
   timestamp: z
     .string()
     .datetime({ message: "timestamp must be an ISO 8601 UTC timestamp" }),

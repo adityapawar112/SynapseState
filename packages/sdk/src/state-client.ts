@@ -7,10 +7,7 @@ import {
 } from "@synapsestate/lease";
 import type { LeaseStore } from "./lease-store.js";
 import type { StateClientOptions } from "./types.js";
-import {
-  type SynapseSdkMetrics,
-  safeInvokeMetricCallback,
-} from "./metrics.js";
+import { type SynapseSdkMetrics, safeInvokeMetricCallback } from "./metrics.js";
 
 /**
  * Zod validation schema for StateSyncPayload received from GET /v1/sdk/state.

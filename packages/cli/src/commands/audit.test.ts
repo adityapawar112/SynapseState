@@ -90,7 +90,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       expect(result.genesisPrevHash).toBe(GENESIS_PREV_HASH);
       expect(result.latestHash).toBe(events[4]!.hash);
       expect(result.checkpoint?.status).toBe("NO_CHECKPOINT");
-      expect(result.formattedOutput).toContain("AUDIT LEDGER VERIFICATION: PASSED");
+      expect(result.formattedOutput).toContain(
+        "AUDIT LEDGER VERIFICATION: PASSED",
+      );
     });
 
     it("verifies a valid ledger chain from a JSONL file", async () => {
@@ -157,7 +159,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
 
       expect(result.valid).toBe(false);
       expect(result.failedSeq).toBe(3);
-      expect(result.error).toContain("Sequence discontinuity at index 2: expected seq 3, got 4");
+      expect(result.error).toContain(
+        "Sequence discontinuity at index 2: expected seq 3, got 4",
+      );
     });
 
     it("rejects prefix-truncated ledger starting at seq > 1 from genesis (C1)", async () => {
@@ -173,7 +177,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
 
       expect(result.valid).toBe(false);
       expect(result.failedSeq).toBe(5);
-      expect(result.error).toContain("Ledger does not start at genesis: first seq is 5, expected 1");
+      expect(result.error).toContain(
+        "Ledger does not start at genesis: first seq is 5, expected 1",
+      );
       expect(result.formattedOutput).toContain("FAILED");
     });
 
@@ -215,7 +221,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
 
       expect(result.valid).toBe(false);
       expect(result.checkpoint?.status).toBe("INVALID_SIGNATURE");
-      expect(result.checkpoint?.error).toContain("Failed to validate checkpoint envelope schema");
+      expect(result.checkpoint?.error).toContain(
+        "Failed to validate checkpoint envelope schema",
+      );
     });
 
     it("cross-verifies valid signed checkpoint matching latest sealed event", async () => {
@@ -354,7 +362,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       expect(result.valid).toBe(true);
       expect(result.verifiedCount).toBe(4);
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining("SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events"),
+        expect.stringContaining(
+          "SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events",
+        ),
       );
     });
   });
@@ -427,8 +437,12 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       });
 
       expect(result.envelope.payload.checkpoint_seq).toBe(50);
-      expect(result.savedTo).toContain("s3://my-audit-bucket/audit-checkpoints/50.json");
-      expect(result.savedTo).toContain("s3://my-audit-bucket/audit-checkpoints/checkpoint-latest.json");
+      expect(result.savedTo).toContain(
+        "s3://my-audit-bucket/audit-checkpoints/50.json",
+      );
+      expect(result.savedTo).toContain(
+        "s3://my-audit-bucket/audit-checkpoints/checkpoint-latest.json",
+      );
       expect(mockSend).toHaveBeenCalledTimes(2);
 
       // Verify Invariant & ADR 0005: S3 PutObjectCommand includes ChecksumSHA256 (I5)
@@ -461,7 +475,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
           key: hexPrivateKey,
           fetchFn: mockFetch as unknown as typeof fetch,
         }),
-      ).rejects.toThrow("Audit ledger is empty (no sealed events); refusing to sign genesis checkpoint. Seal at least one event first.");
+      ).rejects.toThrow(
+        "Audit ledger is empty (no sealed events); refusing to sign genesis checkpoint. Seal at least one event first.",
+      );
     });
 
     it("verifies kid and key match when trusted keyset is provided (I4)", async () => {
@@ -495,7 +511,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
     });
 
     it("normalizes base64url keyset public key and verifies match against derived key (O1)", async () => {
-      const b64UrlPublicKey = Buffer.from(hexPublicKey, "hex").toString("base64url");
+      const b64UrlPublicKey = Buffer.from(hexPublicKey, "hex").toString(
+        "base64url",
+      );
       const b64KeysetPath = path.join(tmpDir, "keyset-b64.json");
       await fs.writeFile(
         b64KeysetPath,
@@ -577,7 +595,9 @@ describe("Phase 4 PR 19: Audit Commands (packages/cli/src/commands/audit.ts)", (
       const verifyCmd = auditCmd?.commands.find((c) => c.name() === "verify");
       expect(verifyCmd).toBeDefined();
 
-      const checkpointCmd = auditCmd?.commands.find((c) => c.name() === "checkpoint");
+      const checkpointCmd = auditCmd?.commands.find(
+        (c) => c.name() === "checkpoint",
+      );
       expect(checkpointCmd).toBeDefined();
     });
   });

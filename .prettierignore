@@ -6,3 +6,6 @@ coverage/
 
 # Helm templates contain Go templating syntax which is not valid standard YAML
 deploy/helm/**/templates/
+
+# Ignore custom agent skills and rules
+.agents/

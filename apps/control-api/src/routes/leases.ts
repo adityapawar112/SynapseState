@@ -58,12 +58,18 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
   fastify.get("/v1/leases", async (req, reply) => {
     const query = req.query as { env?: string };
     const env = query.env || "prod";
-    const res = await leasePool.query<{ payload: unknown; sig: string; state: string }>(
+    const res = await leasePool.query<{
+      payload: unknown;
+      sig: string;
+      state: string;
+    }>(
       `SELECT payload, sig, state FROM leases WHERE env = $1 ORDER BY issued_at DESC LIMIT 100`,
       [env],
     );
     const leases = res.rows.map((r) => ({
-      payload: (typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload) as LeaseEnvelope["payload"],
+      payload: (typeof r.payload === "string"
+        ? JSON.parse(r.payload)
+        : r.payload) as LeaseEnvelope["payload"],
       sig: r.sig,
       state: r.state,
     }));
@@ -615,7 +621,6 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
       });
     }
 
-
     if (lease.state !== "ACTIVE" && lease.state !== "EXPIRED") {
       return reply.code(409).send({
         error: "CONFLICT",
@@ -659,7 +664,10 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
         }>("SELECT state, promote_pr_url FROM leases WHERE lease_id = $1", [
           id,
         ]);
-        if (currentRes.rows[0]?.state === "PROMOTED" || currentRes.rows[0]?.promote_pr_url) {
+        if (
+          currentRes.rows[0]?.state === "PROMOTED" ||
+          currentRes.rows[0]?.promote_pr_url
+        ) {
           throw new StalePrConflictError(
             `Cannot promote lease "${id}": lease is already in state "PROMOTED"`,
             currentRes.rows[0].promote_pr_url ?? undefined,
@@ -694,7 +702,6 @@ export const leaseRoutes: FastifyPluginAsync<LeaseRoutesOptions> = async (
 
         return promResult;
       });
-
 
       return reply.code(202).send({
         lease_id: lease.lease_id,

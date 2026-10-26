@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
-import type { FastifyPluginCallback, FastifyRequest, FastifyReply } from "fastify";
+import type {
+  FastifyPluginCallback,
+  FastifyRequest,
+  FastifyReply,
+} from "fastify";
 import type { Pool } from "pg";
 import { GENESIS_PREV_HASH, type AuditEventRecord } from "@synapsestate/lease";
 
@@ -40,10 +44,14 @@ function parseStrictPositiveInt(raw: string): number | undefined {
  */
 function safeIsoString(ts: unknown): string {
   if (ts instanceof Date) {
-    return Number.isNaN(ts.getTime()) ? new Date(0).toISOString() : ts.toISOString();
+    return Number.isNaN(ts.getTime())
+      ? new Date(0).toISOString()
+      : ts.toISOString();
   }
   const d = new Date(String(ts));
-  return Number.isNaN(d.getTime()) ? new Date(0).toISOString() : d.toISOString();
+  return Number.isNaN(d.getTime())
+    ? new Date(0).toISOString()
+    : d.toISOString();
 }
 
 /**
@@ -89,9 +97,10 @@ async function authenticateAuditReader(
   const tokenRes = await pool.query<{
     service_name: string;
     roles: string[];
-  }>("SELECT service_name, roles FROM api_tokens WHERE token_hash = $1 LIMIT 1", [
-    tokenHash,
-  ]);
+  }>(
+    "SELECT service_name, roles FROM api_tokens WHERE token_hash = $1 LIMIT 1",
+    [tokenHash],
+  );
 
   if (tokenRes.rows.length === 0) {
     void reply.code(401).send({
@@ -160,9 +169,10 @@ async function authenticateAuditWriter(
   const tokenRes = await pool.query<{
     service_name: string;
     roles: string[];
-  }>("SELECT service_name, roles FROM api_tokens WHERE token_hash = $1 LIMIT 1", [
-    tokenHash,
-  ]);
+  }>(
+    "SELECT service_name, roles FROM api_tokens WHERE token_hash = $1 LIMIT 1",
+    [tokenHash],
+  );
 
   if (tokenRes.rows.length === 0) {
     void reply.code(401).send({
@@ -185,7 +195,6 @@ async function authenticateAuditWriter(
 }
 
 export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
-
   server,
   options,
   done,
@@ -234,7 +243,8 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
       }
 
       const params: (number | string)[] = [fromSeq];
-      let sql = "SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events WHERE seq >= $1";
+      let sql =
+        "SELECT seq, ts, actor, event_type, payload, prev_hash, hash FROM audit_events WHERE seq >= $1";
 
       if (toSeq !== undefined) {
         params.push(toSeq);
@@ -246,7 +256,9 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
 
       const [eventsRes, countRes] = await Promise.all([
         pool.query<AuditEventRecord>(sql, params),
-        pool.query<{ count: string }>("SELECT COUNT(*)::bigint AS count FROM audit_events"),
+        pool.query<{ count: string }>(
+          "SELECT COUNT(*)::bigint AS count FROM audit_events",
+        ),
       ]);
 
       const total = parseInt(countRes.rows[0]?.count ?? "0", 10);
@@ -288,7 +300,9 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
       pool.query<{ seq: string | number; hash: string; ts: Date | string }>(
         "SELECT seq, hash, ts FROM audit_events ORDER BY seq DESC LIMIT 1",
       ),
-      pool.query<{ count: string }>("SELECT COUNT(*)::bigint AS count FROM audit_events"),
+      pool.query<{ count: string }>(
+        "SELECT COUNT(*)::bigint AS count FROM audit_events",
+      ),
     ]);
 
     const total = parseInt(countRes.rows[0]?.count ?? "0", 10);
@@ -349,7 +363,8 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
       });
     }
 
-    const payload = body.payload && typeof body.payload === "object" ? body.payload : {};
+    const payload =
+      body.payload && typeof body.payload === "object" ? body.payload : {};
 
     await pool.query(
       "INSERT INTO audit_pending (actor, event_type, payload) VALUES ($1, $2, $3)",
@@ -365,4 +380,3 @@ export const auditRoutes: FastifyPluginCallback<AuditRouteOptions> = (
 
   done();
 };
-

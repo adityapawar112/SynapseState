@@ -13,7 +13,7 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
     await operatorPage.goto("/leases");
 
     const promoteBtn = operatorPage.locator(
-      "#promote-btn-01J9X57YTRPQ8A7F4E00112233"
+      "#promote-btn-01J9X57YTRPQ8A7F4E00112233",
     );
     await expect(promoteBtn).toBeVisible();
     await promoteBtn.click();
@@ -29,7 +29,9 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
 
     const diffText = await diffPreview.textContent();
     expect(diffText).toContain("flags/prod/checkout-v2-optimization.yaml");
-    expect(diffText).toContain("Illustrative preview; actual diff created in Draft PR");
+    expect(diffText).toContain(
+      "Illustrative preview; actual diff created in Draft PR",
+    );
     expect(diffText).toContain("-defaultVariant: off");
     expect(diffText).toContain("+defaultVariant: pipeline-b");
 
@@ -43,7 +45,7 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
     await expect(successBanner).toBeVisible();
     await expect(successBanner).toHaveAttribute("role", "alert");
     await expect(successBanner).toHaveText(
-      /Draft Pull Request Created Successfully/
+      /Draft Pull Request Created Successfully/,
     );
 
     // Assert PR link is present and targets a GitHub PR URL
@@ -61,7 +63,7 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
         async () => {
           const auditRes = await request.get(
             "http://localhost:3000/v1/audit/events",
-            { headers: authHeaders }
+            { headers: authHeaders },
           );
           if (auditRes.status() === 200) {
             const auditData = await auditRes.json();
@@ -73,13 +75,13 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
                 (e.event_type === "LEASE_PROMOTED" ||
                   e.event_type === "DASHBOARD_PROMOTE_TRIGGERED") &&
                 (e.payload?.lease_id === "01J9X57YTRPQ8A7F4E00112233" ||
-                  e.payload?.leaseId === "01J9X57YTRPQ8A7F4E00112233")
+                  e.payload?.leaseId === "01J9X57YTRPQ8A7F4E00112233"),
             );
             if (found) return true;
           }
           return false;
         },
-        { timeout: 5000, intervals: [300, 500] }
+        { timeout: 5000, intervals: [300, 500] },
       )
       .toBe(true);
   });
@@ -93,7 +95,7 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
     // Attempting a second promotion on the same lease returns 409 STALE_PR_CONFLICT
     const firstPromote = await request.post(
       "http://localhost:3000/v1/leases/01J9X57YTRPQ8A7F4E00445566/promote",
-      { headers: authHeaders }
+      { headers: authHeaders },
     );
     if (firstPromote.status() === 503) {
       // Live Control API without GitHub token configured returns 503 GITHUB_NOT_CONFIGURED
@@ -104,7 +106,7 @@ test.describe("Promotion Flow & Git Reconciliation Diff Preview (PR 27)", () => 
 
       const duplicatePromote = await request.post(
         "http://localhost:3000/v1/leases/01J9X57YTRPQ8A7F4E00445566/promote",
-        { headers: authHeaders }
+        { headers: authHeaders },
       );
       expect(duplicatePromote.status()).toBe(409);
       const dupData = await duplicatePromote.json();

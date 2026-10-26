@@ -10,23 +10,36 @@ import {
 import type { UserRole } from "@/lib/types";
 import { controlApiClient } from "@/lib/api";
 
-
 export async function GET(request: NextRequest) {
   const secret = getSessionSecret();
   const cookie = request.cookies.get("synapse_session")?.value;
 
   if (!cookie) {
-    if (process.env.NODE_ENV !== "production" && process.env.SYNAPSE_DEV_AUTH === "true") {
+    if (
+      process.env.NODE_ENV !== "production" &&
+      process.env.SYNAPSE_DEV_AUTH === "true"
+    ) {
       const devUser = getDevSessionUser("operator");
       const csrfToken = await generateCsrfToken(devUser.id, secret);
-      return NextResponse.json({ authenticated: true, user: devUser, isDev: true, csrfToken });
+      return NextResponse.json({
+        authenticated: true,
+        user: devUser,
+        isDev: true,
+        csrfToken,
+      });
     }
-    return NextResponse.json({ authenticated: false, user: null }, { status: 401 });
+    return NextResponse.json(
+      { authenticated: false, user: null },
+      { status: 401 },
+    );
   }
 
   const user = await verifySessionToken(cookie, secret);
   if (!user) {
-    return NextResponse.json({ authenticated: false, user: null }, { status: 401 });
+    return NextResponse.json(
+      { authenticated: false, user: null },
+      { status: 401 },
+    );
   }
 
   const csrfToken = await generateCsrfToken(user.id, secret);
@@ -35,14 +48,17 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   // Security Guard: Prohibit uncredentialed session minting in production under all conditions
-  if (process.env.NODE_ENV === "production" || process.env.SYNAPSE_DEV_AUTH !== "true") {
+  if (
+    process.env.NODE_ENV === "production" ||
+    process.env.SYNAPSE_DEV_AUTH !== "true"
+  ) {
     return NextResponse.json(
       {
         error: "FORBIDDEN",
         message:
           "Direct session minting is disabled in production. Authenticate via GitHub OIDC.",
       },
-      { status: 403 }
+      { status: 403 },
     );
   }
 
@@ -69,7 +85,6 @@ export async function POST(request: NextRequest) {
     eventType: "DASHBOARD_LOGIN",
     payload: { role: user.role, isDev: true },
   });
-
 
   const isProduction = (process.env.NODE_ENV as string) === "production";
 

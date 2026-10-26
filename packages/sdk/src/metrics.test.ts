@@ -189,7 +189,7 @@ describe("SDK Pluggable Metrics Callbacks (PR 12)", () => {
           nonce: "test-nonce-1",
           reason: "Testing metrics callback",
         },
-        kp.privateKey
+        kp.privateKey,
       );
 
       store.addLease(envelope);
@@ -302,7 +302,12 @@ describe("SDK Pluggable Metrics Callbacks (PR 12)", () => {
         debug: vi.fn(),
       };
 
-      const res = await provider.resolveBooleanEvaluation("test-flag", false, {}, dummyLogger);
+      const res = await provider.resolveBooleanEvaluation(
+        "test-flag",
+        false,
+        {},
+        dummyLogger,
+      );
       expect(res.value).toBe(true);
       expect(mockDelegate.resolveBooleanEvaluation).toHaveBeenCalledTimes(1);
     });

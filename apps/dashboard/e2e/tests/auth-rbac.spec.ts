@@ -24,14 +24,20 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
     await expect(viewerPage).toHaveURL(/\/leases/);
 
     // Verify page rendered lease cards
-    const leaseCard = viewerPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00112233");
+    const leaseCard = viewerPage.locator(
+      "#lease-card-01J9X57YTRPQ8A7F4E00112233",
+    );
     await expect(leaseCard).toBeVisible();
 
     // Verify viewer CANNOT see Revoke or Promote buttons
-    const revokeBtn = viewerPage.locator("#revoke-btn-01J9X57YTRPQ8A7F4E00112233");
+    const revokeBtn = viewerPage.locator(
+      "#revoke-btn-01J9X57YTRPQ8A7F4E00112233",
+    );
     await expect(revokeBtn).toHaveCount(0);
 
-    const promoteBtn = viewerPage.locator("#promote-btn-01J9X57YTRPQ8A7F4E00112233");
+    const promoteBtn = viewerPage.locator(
+      "#promote-btn-01J9X57YTRPQ8A7F4E00112233",
+    );
     await expect(promoteBtn).toHaveCount(0);
   });
 
@@ -41,21 +47,29 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
     await operatorPage.goto("/leases");
     await expect(operatorPage).toHaveURL(/\/leases/);
 
-    const leaseCard = operatorPage.locator("#lease-card-01J9X57YTRPQ8A7F4E00112233");
+    const leaseCard = operatorPage.locator(
+      "#lease-card-01J9X57YTRPQ8A7F4E00112233",
+    );
     await expect(leaseCard).toBeVisible();
 
     // Verify operator CAN see Revoke and Promote buttons
-    const revokeBtn = operatorPage.locator("#revoke-btn-01J9X57YTRPQ8A7F4E00112233");
+    const revokeBtn = operatorPage.locator(
+      "#revoke-btn-01J9X57YTRPQ8A7F4E00112233",
+    );
     await expect(revokeBtn).toBeVisible();
 
-    const promoteBtn = operatorPage.locator("#promote-btn-01J9X57YTRPQ8A7F4E00112233");
+    const promoteBtn = operatorPage.locator(
+      "#promote-btn-01J9X57YTRPQ8A7F4E00112233",
+    );
     await expect(promoteBtn).toBeVisible();
 
     // Open Revoke modal
     await revokeBtn.click();
     const revokeModalTitle = operatorPage.locator("#revoke-modal-title");
     await expect(revokeModalTitle).toBeVisible();
-    await expect(revokeModalTitle).toHaveText("Revoke Emergency Break-Glass Lease");
+    await expect(revokeModalTitle).toHaveText(
+      "Revoke Emergency Break-Glass Lease",
+    );
 
     // Close modal
     await operatorPage.locator("#revoke-modal-close-btn").click();
@@ -78,7 +92,11 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
   }) => {
     // 1. Unauthenticated request to /api/actions/revoke returns 401
     const unauthRevoke = await request.post("/api/actions/revoke", {
-      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "unauthorized" },
+      data: {
+        leaseId: "01J9X57YTRPQ8A7F4E00112233",
+        env: "prod",
+        reason: "unauthorized",
+      },
     });
     expect(unauthRevoke.status()).toBe(401);
 
@@ -90,15 +108,23 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
 
     // 3. Viewer authenticated context mutation returns 403 Forbidden
     const viewerCookies = await viewerContext.cookies();
-    const cookieHeader = viewerCookies.map((c) => `${c.name}=${c.value}`).join("; ");
-    const csrfCookie = viewerCookies.find((c) => c.name === "synapse_csrf")?.value;
+    const cookieHeader = viewerCookies
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
+    const csrfCookie = viewerCookies.find(
+      (c) => c.name === "synapse_csrf",
+    )?.value;
 
     const viewerRevoke = await request.post("/api/actions/revoke", {
       headers: {
         cookie: cookieHeader,
         "x-synapse-csrf": csrfCookie || "",
       },
-      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "forbidden test" },
+      data: {
+        leaseId: "01J9X57YTRPQ8A7F4E00112233",
+        env: "prod",
+        reason: "forbidden test",
+      },
     });
     expect(viewerRevoke.status()).toBe(403);
 
@@ -117,14 +143,20 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
     operatorContext,
   }) => {
     const operatorCookies = await operatorContext.cookies();
-    const cookieHeader = operatorCookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    const cookieHeader = operatorCookies
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
 
     // Valid operator session, but omitting x-synapse-csrf header
     const noCsrfRevoke = await request.post("/api/actions/revoke", {
       headers: {
         cookie: cookieHeader,
       },
-      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "missing csrf" },
+      data: {
+        leaseId: "01J9X57YTRPQ8A7F4E00112233",
+        env: "prod",
+        reason: "missing csrf",
+      },
     });
     expect(noCsrfRevoke.status()).toBe(403);
     const revokeData = await noCsrfRevoke.json();
@@ -146,7 +178,11 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
         cookie: cookieHeader,
         "x-synapse-csrf": "tampered-forged-csrf-token-12345",
       },
-      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "bad csrf" },
+      data: {
+        leaseId: "01J9X57YTRPQ8A7F4E00112233",
+        env: "prod",
+        reason: "bad csrf",
+      },
     });
     expect(badCsrfRevoke.status()).toBe(403);
     const badCsrfData = await badCsrfRevoke.json();
@@ -161,7 +197,11 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
         cookie: "synapse_session=tampered.unsigned.jwt.token",
         "x-synapse-csrf": "any-token",
       },
-      data: { leaseId: "01J9X57YTRPQ8A7F4E00112233", env: "prod", reason: "tampered" },
+      data: {
+        leaseId: "01J9X57YTRPQ8A7F4E00112233",
+        env: "prod",
+        reason: "tampered",
+      },
     });
     expect(tamperedRes.status()).toBe(401);
   });
@@ -170,7 +210,9 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
     request,
   }) => {
     // 1. Unauthenticated GET /v1/leases succeeds (open inventory per Invariants 1 & 2)
-    const publicInventory = await request.get("http://localhost:3000/v1/leases?env=prod");
+    const publicInventory = await request.get(
+      "http://localhost:3000/v1/leases?env=prod",
+    );
     expect(publicInventory.status()).toBe(200);
     const invData = await publicInventory.json();
     expect(Array.isArray(invData.leases)).toBe(true);
@@ -181,20 +223,20 @@ test.describe("RBAC Permissions and Route Guard Enforcement (PR 25 & PR 27)", ()
     };
     const unknownPromote = await request.post(
       "http://localhost:3000/v1/leases/01J9X57YTRPQ8A7F4E99999999/promote",
-      { headers: authHeaders }
+      { headers: authHeaders },
     );
     expect(unknownPromote.status()).toBe(404);
 
     // 3. Malformed lease ID returns 400 INVALID_LEASE_ID
     const malformedPromote = await request.post(
       "http://localhost:3000/v1/leases/NOT_A_VALID_ULID/promote",
-      { headers: authHeaders }
+      { headers: authHeaders },
     );
     expect(malformedPromote.status()).toBe(400);
 
     // 4. Missing authentication on promote returns 401 UNAUTHORIZED
     const unauthPromote = await request.post(
-      "http://localhost:3000/v1/leases/01J9X57YTRPQ8A7F4E99999999/promote"
+      "http://localhost:3000/v1/leases/01J9X57YTRPQ8A7F4E99999999/promote",
     );
     expect(unauthPromote.status()).toBe(401);
   });

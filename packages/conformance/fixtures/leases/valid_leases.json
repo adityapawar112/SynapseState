@@ -151,11 +151,7 @@
           "lease_id": "01J9X000000000000000000005",
           "env": "production",
           "flag_key": "allowed-user-tiers",
-          "value": [
-            "admin",
-            "beta-tester",
-            "internal"
-          ],
+          "value": ["admin", "beta-tester", "internal"],
           "reason": "INC-995: Beta rollout gating bypass",
           "issued_at": "2026-10-09T12:00:00.000Z",
           "ttl_seconds": 900,
@@ -166,11 +162,7 @@
       },
       "expected": {
         "flagKey": "allowed-user-tiers",
-        "resolvedValue": [
-          "admin",
-          "beta-tester",
-          "internal"
-        ],
+        "resolvedValue": ["admin", "beta-tester", "internal"],
         "reason": "OVERRIDE",
         "kid": "admin-backup-02",
         "canonicalPayload": "{\"env\":\"production\",\"flag_key\":\"allowed-user-tiers\",\"issued_at\":\"2026-10-09T12:00:00.000Z\",\"kid\":\"admin-backup-02\",\"lease_id\":\"01J9X000000000000000000005\",\"nonce\":\"nonce-random-val-005\",\"reason\":\"INC-995: Beta rollout gating bypass\",\"ttl_seconds\":900,\"v\":1,\"value\":[\"admin\",\"beta-tester\",\"internal\"]}"

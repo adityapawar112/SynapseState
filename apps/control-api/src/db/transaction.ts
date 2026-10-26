@@ -12,7 +12,7 @@ export const AUDIT_SEALER_LOCK_NAME = "synapse_audit_sealer";
  */
 export async function withTransaction<T>(
   pool: Pool,
-  callback: (client: PoolClient) => Promise<T>
+  callback: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
   const client = await pool.connect();
   try {
@@ -43,11 +43,11 @@ export async function withTransaction<T>(
  */
 export async function tryAdvisoryXactLock(
   client: PoolClient,
-  lockName: string
+  lockName: string,
 ): Promise<boolean> {
   const result = await client.query<{ locked: boolean }>(
     "SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked",
-    [lockName]
+    [lockName],
   );
   return result.rows[0]?.locked === true;
 }
@@ -62,8 +62,7 @@ export async function tryAuditSealerLock(client: PoolClient): Promise<boolean> {
 }
 
 export type AuditSealerTransactionResult<T> =
-  | { acquired: true; result: T }
-  | { acquired: false; result: null };
+  { acquired: true; result: T } | { acquired: false; result: null };
 
 /**
  * Executes a callback within a transaction only if the audit sealer advisory lock
@@ -72,7 +71,7 @@ export type AuditSealerTransactionResult<T> =
  */
 export async function withAuditSealerTransaction<T>(
   pool: Pool,
-  callback: (client: PoolClient) => Promise<T>
+  callback: (client: PoolClient) => Promise<T>,
 ): Promise<AuditSealerTransactionResult<T>> {
   return withTransaction(pool, async (client) => {
     const locked = await tryAuditSealerLock(client);

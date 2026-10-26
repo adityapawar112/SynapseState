@@ -100,4 +100,3 @@ describe("DefaultGrafanaClient (PR 26)", () => {
     ).rejects.toThrow(/aborted/);
   });
 });
-

@@ -31,7 +31,10 @@ describe("Dashboard Domain Utilities", () => {
     it("computes remaining seconds, expiry timestamp, and nearExpiry status correctly", () => {
       // 10 minutes into the 30 minute lease
       const now = new Date("2026-10-18T00:10:00.000Z");
-      const view: ActiveLeaseView = calculateLeaseExpiryView(sampleLeaseEnvelope, now);
+      const view: ActiveLeaseView = calculateLeaseExpiryView(
+        sampleLeaseEnvelope,
+        now,
+      );
 
       expect(view.leaseId).toBe("01J9X57YTRPQ8A7F4E12345678");
       expect(view.flagKey).toBe("killswitch-checkout");
@@ -144,7 +147,8 @@ describe("Dashboard Domain Utilities", () => {
           actor: "ops-key-1",
           eventType: "LEASE_CREATED",
           payload: { lease_id: "01J9X" },
-          prevHash: "0000000000000000000000000000000000000000000000000000000000000000",
+          prevHash:
+            "0000000000000000000000000000000000000000000000000000000000000000",
           hash: "hash-1",
         },
         {
@@ -180,7 +184,8 @@ describe("Dashboard Domain Utilities", () => {
           actor: "ops-key-1",
           eventType: "LEASE_CREATED",
           payload: {},
-          prevHash: "0000000000000000000000000000000000000000000000000000000000000000",
+          prevHash:
+            "0000000000000000000000000000000000000000000000000000000000000000",
           hash: "hash-1",
         },
         {

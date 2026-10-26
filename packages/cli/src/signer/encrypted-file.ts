@@ -208,7 +208,10 @@ export class EncryptedKeyfileSigner implements Signer {
     }
     validateKid(data.kid);
 
-    if (typeof data.public_key !== "string" || !/^[0-9a-f]{64}$/.test(data.public_key)) {
+    if (
+      typeof data.public_key !== "string" ||
+      !/^[0-9a-f]{64}$/.test(data.public_key)
+    ) {
       throw new Error(
         `Invalid Ed25519 public key format in "${filePath}". Expected 64-character lowercase hex string.`,
       );
@@ -377,8 +380,14 @@ export class EncryptedKeyfileSigner implements Signer {
       );
     }
 
-    if (data.cipher?.algorithm !== "aes-256-gcm" || !data.cipher.iv || !data.cipher.tag) {
-      throw new Error(`Unsupported or missing cipher configuration in "${filePath}"`);
+    if (
+      data.cipher?.algorithm !== "aes-256-gcm" ||
+      !data.cipher.iv ||
+      !data.cipher.tag
+    ) {
+      throw new Error(
+        `Unsupported or missing cipher configuration in "${filePath}"`,
+      );
     }
 
     const salt = Buffer.from(data.kdf.salt, "base64url");
@@ -387,13 +396,21 @@ export class EncryptedKeyfileSigner implements Signer {
     const ciphertext = Buffer.from(data.ciphertext ?? "", "base64url");
 
     // Explicit component length verification
-    if (salt.length !== 16 || iv.length !== 12 || tag.length !== 16 || ciphertext.length === 0) {
+    if (
+      salt.length !== 16 ||
+      iv.length !== 12 ||
+      tag.length !== 16 ||
+      ciphertext.length === 0
+    ) {
       throw new Error(
         `Invalid cipher or KDF component length in "${filePath}". Expected salt=16, iv=12, tag=16, ciphertext>0.`,
       );
     }
 
-    if (typeof data.public_key !== "string" || !/^[0-9a-f]{64}$/.test(data.public_key)) {
+    if (
+      typeof data.public_key !== "string" ||
+      !/^[0-9a-f]{64}$/.test(data.public_key)
+    ) {
       throw new Error(
         `Invalid Ed25519 public key format in "${filePath}". Expected 64-character lowercase hex string.`,
       );

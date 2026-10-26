@@ -55,7 +55,10 @@ export class FileKeysetProvider implements KeysetProvider {
 
       return this.cachedKeyset;
     } catch (err) {
-      console.warn(`[SynapseState] Failed reading keyset file at ${this.filePath}:`, err);
+      console.warn(
+        `[SynapseState] Failed reading keyset file at ${this.filePath}:`,
+        err,
+      );
       return this.cachedKeyset;
     }
   }

@@ -1,13 +1,14 @@
 # 6. Read-Only Scanner and Per-Flag Consumer Coverage for Code Retirement
 
 Date: 2026-10-09  
-Status: Accepted  
+Status: Accepted
 
 ---
 
 ## Context
 
 Deleting dead feature flags from application source code carries severe operational and security risks:
+
 1. **Credential Exfiltration Hazard:** Automated in-pod code refactoring tools that execute repository test suites (`npm test`) or build scripts inside containers holding privileged GitHub App credentials risk credential theft via malicious or compromised build dependencies.
 2. **Global Service Heartbeat Deadlock:** Requiring 100% of all registered microservices to report actively before qualifying a flag permanently blocks stale flag retirement whenever decommissioned or monthly batch services stop sending telemetry.
 3. **AST Ambiguity & Broken Builds:** Automated tools that blindly rewrite dynamic keys or complex wrappers risk breaking production builds or causing runtime regressions.
@@ -36,10 +37,12 @@ We chose a **read-only codebase scanner** coupled with **per-flag consumer cover
 ## Consequences
 
 ### Positive
-* Complete elimination of credential exfiltration risks: untrusted repository code never runs in the credentialed container.
-* Decommissioned or batch services no longer deadlock cluster-wide stale flag detection.
-* Refusal-by-default guarantees zero incorrect removals across complex or ambiguous codebases.
-* Interoperable: cleanly separates the novel telemetry-driven qualification engine from external AST code modification tools.
+
+- Complete elimination of credential exfiltration risks: untrusted repository code never runs in the credentialed container.
+- Decommissioned or batch services no longer deadlock cluster-wide stale flag detection.
+- Refusal-by-default guarantees zero incorrect removals across complex or ambiguous codebases.
+- Interoperable: cleanly separates the novel telemetry-driven qualification engine from external AST code modification tools.
 
 ### Negative
-* Does not perform turnkey autonomous code modifications in v1; requires external tools (Piranha/GritQL) or human review to apply the diffs.
+
+- Does not perform turnkey autonomous code modifications in v1; requires external tools (Piranha/GritQL) or human review to apply the diffs.

@@ -4,7 +4,11 @@ import path from "node:path";
 import os from "node:os";
 import YAML from "yaml";
 import { parseKeysetJson } from "@synapsestate/lease";
-import { registerKeyCommands, executeKeyGenerate, executeKeyExportPublic } from "./key.js";
+import {
+  registerKeyCommands,
+  executeKeyGenerate,
+  executeKeyExportPublic,
+} from "./key.js";
 import { Command } from "commander";
 
 describe("Key Management Commands (packages/cli/src/commands/key.ts)", () => {
@@ -49,7 +53,9 @@ describe("Key Management Commands (packages/cli/src/commands/key.ts)", () => {
         expect(fileExists).toBe(true);
 
         // Verify snippet printed to console includes valid keyset JSON
-        const loggedOutput = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+        const loggedOutput = logSpy.mock.calls
+          .map((c) => c.join(" "))
+          .join("\n");
         expect(loggedOutput).toContain(kid);
         expect(loggedOutput).toContain(result.publicKeyHex);
       } finally {
@@ -207,7 +213,9 @@ describe("Key Management Commands (packages/cli/src/commands/key.ts)", () => {
         dir: tempDir,
       });
 
-      expect((genResult.snippet[kid] as Record<string, unknown>).max_ttl_seconds).toBe(3600);
+      expect(
+        (genResult.snippet[kid] as Record<string, unknown>).max_ttl_seconds,
+      ).toBe(3600);
 
       const exported = await executeKeyExportPublic({
         kid,

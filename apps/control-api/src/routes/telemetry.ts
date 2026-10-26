@@ -298,7 +298,9 @@ export const telemetryRoutes: FastifyPluginAsync<
       await client.query("COMMIT");
 
       if (payload.propagation_lag_ms !== undefined && metrics) {
-        metrics.leasePropagationSeconds.observe(payload.propagation_lag_ms / 1000);
+        metrics.leasePropagationSeconds.observe(
+          payload.propagation_lag_ms / 1000,
+        );
       }
 
       return reply.code(202).send({

@@ -24,7 +24,12 @@ const leaseEntry = fs.existsSync(leaseSrc) ? leaseSrc : leaseDist;
 export default defineConfig({
   test: {
     fileParallelism: false,
-    exclude: ["**/.stryker-tmp/**", "**/reports/**", "node_modules/**", "dist/**"],
+    exclude: [
+      "**/.stryker-tmp/**",
+      "**/reports/**",
+      "node_modules/**",
+      "dist/**",
+    ],
   },
   resolve: {
     alias: {

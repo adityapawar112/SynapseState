@@ -120,7 +120,8 @@ export function generateAllFixtures() {
   writeJson(path.join(FIXTURES_DIR, "keysets/empty_keyset.json"), {});
 
   const invalidKeysetCases = {
-    description: "Invalid keyset test vectors that must fail parsing or validation",
+    description:
+      "Invalid keyset test vectors that must fail parsing or validation",
     cases: [
       {
         id: "keyset_invalid_role",
@@ -193,7 +194,7 @@ export function generateAllFixtures() {
       {
         id: "keyset_malformed_json_syntax",
         description: "Keyset content is syntactically invalid JSON",
-        raw: "{\n  \"ops-1\": { unquoted_key: true \n}",
+        raw: '{\n  "ops-1": { unquoted_key: true \n}',
         expectedError: "KeysetParseError",
       },
       {
@@ -217,7 +218,10 @@ export function generateAllFixtures() {
     ],
   };
 
-  writeJson(path.join(FIXTURES_DIR, "keysets/invalid_keyset.json"), invalidKeysetCases);
+  writeJson(
+    path.join(FIXTURES_DIR, "keysets/invalid_keyset.json"),
+    invalidKeysetCases,
+  );
 
   // ==========================================
   // 2. LEASES (fixtures/leases/)
@@ -297,7 +301,8 @@ export function generateAllFixtures() {
   const validEnvelope5 = signLease(validPayload5, KEYS.admin2.privateKey);
 
   const validLeases = {
-    description: "Valid signed emergency lease envelopes with expected flag evaluation details",
+    description:
+      "Valid signed emergency lease envelopes with expected flag evaluation details",
     cases: [
       {
         id: "valid_lease_boolean_flag",
@@ -321,7 +326,8 @@ export function generateAllFixtures() {
       },
       {
         id: "valid_lease_string_flag",
-        description: "Valid string variant override signed by secondary operator",
+        description:
+          "Valid string variant override signed by secondary operator",
         type: "lease",
         valid: true,
         envelope: validEnvelope2,
@@ -401,7 +407,8 @@ export function generateAllFixtures() {
 
   // 2.2 Tampered Payload Leases
   const tamperedPayloadCases = {
-    description: "Signed leases whose payload fields were modified post-signing (must fail verification)",
+    description:
+      "Signed leases whose payload fields were modified post-signing (must fail verification)",
     cases: [
       {
         id: "tampered_payload_value_flipped",
@@ -416,7 +423,8 @@ export function generateAllFixtures() {
       },
       {
         id: "tampered_payload_flag_key_altered",
-        description: "flag_key altered from killswitch-payment-v2 to killswitch-payment-v3",
+        description:
+          "flag_key altered from killswitch-payment-v2 to killswitch-payment-v3",
         type: "lease",
         valid: false,
         envelope: {
@@ -438,7 +446,8 @@ export function generateAllFixtures() {
       },
       {
         id: "tampered_payload_issued_at_shifted",
-        description: "issued_at shifted into future to artificially delay expiration",
+        description:
+          "issued_at shifted into future to artificially delay expiration",
         type: "lease",
         valid: false,
         envelope: {
@@ -482,7 +491,8 @@ export function generateAllFixtures() {
       },
       {
         id: "tampered_payload_single_byte_mutation",
-        description: "Exact single-byte mutation in canonical payload serialization post-signing",
+        description:
+          "Exact single-byte mutation in canonical payload serialization post-signing",
         type: "lease",
         valid: false,
         envelope: {
@@ -496,25 +506,28 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "leases/tampered_payload_leases.json"), tamperedPayloadCases);
+  writeJson(
+    path.join(FIXTURES_DIR, "leases/tampered_payload_leases.json"),
+    tamperedPayloadCases,
+  );
 
   // 2.3 Tampered Signature Leases
   // Invert one character of base64url signature
   const origSig = validEnvelope1.sig;
   const bitFlippedSig =
-    origSig.charAt(0) === "A"
-      ? "B" + origSig.slice(1)
-      : "A" + origSig.slice(1);
+    origSig.charAt(0) === "A" ? "B" + origSig.slice(1) : "A" + origSig.slice(1);
 
   // Canonical-base64url malleability (mutating unused padding bits of 86th char)
-  const b64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const b64Alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   const lastSigChar = validEnvelope1.sig.slice(-1);
   const lastCharIdx = b64Alphabet.indexOf(lastSigChar);
   const malleatedLastChar = b64Alphabet[lastCharIdx ^ 1];
   const malleatedSig = validEnvelope1.sig.slice(0, -1) + malleatedLastChar;
 
   const tamperedSigCases = {
-    description: "Lease envelopes with corrupted, truncated, or malformed signatures",
+    description:
+      "Lease envelopes with corrupted, truncated, or malformed signatures",
     cases: [
       {
         id: "tampered_sig_single_char_flip",
@@ -529,7 +542,8 @@ export function generateAllFixtures() {
       },
       {
         id: "tampered_sig_canonical_base64url_malleability",
-        description: "Signature exhibits base64url padding malleability (non-canonical encoding of same 64 bytes)",
+        description:
+          "Signature exhibits base64url padding malleability (non-canonical encoding of same 64 bytes)",
         type: "lease",
         valid: false,
         envelope: {
@@ -584,32 +598,36 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "leases/tampered_sig_leases.json"), tamperedSigCases);
+  writeJson(
+    path.join(FIXTURES_DIR, "leases/tampered_sig_leases.json"),
+    tamperedSigCases,
+  );
 
   // 2.4 Cross-Domain Leases (Invariant: Domain Separation)
   const crossDomainRevocationSig = signEnvelope(
     REVOCATION_DOMAIN_PREFIX,
     validPayload1,
-    KEYS.ops1.privateKey
+    KEYS.ops1.privateKey,
   );
   const crossDomainKeyRevocationSig = signEnvelope(
     KEYREVOCATION_DOMAIN_PREFIX,
     validPayload1,
-    KEYS.ops1.privateKey
+    KEYS.ops1.privateKey,
   );
   const crossDomainBogusSig = signEnvelope(
     "synapsestate/audit/v1\n",
     validPayload1,
-    KEYS.ops1.privateKey
+    KEYS.ops1.privateKey,
   );
   const crossDomainEmptySig = signEnvelope(
     "",
     validPayload1,
-    KEYS.ops1.privateKey
+    KEYS.ops1.privateKey,
   );
 
   const crossDomainCases = {
-    description: "Leases signed with alternate domain separation prefixes (must fail verification under Invariant 1 & 2)",
+    description:
+      "Leases signed with alternate domain separation prefixes (must fail verification under Invariant 1 & 2)",
     cases: [
       {
         id: "cross_domain_signed_with_revocation_prefix",
@@ -645,17 +663,22 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "leases/cross_domain_leases.json"), crossDomainCases);
+  writeJson(
+    path.join(FIXTURES_DIR, "leases/cross_domain_leases.json"),
+    crossDomainCases,
+  );
 
   // 2.5 Expired Wall-Clock Leases
   // validPayload1 has issued_at = baseIso, ttl = 1800s (30m).
   // wall_expiry = baseTimestampMs + 1800_000 + 30_000 skew = baseTimestampMs + 1830_000
   const expiredWallClockCases = {
-    description: "Leases with valid Ed25519 signatures evaluated after wall clock expiration (Invariant 3 fail-static)",
+    description:
+      "Leases with valid Ed25519 signatures evaluated after wall clock expiration (Invariant 3 fail-static)",
     cases: [
       {
         id: "expired_wall_clock_at_exact_skew_limit",
-        description: "now_wall reaches issued_at + ttl_seconds + skew_tolerance boundary",
+        description:
+          "now_wall reaches issued_at + ttl_seconds + skew_tolerance boundary",
         type: "lease",
         valid: false,
         envelope: validEnvelope1,
@@ -697,7 +720,8 @@ export function generateAllFixtures() {
       },
       {
         id: "expired_monotonic_clock_process_elapsed",
-        description: "Monotonic process time elapsed past ttl_seconds even if wall clock was rewound",
+        description:
+          "Monotonic process time elapsed past ttl_seconds even if wall clock was rewound",
         type: "lease",
         valid: false,
         envelope: validEnvelope1,
@@ -711,15 +735,20 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "leases/expired_wall_clock_leases.json"), expiredWallClockCases);
+  writeJson(
+    path.join(FIXTURES_DIR, "leases/expired_wall_clock_leases.json"),
+    expiredWallClockCases,
+  );
 
   // 2.6 Future-Dated Leases
   const futureDatedCases = {
-    description: "Leases with issued_at timestamps ahead of the wall clock beyond skew tolerance (Invariant 3)",
+    description:
+      "Leases with issued_at timestamps ahead of the wall clock beyond skew tolerance (Invariant 3)",
     cases: [
       {
         id: "future_dated_beyond_default_skew",
-        description: "issued_at is 45 seconds ahead of now_wall (exceeds 30,000ms tolerance)",
+        description:
+          "issued_at is 45 seconds ahead of now_wall (exceeds 30,000ms tolerance)",
         type: "lease",
         valid: false,
         envelope: validEnvelope1,
@@ -747,7 +776,10 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "leases/future_dated_leases.json"), futureDatedCases);
+  writeJson(
+    path.join(FIXTURES_DIR, "leases/future_dated_leases.json"),
+    futureDatedCases,
+  );
 
   // 2.7 Unknown Kid Leases (Keyset Policy Seam)
   const unknownKidPayload: LeasePayload = {
@@ -762,10 +794,14 @@ export function generateAllFixtures() {
     kid: KEYS.rogue.kid,
     nonce: "nonce-rogue-val-001",
   };
-  const unknownKidEnvelope = signLease(unknownKidPayload, KEYS.rogue.privateKey);
+  const unknownKidEnvelope = signLease(
+    unknownKidPayload,
+    KEYS.rogue.privateKey,
+  );
 
   const unknownKidCases = {
-    description: "Lease envelopes signed by valid Ed25519 keys not present in the trusted keyset",
+    description:
+      "Lease envelopes signed by valid Ed25519 keys not present in the trusted keyset",
     cases: [
       {
         id: "lease_unknown_kid_not_in_keyset",
@@ -777,7 +813,10 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "leases/unknown_kid_leases.json"), unknownKidCases);
+  writeJson(
+    path.join(FIXTURES_DIR, "leases/unknown_kid_leases.json"),
+    unknownKidCases,
+  );
 
   // ==========================================
   // 3. REVOCATIONS (fixtures/revocations/)
@@ -791,7 +830,7 @@ export function generateAllFixtures() {
   };
   const validRevocationEnvelope1 = signRevocation(
     validRevocationPayload1,
-    KEYS.ops1.privateKey
+    KEYS.ops1.privateKey,
   );
 
   const validRevocationPayload2: RevocationPayload = {
@@ -803,11 +842,12 @@ export function generateAllFixtures() {
   };
   const validRevocationEnvelope2 = signRevocation(
     validRevocationPayload2,
-    KEYS.admin1.privateKey
+    KEYS.admin1.privateKey,
   );
 
   const validRevocations = {
-    description: "Valid lease revocation envelopes signed with REVOCATION_DOMAIN_PREFIX",
+    description:
+      "Valid lease revocation envelopes signed with REVOCATION_DOMAIN_PREFIX",
     cases: [
       {
         id: "valid_revocation_ops_signed",
@@ -835,10 +875,14 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "revocations/valid_revocations.json"), validRevocations);
+  writeJson(
+    path.join(FIXTURES_DIR, "revocations/valid_revocations.json"),
+    validRevocations,
+  );
 
   const invalidRevocations = {
-    description: "Invalid revocation envelopes (tampered payload, corrupted signature, cross-domain)",
+    description:
+      "Invalid revocation envelopes (tampered payload, corrupted signature, cross-domain)",
     cases: [
       {
         id: "revocation_tampered_lease_id",
@@ -870,19 +914,21 @@ export function generateAllFixtures() {
       },
       {
         id: "revocation_cross_domain_lease_prefix",
-        description: "Revocation signed with LEASE_DOMAIN_PREFIX instead of REVOCATION_DOMAIN_PREFIX",
+        description:
+          "Revocation signed with LEASE_DOMAIN_PREFIX instead of REVOCATION_DOMAIN_PREFIX",
         type: "revocation",
         valid: false,
         envelope: signEnvelope(
           LEASE_DOMAIN_PREFIX,
           validRevocationPayload1,
-          KEYS.ops1.privateKey
+          KEYS.ops1.privateKey,
         ),
         expectedFailure: "DOMAIN_SEPARATION_MISMATCH",
       },
       {
         id: "revocation_unknown_kid",
-        description: "Revocation signed by unauthorized key not in trusted keyset",
+        description:
+          "Revocation signed by unauthorized key not in trusted keyset",
         type: "revocation",
         valid: false,
         envelope: signRevocation(
@@ -890,7 +936,7 @@ export function generateAllFixtures() {
             ...validRevocationPayload1,
             kid: KEYS.rogue.kid,
           },
-          KEYS.rogue.privateKey
+          KEYS.rogue.privateKey,
         ),
         expectedFailure: "UNKNOWN_KEY",
       },
@@ -910,7 +956,10 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "revocations/invalid_revocations.json"), invalidRevocations);
+  writeJson(
+    path.join(FIXTURES_DIR, "revocations/invalid_revocations.json"),
+    invalidRevocations,
+  );
 
   // ==========================================
   // 4. KEY REVOCATIONS (fixtures/key_revocations/)
@@ -924,7 +973,7 @@ export function generateAllFixtures() {
   };
   const validKeyRevocationEnvelope1 = signKeyRevocation(
     validKeyRevocationPayload1,
-    KEYS.admin1.privateKey
+    KEYS.admin1.privateKey,
   );
 
   const validKeyRevocationPayload2: KeyRevocationPayload = {
@@ -936,11 +985,12 @@ export function generateAllFixtures() {
   };
   const validKeyRevocationEnvelope2 = signKeyRevocation(
     validKeyRevocationPayload2,
-    KEYS.admin2.privateKey
+    KEYS.admin2.privateKey,
   );
 
   const validKeyRevocations = {
-    description: "Valid key revocation envelopes signed by admin with KEYREVOCATION_DOMAIN_PREFIX",
+    description:
+      "Valid key revocation envelopes signed by admin with KEYREVOCATION_DOMAIN_PREFIX",
     cases: [
       {
         id: "valid_key_revocation_compromised_operator",
@@ -968,10 +1018,14 @@ export function generateAllFixtures() {
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "key_revocations/valid_key_revocations.json"), validKeyRevocations);
+  writeJson(
+    path.join(FIXTURES_DIR, "key_revocations/valid_key_revocations.json"),
+    validKeyRevocations,
+  );
 
   const invalidKeyRevocations = {
-    description: "Invalid key revocation envelopes (tampered payload, corrupted signature, unauthorized operator signer)",
+    description:
+      "Invalid key revocation envelopes (tampered payload, corrupted signature, unauthorized operator signer)",
     cases: [
       {
         id: "key_revocation_tampered_kid",
@@ -1009,13 +1063,14 @@ export function generateAllFixtures() {
         envelope: signEnvelope(
           LEASE_DOMAIN_PREFIX,
           validKeyRevocationPayload1,
-          KEYS.admin1.privateKey
+          KEYS.admin1.privateKey,
         ),
         expectedFailure: "DOMAIN_SEPARATION_MISMATCH",
       },
       {
         id: "key_revocation_signed_by_operator",
-        description: "Operator attempted to sign key revocation (only admin role is authorized)",
+        description:
+          "Operator attempted to sign key revocation (only admin role is authorized)",
         type: "key_revocation",
         valid: false,
         envelope: signKeyRevocation(
@@ -1024,7 +1079,7 @@ export function generateAllFixtures() {
             kid: KEYS.ops2.kid,
             revoked_by_kid: KEYS.ops1.kid,
           },
-          KEYS.ops1.privateKey
+          KEYS.ops1.privateKey,
         ),
         expectedFailure: "UNAUTHORIZED_SIGNER",
       },
@@ -1039,13 +1094,16 @@ export function generateAllFixtures() {
             kid: KEYS.ops2.kid,
             revoked_by_kid: KEYS.rogue.kid,
           },
-          KEYS.rogue.privateKey
+          KEYS.rogue.privateKey,
         ),
         expectedFailure: "UNKNOWN_KEY",
       },
     ],
   };
-  writeJson(path.join(FIXTURES_DIR, "key_revocations/invalid_key_revocations.json"), invalidKeyRevocations);
+  writeJson(
+    path.join(FIXTURES_DIR, "key_revocations/invalid_key_revocations.json"),
+    invalidKeyRevocations,
+  );
 
   console.log("Golden conformance fixtures generated successfully!");
 }

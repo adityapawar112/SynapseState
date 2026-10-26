@@ -77,15 +77,16 @@ export interface BuildRemediationCommandOptions {
  * Centrally constructs an incident remediation CLI command with strict POSIX shell quoting
  * across all arguments (--flag, --env, --value, --ttl, --reason) to prevent shell injection (C1, I7).
  */
-export function buildRemediationCommand(options: BuildRemediationCommandOptions): string {
+export function buildRemediationCommand(
+  options: BuildRemediationCommandOptions,
+): string {
   const flagArg = quoteShellArg(options.flagKey);
   const envArg = quoteShellArg(options.env || "production");
   const valueArg =
     typeof options.value === "string"
       ? quoteShellArg(options.value)
       : String(options.value);
-  const ttlString =
-    options.ttl !== undefined ? String(options.ttl) : "30m";
+  const ttlString = options.ttl !== undefined ? String(options.ttl) : "30m";
   const ttlArg = quoteShellArg(ttlString);
   const reasonArg = quoteShellArg(options.reason);
 
@@ -101,8 +102,13 @@ function deriveSuggestedAction(
   targetService: string,
   rawVal: unknown,
   flagEvals: FlagEvaluationRecord[],
-): { currentVariant?: string; suggestedValue: boolean | number | string; reason: string } {
-  let currentVariant: string | undefined = rawVal !== undefined ? String(rawVal) : undefined;
+): {
+  currentVariant?: string;
+  suggestedValue: boolean | number | string;
+  reason: string;
+} {
+  let currentVariant: string | undefined =
+    rawVal !== undefined ? String(rawVal) : undefined;
   let suggestedValue: boolean | number | string = "<TYPE>";
   let reason = `Flag type unknown; inspect flags/${env}/${flagKey}.yaml before applying override`;
 
@@ -137,7 +143,9 @@ function deriveSuggestedAction(
         const altEvals = flagEvals.filter((e) => e.variant !== rawVal);
         if (altEvals.length > 0) {
           const preferred = altEvals.find((e) =>
-            ["control", "baseline", "default", "off"].includes(e.variant.toLowerCase()),
+            ["control", "baseline", "default", "off"].includes(
+              e.variant.toLowerCase(),
+            ),
           );
           if (preferred) {
             suggestedValue = preferred.variant;
@@ -158,10 +166,14 @@ function deriveSuggestedAction(
   } else if (flagEvals.length > 0) {
     // Check evaluations if no explicit value in payload
     const canaryRecord = flagEvals.find((e) =>
-      ["canary", "experiment", "v2", "beta"].some((s) => e.variant.toLowerCase().includes(s)),
+      ["canary", "experiment", "v2", "beta"].some((s) =>
+        e.variant.toLowerCase().includes(s),
+      ),
     );
     const controlRecord = flagEvals.find((e) =>
-      ["control", "baseline", "default", "off", "false", "v1"].includes(e.variant.toLowerCase()),
+      ["control", "baseline", "default", "off", "false", "v1"].includes(
+        e.variant.toLowerCase(),
+      ),
     );
 
     if (canaryRecord && controlRecord) {
@@ -230,9 +242,12 @@ export function rankSuspects(
       evalsByFlag.set(record.flag_key, []);
     }
     const safeCount = Math.max(0, record.eval_count);
-    evalsByFlag.get(record.flag_key)!.push({ ...record, eval_count: safeCount });
+    evalsByFlag
+      .get(record.flag_key)!
+      .push({ ...record, eval_count: safeCount });
 
-    const currentTotal = (totalVolumeByFlag.get(record.flag_key) ?? 0) + safeCount;
+    const currentTotal =
+      (totalVolumeByFlag.get(record.flag_key) ?? 0) + safeCount;
     totalVolumeByFlag.set(record.flag_key, currentTotal);
   }
 
@@ -262,7 +277,8 @@ export function rankSuspects(
     flagEvents.sort((a, b) => {
       const tA = new Date(a.occurred_at).getTime();
       const tB = new Date(b.occurred_at).getTime();
-      const diff = (Number.isFinite(tB) ? tB : 0) - (Number.isFinite(tA) ? tA : 0);
+      const diff =
+        (Number.isFinite(tB) ? tB : 0) - (Number.isFinite(tA) ? tA : 0);
       if (diff !== 0) return diff;
       return b.id - a.id;
     });
@@ -282,7 +298,8 @@ export function rankSuspects(
     const volumeScore = maxVolume > 0 ? Math.round(volumeRatio * 100) : 0;
 
     // 3. Event Type Weight
-    const eventWeight = EVENT_WEIGHTS[latestEvent.event_type] ?? DEFAULT_EVENT_WEIGHT;
+    const eventWeight =
+      EVENT_WEIGHTS[latestEvent.event_type] ?? DEFAULT_EVENT_WEIGHT;
 
     // 4. Composite Score
     let rawScore: number;
@@ -297,10 +314,14 @@ export function rankSuspects(
     const score = Math.min(100, Math.max(0, Math.round(rawScore)));
 
     // Derive raw value from latestEvent or any event in history of this flag
-    let rawVal: unknown = latestEvent.payload?.value ?? latestEvent.payload?.variant;
+    let rawVal: unknown =
+      latestEvent.payload?.value ?? latestEvent.payload?.variant;
     if (rawVal === undefined) {
       for (const ev of flagEvents) {
-        if (ev.payload?.value !== undefined || ev.payload?.variant !== undefined) {
+        if (
+          ev.payload?.value !== undefined ||
+          ev.payload?.variant !== undefined
+        ) {
           rawVal = ev.payload?.value ?? ev.payload?.variant;
           break;
         }
@@ -353,7 +374,8 @@ export function rankSuspects(
     }
     const tA = new Date(a.occurred_at).getTime();
     const tB = new Date(b.occurred_at).getTime();
-    const timeDiff = (Number.isFinite(tB) ? tB : 0) - (Number.isFinite(tA) ? tA : 0);
+    const timeDiff =
+      (Number.isFinite(tB) ? tB : 0) - (Number.isFinite(tA) ? tA : 0);
     if (timeDiff !== 0) {
       return timeDiff;
     }

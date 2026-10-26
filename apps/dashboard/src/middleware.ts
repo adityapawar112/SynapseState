@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { verifySessionToken, getDevSessionUser, getSessionSecret } from "@/lib/auth";
+import {
+  verifySessionToken,
+  getDevSessionUser,
+  getSessionSecret,
+} from "@/lib/auth";
 import { hasRolePermission } from "@/lib/domain";
 import type { OidcSessionUser } from "@/lib/types";
 
@@ -25,7 +29,7 @@ export async function checkRouteAccess(
   pathname: string,
   sessionCookie: string | undefined,
   secret: string,
-  devAuthEnabled: boolean = false
+  devAuthEnabled: boolean = false,
 ): Promise<RouteAccessResult> {
   // 1. Allow public static assets and auth callback routes
   if (PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
@@ -65,7 +69,6 @@ export async function checkRouteAccess(
   }
 
   return { action: "allow", user };
-
 }
 
 /**
@@ -78,7 +81,12 @@ export async function middleware(request: NextRequest) {
     process.env.SYNAPSE_DEV_AUTH === "true";
 
   const cookie = request.cookies.get("synapse_session")?.value;
-  const result = await checkRouteAccess(request.nextUrl.pathname, cookie, secret, devAuthEnabled);
+  const result = await checkRouteAccess(
+    request.nextUrl.pathname,
+    cookie,
+    secret,
+    devAuthEnabled,
+  );
 
   if (result.action === "allow") {
     const res = NextResponse.next();
@@ -101,7 +109,7 @@ export async function middleware(request: NextRequest) {
         error: "FORBIDDEN",
         message: "Your role does not have permission to execute this operation",
       },
-      { status: 403 }
+      { status: 403 },
     );
   }
 
@@ -110,7 +118,7 @@ export async function middleware(request: NextRequest) {
       error: "UNAUTHORIZED",
       message: "Authentication required to access this resource",
     },
-    { status: 401 }
+    { status: 401 },
   );
 }
 

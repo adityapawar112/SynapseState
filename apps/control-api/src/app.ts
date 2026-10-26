@@ -29,10 +29,7 @@ import {
   GitHubReconciler as DefaultGitHubReconciler,
   createGitHubClient,
 } from "./github/index.js";
-import {
-  type GrafanaClient,
-  createGrafanaClient,
-} from "./grafana/index.js";
+import { type GrafanaClient, createGrafanaClient } from "./grafana/index.js";
 
 export interface ServerOptions {
   fastifyOptions?: FastifyServerOptions;
@@ -95,7 +92,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
   } else if (!activeReconciler && process.env.SYNAPSE_MOCK_GITHUB === "true") {
     activeReconciler = {
-      async promoteLease(lease: { lease_id: string; flag_key: string; env: string }) {
+      async promoteLease(lease: {
+        lease_id: string;
+        flag_key: string;
+        env: string;
+      }) {
         return {
           pr_url: `https://github.com/adityapawar112/SynapseState/pull/123`,
           branch: `synapse/promote-lease-${lease.lease_id}`,
@@ -179,7 +180,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     expectedRepo: githubRepo,
     expectedBaseBranch: githubBaseBranch,
     alertmanagerWebhookSecret:
-      options.alertmanagerWebhookSecret ?? process.env.ALERTMANAGER_WEBHOOK_SECRET,
+      options.alertmanagerWebhookSecret ??
+      process.env.ALERTMANAGER_WEBHOOK_SECRET,
     grafanaClient: activeGrafanaClient,
     grafanaUrl,
     grafanaApiKey,
@@ -289,7 +291,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
             JSON.stringify(auditEvent3.payload),
             hash2,
             hash3,
-          ]
+          ],
         );
 
         await activePool.query(
@@ -300,7 +302,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
                payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text)),
                promote_pr_url = NULL 
            WHERE lease_id = '01J9X57YTRPQ8A7F4E00112233'`,
-          [activeIssuedAt]
+          [activeIssuedAt],
         );
 
         await activePool.query(
@@ -311,7 +313,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
                payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text)),
                promote_pr_url = NULL 
            WHERE lease_id = '01J9X57YTRPQ8A7F4E00445566'`,
-          [nearIssuedAt]
+          [nearIssuedAt],
         );
 
         await activePool.query(
@@ -321,13 +323,18 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
                expires_at = NOW() - INTERVAL '9 minutes', 
                payload = jsonb_set(payload, '{issued_at}', to_jsonb($1::text))
            WHERE lease_id = '01J9X57YTRPQ8A7F4E00778899'`,
-          [expIssuedAt]
+          [expIssuedAt],
         );
 
         await activeStateManager.notifyChange();
       } catch (err) {
-        server.log.error({ err }, "[/__test/reset] Error during test reset query");
-        return reply.code(500).send({ error: "RESET_FAILED", message: String(err) });
+        server.log.error(
+          { err },
+          "[/__test/reset] Error during test reset query",
+        );
+        return reply
+          .code(500)
+          .send({ error: "RESET_FAILED", message: String(err) });
       }
       return reply.code(200).send({ status: "reset" });
     });

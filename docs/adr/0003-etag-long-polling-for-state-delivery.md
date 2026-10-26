@@ -1,13 +1,14 @@
 # 3. ETag Long-Polling for State Delivery and Air-Gapped Fallback
 
 Date: 2026-10-09  
-Status: Accepted  
+Status: Accepted
 
 ---
 
 ## Context
 
 Emergency feature flag overrides must propagate across a cluster quickly during an incident ($p95 \le 10\text{ s}$). We evaluated four distribution mechanisms:
+
 1. **In-Pod Sidecars over Unix Domain Sockets:** Required mutating admission webhooks, container memory bloat, and platform-specific socket clients.
 2. **Short Interval Polling (5s):** Generated continuous idle request churn (~100 req/s for 500 pods) even during zero-mutation steady states.
 3. **Server-Sent Events (SSE):** Streamed updates instantly, but introduced dual code paths (SSE listener + catch-up HTTP polling), complex reconnect storm handling, and state reconstruction bugs across network blips.
@@ -30,10 +31,12 @@ We chose **ETag long-polling** over SSE, short polling, and sidecar IPC as the s
 ## Consequences
 
 ### Positive
-* Sub-100ms lease distribution during incidents with an 83% reduction in idle request traffic.
-* Single wire contract and single client state machine: zero streaming reconnect complexity.
-* Air-gapped fallback guarantees emergency overrides succeed even during complete Control API or PostgreSQL downtime.
-* Trivial to inspect, proxy, load balance, and debug using standard HTTP infrastructure.
+
+- Sub-100ms lease distribution during incidents with an 83% reduction in idle request traffic.
+- Single wire contract and single client state machine: zero streaming reconnect complexity.
+- Air-gapped fallback guarantees emergency overrides succeed even during complete Control API or PostgreSQL downtime.
+- Trivial to inspect, proxy, load balance, and debug using standard HTTP infrastructure.
 
 ### Negative
-* Keeps HTTP keep-alive connections open on the Control API (mitigated by Node.js event-loop concurrency and low per-connection memory overhead).
+
+- Keeps HTTP keep-alive connections open on the Control API (mitigated by Node.js event-loop concurrency and low per-connection memory overhead).

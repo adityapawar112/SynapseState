@@ -18,7 +18,7 @@ export * from "@/lib/types";
  */
 export function calculateLeaseExpiryView(
   envelope: LeaseEnvelope,
-  referenceTime: Date = new Date()
+  referenceTime: Date = new Date(),
 ): ActiveLeaseView {
   const { payload, sig } = envelope;
   const issuedAtMs = new Date(payload.issued_at).getTime();
@@ -52,7 +52,7 @@ export function calculateLeaseExpiryView(
  * Computes variant evaluation distribution percentages rounded to two decimal places.
  */
 export function calculateVariantDistribution(
-  counts: VariantCount[]
+  counts: VariantCount[],
 ): VariantDistribution[] {
   const total = counts.reduce((acc, c) => acc + c.count, 0);
   if (total === 0) {
@@ -77,7 +77,7 @@ export function calculateVariantDistribution(
 export function evaluateFlagQuiescence(
   variants: VariantDistribution[],
   totalEvaluations: number,
-  quiescenceThresholdPct: number = 99
+  quiescenceThresholdPct: number = 99,
 ): FlagQuiescenceResult {
   if (variants.length === 0 || totalEvaluations === 0) {
     return {
@@ -107,7 +107,7 @@ export function evaluateFlagQuiescence(
  * Validates unbroken sequence order and SHA-256 hash chaining of audit ledger records.
  */
 export function verifyAuditLedgerChain(
-  records: AuditLedgerRecord[]
+  records: AuditLedgerRecord[],
 ): AuditChainVerificationResult {
   if (records.length <= 1) {
     return { valid: true };
@@ -149,7 +149,10 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<RolePermission>> = {
   admin: new Set(["read", "revoke", "promote", "admin"]),
 };
 
-export function hasRolePermission(role: UserRole, permission: RolePermission): boolean {
+export function hasRolePermission(
+  role: UserRole,
+  permission: RolePermission,
+): boolean {
   const allowed = ROLE_PERMISSIONS[role];
   return allowed ? allowed.has(permission) : false;
 }

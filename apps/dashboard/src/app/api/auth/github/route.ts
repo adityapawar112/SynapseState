@@ -12,7 +12,9 @@ export async function GET(request: NextRequest) {
   const redirectUri = new URL("/api/auth/callback", request.url).toString();
   const stateBytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(stateBytes);
-  const state = Array.from(stateBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  const state = Array.from(stateBytes, (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
 
   const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
   githubAuthUrl.searchParams.set("client_id", clientId);

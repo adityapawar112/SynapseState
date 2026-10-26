@@ -45,61 +45,61 @@ colors:
 
 typography:
   display-xl:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 56px
     fontWeight: 500
     lineHeight: 56px
     letterSpacing: "-1.4px"
   display-lg:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 48px
     fontWeight: 500
     lineHeight: 48px
     letterSpacing: "-1.2px"
   heading-md:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 19.2px
     fontWeight: 400
     lineHeight: 23px
     letterSpacing: "-0.48px"
   heading-sm:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 18px
     fontWeight: 500
     lineHeight: 21.6px
     letterSpacing: "-0.45px"
   body-md:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 16px
     fontWeight: 400
     lineHeight: 20px
     letterSpacing: "-0.04px"
   body-sm:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 14px
     fontWeight: 400
     lineHeight: 16.1px
     letterSpacing: "-0.14px"
   button-md:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 16px
     fontWeight: 500
     lineHeight: 24px
     letterSpacing: "-0.16px"
   nav-link:
-    fontFamily: "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
     fontSize: 14px
     fontWeight: 500
     lineHeight: 24px
     letterSpacing: 0
   mono-md:
-    fontFamily: "\"JetBrains Mono\", \"IBM Plex Mono\", ui-monospace, monospace"
+    fontFamily: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace'
     fontSize: 14px
     fontWeight: 400
     lineHeight: 20px
     letterSpacing: 0
   mono-sm:
-    fontFamily: "\"JetBrains Mono\", \"IBM Plex Mono\", ui-monospace, monospace"
+    fontFamily: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace'
     fontSize: 11px
     fontWeight: 600
     lineHeight: 16px
@@ -255,23 +255,27 @@ SynapseState provides a cryptographic incident-safety and lifecycle governance l
 ## 2. Color System
 
 ### Brand Voltage
+
 - **Kumo Brand (`#ff5e1f`):** The primary voltage canvas. Fills the above-fold hero, active category tabs, and operator authority badges.
 - **Kumo Brand Hover (`#ff7038`):** Hover/press state for brand-colored components.
 - **Kumo Brand Soft (`#ff9650`):** Soft accent tones.
 - **Kumo Brand Dark (`#d63c01`):** Deep brand accent.
 
 ### Surfaces
+
 - **Cream (`#fffbf5`):** Warm off-white off-surface. Carries hero display typography, CTA pills, and table headers.
 - **Canvas (`#ffffff`):** Pure white below-fold card background and top-nav surface.
 - **Hairline (`#f0f0f0`):** Dominant structural border tone across all cards and dividers.
 
 ### Typography & Ink
+
 - **Ink (`#262626`):** Dominant reading text for headlines and body copy.
 - **Ink Soft (`#414040`):** Secondary paragraph and hint text.
 - **Muted (`#727272`):** Tertiary metadata captions and inactive states.
 - **Nav Muted (`#6a6967`):** Navigation bar links.
 
 ### Subsystem Product Domains (Solid Fills + White Text)
+
 - **Compute (`#0a95ff`):** Blue. Represents In-Process SDK Provider, State Delivery, and Viewer RBAC.
 - **Storage (`#ee0ddb`):** Pink. Represents Active Break-Glass Leases and Variant Overrides.
 - **AI (`#00bd7d`):** Green. Represents Mesh Online status, Purger Quiescence, and Hash Continuity.
@@ -282,24 +286,25 @@ SynapseState provides a cryptographic incident-safety and lifecycle governance l
 
 ## 3. Typography Hierarchy
 
-| Token | Size | Weight | Line Height | Tracking | Role |
-|---|---|---|---|---|---|
-| `display-xl` | 56px | 500 | 56px | -1.4px | Hero headline ("Signed incident governance…") |
-| `display-lg` | 48px | 500 | 48px | -1.2px | Section display headers |
-| `heading-md` | 19.2px | 400 | 23px | -0.48px | Section titles, operational state |
-| `heading-sm` | 18px | 500 | 21.6px | -0.45px | Card titles, feature headers |
-| `body-md` | 16px | 400 | 20px | -0.04px | Workhorse paragraph text |
-| `body-sm` | 14px | 400 | 16.1px | -0.14px | Hint copy, secondary descriptions |
-| `button-md` | 16px | 500 | 24px | -0.16px | Interactive button labels |
-| `nav-link` | 14px | 500 | 24px | 0 | Top-nav links |
-| `mono-md` | 14px | 400 | 20px | 0 | Code blocks, CLI commands |
-| `mono-sm` | 11px | 600 | 16px | 0.05em | Small-caps labels, status badges, hashes |
+| Token        | Size   | Weight | Line Height | Tracking | Role                                          |
+| ------------ | ------ | ------ | ----------- | -------- | --------------------------------------------- |
+| `display-xl` | 56px   | 500    | 56px        | -1.4px   | Hero headline ("Signed incident governance…") |
+| `display-lg` | 48px   | 500    | 48px        | -1.2px   | Section display headers                       |
+| `heading-md` | 19.2px | 400    | 23px        | -0.48px  | Section titles, operational state             |
+| `heading-sm` | 18px   | 500    | 21.6px      | -0.45px  | Card titles, feature headers                  |
+| `body-md`    | 16px   | 400    | 20px        | -0.04px  | Workhorse paragraph text                      |
+| `body-sm`    | 14px   | 400    | 16.1px      | -0.14px  | Hint copy, secondary descriptions             |
+| `button-md`  | 16px   | 500    | 24px        | -0.16px  | Interactive button labels                     |
+| `nav-link`   | 14px   | 500    | 24px        | 0        | Top-nav links                                 |
+| `mono-md`    | 14px   | 400    | 20px        | 0        | Code blocks, CLI commands                     |
+| `mono-sm`    | 11px   | 600    | 16px        | 0.05em   | Small-caps labels, status badges, hashes      |
 
 ---
 
 ## 4. Solid Badges & Status Pills Specification
 
 Every badge, tag, or status chip MUST adhere to the solid fill standard:
+
 ```css
 .badge {
   display: inline-flex;
@@ -345,6 +350,7 @@ Every badge, tag, or status chip MUST adhere to the solid fill standard:
 ## 6. Dark Mode Specification
 
 Dark mode inverts the surface foundation while preserving high-voltage brand accents:
+
 - **Body Background Floor:** `#0d0d0f` (deep obsidian).
 - **Surface Cards:** `#1b1b1e` (zinc-charcoal).
 - **Off-Surface Panels:** `#141416` (warm dark surface).

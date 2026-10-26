@@ -14,7 +14,7 @@ export interface HealthRoutesOptions {
  */
 export const healthRoutes: FastifyPluginAsync<HealthRoutesOptions> = async (
   fastify,
-  options
+  options,
 ) => {
   const { leasePool } = options;
 

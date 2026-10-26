@@ -108,11 +108,7 @@ export class GitHubReconciler {
     // 4. Parse YAML preserving comments and metadata, update defaultVariant
     const doc = YAML.parseDocument(existingFile.content);
     if (doc.errors && doc.errors.length > 0) {
-      throw new FlagDefinitionParseError(
-        flag_key,
-        env,
-        doc.errors[0].message,
-      );
+      throw new FlagDefinitionParseError(flag_key, env, doc.errors[0].message);
     }
 
     const newDefaultVariant = resolveDefaultVariant(doc, lease.payload.value);

@@ -31,7 +31,9 @@ export interface SynapseMetrics {
  *
  * Enforces Cardinality Audit: only bounded labels (env, status_code, from, to) are registered.
  */
-export function createMetricsRegistry(targetRegistry?: Registry): SynapseMetrics {
+export function createMetricsRegistry(
+  targetRegistry?: Registry,
+): SynapseMetrics {
   const registry = targetRegistry ?? new Registry();
 
   function getOrRegisterGauge<T extends string>(

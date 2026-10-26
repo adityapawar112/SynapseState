@@ -24,17 +24,17 @@ describe("Conformance Suite Core Engine & Property Verification", () => {
             fc.integer(),
             fc.boolean(),
             fc.constant(null),
-            fc.array(fc.string(), { maxLength: 5 })
-          )
+            fc.array(fc.string(), { maxLength: 5 }),
+          ),
         ),
         (obj) => {
           const firstPass = canonicalizeJson(obj);
           const parsed = JSON.parse(firstPass);
           const secondPass = canonicalizeJson(parsed);
           return firstPass === secondPass;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -73,9 +73,9 @@ describe("Conformance Suite Core Engine & Property Verification", () => {
             sig: mutatedSig,
           };
           return verifyLease(mutatedEnvelope, publicKey) === false;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

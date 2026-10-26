@@ -14,7 +14,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
       "@synapsestate/lease": path.resolve(
         __dirname,
-        "../../packages/lease/src/index.ts"
+        "../../packages/lease/src/index.ts",
       ),
     },
   },

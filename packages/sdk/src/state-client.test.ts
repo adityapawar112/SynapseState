@@ -135,7 +135,9 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://control-api.synapse.internal/v1/sdk/state?env=prod&wait=30s");
+    expect(url).toBe(
+      "https://control-api.synapse.internal/v1/sdk/state?env=prod&wait=30s",
+    );
     expect(init.headers).toEqual({
       Accept: "application/json",
       Authorization: "Bearer service-token-xyz",
@@ -200,7 +202,10 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
     const bobKeyRevocation = createKeyRevocation("sre-bob");
 
     // Revocation for checkout-v2
-    const aliceLease = createLease({ lease_id: "01J9X57YTRPQ8A7F4E11111111", flag_key: "checkout-v2" });
+    const aliceLease = createLease({
+      lease_id: "01J9X57YTRPQ8A7F4E11111111",
+      flag_key: "checkout-v2",
+    });
     const aliceRevocation = createRevocation("01J9X57YTRPQ8A7F4E11111111");
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -381,24 +386,26 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
   it("lifecycle: start() begins background long-polling loop and stop() aborts it cleanly without spurious warnings", async () => {
     let callCount = 0;
     const warnMock = vi.fn();
-    const fetchMock = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
-      callCount++;
-      // Simulate long-poll wait
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          resolve({
-            ok: true,
-            status: 304,
-            headers: new Headers({ etag: '"etag-loop"' }),
-          });
-        }, 500);
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (_url, init: RequestInit) => {
+        callCount++;
+        // Simulate long-poll wait
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            resolve({
+              ok: true,
+              status: 304,
+              headers: new Headers({ etag: '"etag-loop"' }),
+            });
+          }, 500);
 
-        init.signal?.addEventListener("abort", () => {
-          clearTimeout(timeout);
-          reject(new DOMException("The operation was aborted", "AbortError"));
+          init.signal?.addEventListener("abort", () => {
+            clearTimeout(timeout);
+            reject(new DOMException("The operation was aborted", "AbortError"));
+          });
         });
       });
-    });
 
     const client = new StateClient({
       controlApiUrl: "https://control-api.synapse.internal",
@@ -444,7 +451,10 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
     });
 
     const addListenerSpy = vi.spyOn(AbortSignal.prototype, "addEventListener");
-    const removeListenerSpy = vi.spyOn(AbortSignal.prototype, "removeEventListener");
+    const removeListenerSpy = vi.spyOn(
+      AbortSignal.prototype,
+      "removeEventListener",
+    );
 
     await client.start();
 
@@ -452,8 +462,13 @@ describe("StateClient (ETag Long-Polling & Fail-Static Resilience)", () => {
     await vi.advanceTimersByTimeAsync(200);
 
     // Verify removeEventListener was called for the abort listener
-    expect(addListenerSpy).toHaveBeenCalledWith("abort", expect.any(Function), { once: true });
-    expect(removeListenerSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(addListenerSpy).toHaveBeenCalledWith("abort", expect.any(Function), {
+      once: true,
+    });
+    expect(removeListenerSpy).toHaveBeenCalledWith(
+      "abort",
+      expect.any(Function),
+    );
 
     await client.stop();
     addListenerSpy.mockRestore();

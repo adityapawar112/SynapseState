@@ -31,7 +31,9 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
   let publicKeyHex: string;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapse-cli-lease-test-"));
+    tmpDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "synapse-cli-lease-test-"),
+    );
     testKid = "alice-oncall-sre";
     keyPassword = "test-strong-passphrase-123!";
 
@@ -97,9 +99,12 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
     it("throws error if clock sync RTT exceeds budget", async () => {
       const mockFetch: typeof fetch = vi.fn(async () => {
         await new Promise((r) => setTimeout(r, 30));
-        return new Response(JSON.stringify({ server_time: new Date().toISOString() }), {
-          status: 200,
-        });
+        return new Response(
+          JSON.stringify({ server_time: new Date().toISOString() }),
+          {
+            status: 200,
+          },
+        );
       }) as unknown as typeof fetch;
 
       await expect(
@@ -212,7 +217,10 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       expect(result.envelope.payload.flag_key).toBe("checkout-v2");
       expect(result.envelope.payload.value).toBe(false);
       expect(
-        Math.abs(Date.parse(result.envelope.payload.issued_at) - Date.parse(serverTimeIso)),
+        Math.abs(
+          Date.parse(result.envelope.payload.issued_at) -
+            Date.parse(serverTimeIso),
+        ),
       ).toBeLessThanOrEqual(50);
       expect(result.envelope.payload.ttl_seconds).toBe(1800);
       expect(result.envelope.payload.kid).toBe(testKid);
@@ -233,11 +241,20 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url.endsWith("/v1/time")) {
-          return new Response(JSON.stringify({ server_time: new Date().toISOString() }), { status: 200 });
+          return new Response(
+            JSON.stringify({ server_time: new Date().toISOString() }),
+            { status: 200 },
+          );
         }
         if (url.endsWith("/v1/leases") && method === "POST") {
           const body = JSON.parse(String(init?.body)) as LeaseEnvelope;
-          return new Response(JSON.stringify({ lease_id: body.payload.lease_id, state: "ACTIVE" }), { status: 201 });
+          return new Response(
+            JSON.stringify({
+              lease_id: body.payload.lease_id,
+              state: "ACTIVE",
+            }),
+            { status: 201 },
+          );
         }
         if (url.includes("/v1/sdk/state")) {
           return new Response("Key revoked mid-rollout", { status: 403 });
@@ -260,7 +277,9 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
           pollIntervalMs: 10,
           fetchFn: mockFetch,
         }),
-      ).rejects.toThrow(/Rollout verification aborted: Control API returned 403/);
+      ).rejects.toThrow(
+        /Rollout verification aborted: Control API returned 403/,
+      );
     });
 
     it("marks rolloutConfirmed as false when rollout polling reaches deadline timeout", async () => {
@@ -268,14 +287,25 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url.endsWith("/v1/time")) {
-          return new Response(JSON.stringify({ server_time: new Date().toISOString() }), { status: 200 });
+          return new Response(
+            JSON.stringify({ server_time: new Date().toISOString() }),
+            { status: 200 },
+          );
         }
         if (url.endsWith("/v1/leases") && method === "POST") {
           const body = JSON.parse(String(init?.body)) as LeaseEnvelope;
-          return new Response(JSON.stringify({ lease_id: body.payload.lease_id, state: "ACTIVE" }), { status: 201 });
+          return new Response(
+            JSON.stringify({
+              lease_id: body.payload.lease_id,
+              state: "ACTIVE",
+            }),
+            { status: 201 },
+          );
         }
         if (url.includes("/v1/sdk/state")) {
-          return new Response(JSON.stringify({ active_leases: [] }), { status: 200 });
+          return new Response(JSON.stringify({ active_leases: [] }), {
+            status: 200,
+          });
         }
         return new Response("Not found", { status: 404 });
       }) as unknown as typeof fetch;
@@ -366,7 +396,8 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
         if (url.endsWith("/v1/leases")) {
           return new Response(
             JSON.stringify({
-              error: 'Key "alice-oncall-sre" is not authorized to sign emergency leases',
+              error:
+                'Key "alice-oncall-sre" is not authorized to sign emergency leases',
             }),
             {
               status: 403,
@@ -403,7 +434,10 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
         }
         if (url.endsWith("/v1/leases")) {
           return new Response(
-            JSON.stringify({ lease_id: "01J9X57YTRPQ8A7F4E12345678", state: "ACTIVE" }),
+            JSON.stringify({
+              lease_id: "01J9X57YTRPQ8A7F4E12345678",
+              state: "ACTIVE",
+            }),
             { status: 201 },
           );
         }
@@ -574,9 +608,15 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       await fs.mkdir(emergencyDir, { recursive: true });
 
       // Corrupted file
-      await fs.writeFile(path.join(emergencyDir, "corrupted.json"), "{ invalid json");
+      await fs.writeFile(
+        path.join(emergencyDir, "corrupted.json"),
+        "{ invalid json",
+      );
       // Malformed schema (missing required fields)
-      await fs.writeFile(path.join(emergencyDir, "malformed.json"), JSON.stringify({ not: "a lease" }));
+      await fs.writeFile(
+        path.join(emergencyDir, "malformed.json"),
+        JSON.stringify({ not: "a lease" }),
+      );
       // Valid lease
       const validEnvelope: LeaseEnvelope = {
         payload: {
@@ -621,7 +661,9 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
         const method = init?.method ?? "GET";
 
         if (url.endsWith(`/v1/leases/${leaseId}/revoke`) && method === "POST") {
-          postedRevocation = JSON.parse(String(init?.body)) as RevocationEnvelope;
+          postedRevocation = JSON.parse(
+            String(init?.body),
+          ) as RevocationEnvelope;
           return new Response(
             JSON.stringify({ lease_id: leaseId, state: "REVOKED" }),
             { status: 200, headers: { "Content-Type": "application/json" } },
@@ -645,7 +687,9 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       expect(postedRevocation).toBeDefined();
       expect(postedRevocation!.payload.lease_id).toBe(leaseId);
       expect(postedRevocation!.payload.kid).toBe(testKid);
-      expect(postedRevocation!.payload.reason).toBe("Incident resolved by upstream fix");
+      expect(postedRevocation!.payload.reason).toBe(
+        "Incident resolved by upstream fix",
+      );
 
       // Verify revocation signature
       const keyset = parseKeysetJson(
@@ -704,7 +748,9 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       expect(result.yaml).toContain("kind: ConfigMap");
       expect(result.yaml).toContain("synapse-emergency-lease-");
       expect(result.yaml).toContain("namespace: synapse-system");
-      expect(result.yaml).toContain(`${result.envelope.payload.lease_id}.json:`);
+      expect(result.yaml).toContain(
+        `${result.envelope.payload.lease_id}.json:`,
+      );
 
       // Verify file written to emergency directory
       const writtenFilePath = path.join(
@@ -713,7 +759,9 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       );
       const fileContent = await fs.readFile(writtenFilePath, "utf8");
       const parsedFile = JSON.parse(fileContent);
-      expect(parsedFile.payload.lease_id).toBe(result.envelope.payload.lease_id);
+      expect(parsedFile.payload.lease_id).toBe(
+        result.envelope.payload.lease_id,
+      );
     });
 
     it("rejects invalid Kubernetes namespace", async () => {
@@ -794,14 +842,25 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url.endsWith("/v1/time")) {
-          return new Response(JSON.stringify({ server_time: new Date().toISOString() }), { status: 200 });
+          return new Response(
+            JSON.stringify({ server_time: new Date().toISOString() }),
+            { status: 200 },
+          );
         }
         if (url.endsWith("/v1/leases") && method === "POST") {
           const body = JSON.parse(String(init?.body)) as LeaseEnvelope;
-          return new Response(JSON.stringify({ lease_id: body.payload.lease_id, state: "ACTIVE" }), { status: 201 });
+          return new Response(
+            JSON.stringify({
+              lease_id: body.payload.lease_id,
+              state: "ACTIVE",
+            }),
+            { status: 201 },
+          );
         }
         if (url.includes("/v1/sdk/state")) {
-          return new Response(JSON.stringify({ active_leases: [] }), { status: 200 });
+          return new Response(JSON.stringify({ active_leases: [] }), {
+            status: 200,
+          });
         }
         return new Response("Not found", { status: 404 });
       }) as unknown as typeof fetch;
@@ -848,7 +907,9 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       const createCmd = cmd?.commands.find((c) => c.name() === "create");
       expect(createCmd).toBeDefined();
 
-      const variantOption = createCmd?.options.find((o) => o.long === "--variant");
+      const variantOption = createCmd?.options.find(
+        (o) => o.long === "--variant",
+      );
       expect(variantOption).toBeDefined();
     });
 
@@ -884,9 +945,10 @@ describe("Lease Lifecycle Commands (packages/cli/src/commands/lease.ts)", () => 
       ]);
 
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Both --value and --variant were supplied with differing values ('true' vs 'false'). Using --value ('true')."),
+        expect.stringContaining(
+          "Both --value and --variant were supplied with differing values ('true' vs 'false'). Using --value ('true').",
+        ),
       );
     });
   });
 });
-

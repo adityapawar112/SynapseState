@@ -36,7 +36,9 @@ export function resolveMigrationsDir(explicitDir?: string): string {
     }
   }
 
-  throw new Error(`Could not locate migrations directory among candidates: ${candidates.join(", ")}`);
+  throw new Error(
+    `Could not locate migrations directory among candidates: ${candidates.join(", ")}`,
+  );
 }
 
 /**
@@ -68,7 +70,7 @@ export function getMigrationFiles(migrationsDir?: string): MigrationFile[] {
  */
 export async function runMigrations(
   pool: Pool = leasePool,
-  migrationsDir?: string
+  migrationsDir?: string,
 ): Promise<string[]> {
   const client = await pool.connect();
 
@@ -76,7 +78,9 @@ export async function runMigrations(
     // Session-level advisory lock prevents concurrent migration runners colliding.
     // NOTE: Migrations must run via direct database connection or session-mode pooling,
     // not PgBouncer transaction-mode pooling, because the lock spans multiple migration transactions.
-    await client.query("SELECT pg_advisory_lock(hashtext($1))", [SCHEMA_MIGRATIONS_LOCK_KEY]);
+    await client.query("SELECT pg_advisory_lock(hashtext($1))", [
+      SCHEMA_MIGRATIONS_LOCK_KEY,
+    ]);
 
     // Ensure the tracking table exists
     await client.query(`
@@ -88,7 +92,7 @@ export async function runMigrations(
 
     // Fetch already applied migrations
     const appliedRows = await client.query<{ name: string }>(
-      "SELECT name FROM schema_migrations"
+      "SELECT name FROM schema_migrations",
     );
     const appliedSet = new Set(appliedRows.rows.map((r) => r.name));
 
@@ -103,13 +107,15 @@ export async function runMigrations(
       await client.query("BEGIN");
       try {
         await client.query(migration.sql);
-        await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [migration.name]);
+        await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [
+          migration.name,
+        ]);
         await client.query("COMMIT");
         appliedThisRun.push(migration.name);
       } catch (err) {
         await client.query("ROLLBACK");
         throw new Error(
-          `Failed executing migration ${migration.name}: ${err instanceof Error ? err.message : String(err)}`
+          `Failed executing migration ${migration.name}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }
@@ -117,7 +123,9 @@ export async function runMigrations(
     return appliedThisRun;
   } finally {
     try {
-      await client.query("SELECT pg_advisory_unlock(hashtext($1))", [SCHEMA_MIGRATIONS_LOCK_KEY]);
+      await client.query("SELECT pg_advisory_unlock(hashtext($1))", [
+        SCHEMA_MIGRATIONS_LOCK_KEY,
+      ]);
     } catch (unlockErr) {
       console.error("Failed to release migration advisory lock", unlockErr);
     }

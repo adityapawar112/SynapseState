@@ -10,7 +10,8 @@ app.get("/health", async () => {
 });
 
 const argvPath = process.argv[1] ?? "";
-const isMainModule = argvPath.endsWith("dist/index.js") || argvPath.endsWith("src/index.ts");
+const isMainModule =
+  argvPath.endsWith("dist/index.js") || argvPath.endsWith("src/index.ts");
 
 if (isMainModule) {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;

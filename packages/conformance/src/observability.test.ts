@@ -470,7 +470,9 @@ describe("Phase 3 PR 13: Observability Dashboards & Alertmanager Rules", () => {
         );
         expect(enabledOutput).toContain("kind: CronJob");
         expect(enabledOutput).toContain("kind: ServiceAccount");
-        expect(enabledOutput).toContain("test-rel-control-api-checkpoint-signer");
+        expect(enabledOutput).toContain(
+          "test-rel-control-api-checkpoint-signer",
+        );
         expect(enabledOutput).toContain("automountServiceAccountToken: false");
         expect(enabledOutput).toContain("- synapse");
         expect(enabledOutput).toContain("- audit");

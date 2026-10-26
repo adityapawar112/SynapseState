@@ -25,10 +25,26 @@ describe("Dashboard Middleware Route Protection", () => {
   };
 
   it("permits public routes without session cookie", async () => {
-    expect((await checkRouteAccess("/login", undefined, secret, false)).action).toBe("allow");
-    expect((await checkRouteAccess("/api/auth/github", undefined, secret, false)).action).toBe("allow");
-    expect((await checkRouteAccess("/_next/static/chunk.js", undefined, secret, false)).action).toBe("allow");
-    expect((await checkRouteAccess("/favicon.ico", undefined, secret, false)).action).toBe("allow");
+    expect(
+      (await checkRouteAccess("/login", undefined, secret, false)).action,
+    ).toBe("allow");
+    expect(
+      (await checkRouteAccess("/api/auth/github", undefined, secret, false))
+        .action,
+    ).toBe("allow");
+    expect(
+      (
+        await checkRouteAccess(
+          "/_next/static/chunk.js",
+          undefined,
+          secret,
+          false,
+        )
+      ).action,
+    ).toBe("allow");
+    expect(
+      (await checkRouteAccess("/favicon.ico", undefined, secret, false)).action,
+    ).toBe("allow");
   });
 
   it("redirects unauthenticated user from protected page to /login in production", async () => {
@@ -46,19 +62,39 @@ describe("Dashboard Middleware Route Protection", () => {
 
   it("blocks viewer role from mutation API routes with 403 Forbidden", async () => {
     const token = await createSessionToken(viewerUser, secret);
-    const revokeResult = await checkRouteAccess("/api/actions/revoke", token, secret, false);
+    const revokeResult = await checkRouteAccess(
+      "/api/actions/revoke",
+      token,
+      secret,
+      false,
+    );
     expect(revokeResult.action).toBe("forbidden");
 
-    const promoteResult = await checkRouteAccess("/api/actions/promote", token, secret, false);
+    const promoteResult = await checkRouteAccess(
+      "/api/actions/promote",
+      token,
+      secret,
+      false,
+    );
     expect(promoteResult.action).toBe("forbidden");
   });
 
   it("permits operator role to access revocation and promotion API routes", async () => {
     const token = await createSessionToken(operatorUser, secret);
-    const revokeResult = await checkRouteAccess("/api/actions/revoke", token, secret, false);
+    const revokeResult = await checkRouteAccess(
+      "/api/actions/revoke",
+      token,
+      secret,
+      false,
+    );
     expect(revokeResult.action).toBe("allow");
 
-    const promoteResult = await checkRouteAccess("/api/actions/promote", token, secret, false);
+    const promoteResult = await checkRouteAccess(
+      "/api/actions/promote",
+      token,
+      secret,
+      false,
+    );
     expect(promoteResult.action).toBe("allow");
   });
 

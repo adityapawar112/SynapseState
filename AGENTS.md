@@ -12,6 +12,7 @@ SynapseState delivers a vendor-neutral **incident-safety and lifecycle governanc
 It does **not** evaluate flags or manage rollouts. It wraps an existing OpenFeature provider (such as flagd in-process, a plain JSON provider, or Unleash).
 
 ### Core Non-Goals (Hard System Boundaries)
+
 - **NO Custom Evaluator or Rollout DSL:** We do not write flag evaluation logic, context segmenters, or MurmurHash3 bucketing engines. Evaluation is strictly delegated to standard OpenFeature providers.
 - **NO Client-Side / Mobile SDKs:** Internal rulesets, keysets, and telemetry never egress to untrusted browsers or mobile devices.
 - **NO Web Administrative Flag Authoring:** Baseline flag configurations are managed declaratively in Git. SynapseState does not provide a UI for editing flag definitions.
@@ -33,7 +34,6 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 6. **Read-Only Codebase Scanner:** `synapse-purger` operates as a read-only AST scanner and candidate qualifier. It **must never execute target repository test suites or build scripts** while holding GitHub credentials. If dynamic expressions or silent services block qualification, it emits a structured Refusal Report.
 7. **Tamper-Evident Audit Ledger:** All state mutations stage to `audit_pending` and seal asynchronously to a SHA-256 hash-chained PostgreSQL ledger by a single writer. Scheduled tasks sign periodic checkpoints to an immutable external write-once store.
 8. **Ecosystem & Library-First Primitive Reuse:** Always prioritize native runtime APIs and established ecosystem primitives (e.g., Node.js `node:crypto`, Fastify ecosystem plugins, OpenFeature standard types) before writing bespoke utilities from scratch.
-
 
 ---
 
@@ -74,13 +74,13 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 
 The workspace is configured with active skills located in [`.agents/skills/`](file:///c:/Users/adity/Desktop/Projects/SynapseState/.agents/skills):
 
-| Phase / Workflow | Recommended Skills to Invoke |
-|---|---|
-| **Architecture & Interface Design** | `codebase-design`, `domain-modeling`, `architect` |
-| **Monorepo Planning & Roadmap** | `research` |
-| **Implementation & Concurrency** | `test-driven-development` |
-| **Debugging & Invariant Violations** | `systematic-debugging` |
-| **Verification & PR Gatekeeping** | `verification-before-completion`, `receiving-code-review`, `requesting-code-review` |
+| Phase / Workflow                     | Recommended Skills to Invoke                                                        |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| **Architecture & Interface Design**  | `codebase-design`, `domain-modeling`, `architect`                                   |
+| **Monorepo Planning & Roadmap**      | `research`                                                                          |
+| **Implementation & Concurrency**     | `test-driven-development`                                                           |
+| **Debugging & Invariant Violations** | `systematic-debugging`                                                              |
+| **Verification & PR Gatekeeping**    | `verification-before-completion`, `receiving-code-review`, `requesting-code-review` |
 
 ---
 
@@ -88,14 +88,14 @@ The workspace is configured with active skills located in [`.agents/skills/`](fi
 
 All code touching state delivery and SDK evaluation must be validated against continuous benchmarks before merging:
 
-| Measurement Boundary | Target SLO | Conditions & Verification |
-|---|---|---|
-| **Lease Propagation Lag** | $p95 \le 10\text{ s}$ | Measured using server timestamps (`server_time - issued_at`) under long-polling. |
-| **Lease Expiry Correctness** | **0** past `TTL + SKEW_TOLERANCE` | Validated by property tests (`fast-check`) and chaos clock-skew injection. |
-| **SDK Hot-Path Overhead** | Minimal overhead vs bare delegate | Microbenchmarks measuring `OverrideProvider` resolution path. |
-| **Evaluation Path Availability** | 100% (Zero app crashes) | Automatic fallback to delegate provider on any internal exception. |
-| **Control API Availability** | 99.5% over 30 days (Single node) | Blackbox HTTP probing. (SDKs fail-static during API downtime). |
-| **Purger Refactoring Precision** | 0 incorrect removals on corpus | Validated across supported, complex, and adversarial test repositories. |
+| Measurement Boundary             | Target SLO                        | Conditions & Verification                                                        |
+| -------------------------------- | --------------------------------- | -------------------------------------------------------------------------------- |
+| **Lease Propagation Lag**        | $p95 \le 10\text{ s}$             | Measured using server timestamps (`server_time - issued_at`) under long-polling. |
+| **Lease Expiry Correctness**     | **0** past `TTL + SKEW_TOLERANCE` | Validated by property tests (`fast-check`) and chaos clock-skew injection.       |
+| **SDK Hot-Path Overhead**        | Minimal overhead vs bare delegate | Microbenchmarks measuring `OverrideProvider` resolution path.                    |
+| **Evaluation Path Availability** | 100% (Zero app crashes)           | Automatic fallback to delegate provider on any internal exception.               |
+| **Control API Availability**     | 99.5% over 30 days (Single node)  | Blackbox HTTP probing. (SDKs fail-static during API downtime).                   |
+| **Purger Refactoring Precision** | 0 incorrect removals on corpus    | Validated across supported, complex, and adversarial test repositories.          |
 
 ---
 

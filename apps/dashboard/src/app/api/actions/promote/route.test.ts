@@ -38,7 +38,10 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     const req = new NextRequest("http://localhost:3000/api/actions/promote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leaseId: "01J9X57YTRPQ8A7F4E12345678", env: "production" }),
+      body: JSON.stringify({
+        leaseId: "01J9X57YTRPQ8A7F4E12345678",
+        env: "production",
+      }),
     });
 
     const res = await POST(req);
@@ -57,7 +60,10 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
         cookie: `synapse_session=${sessionToken}`,
         "x-synapse-csrf": csrfToken,
       },
-      body: JSON.stringify({ leaseId: "01J9X57YTRPQ8A7F4E12345678", env: "production" }),
+      body: JSON.stringify({
+        leaseId: "01J9X57YTRPQ8A7F4E12345678",
+        env: "production",
+      }),
     });
 
     const res = await POST(req);
@@ -76,7 +82,10 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
         "Content-Type": "application/json",
         cookie: `synapse_session=${sessionToken}`,
       },
-      body: JSON.stringify({ leaseId: "01J9X57YTRPQ8A7F4E12345678", env: "production" }),
+      body: JSON.stringify({
+        leaseId: "01J9X57YTRPQ8A7F4E12345678",
+        env: "production",
+      }),
     });
 
     const res = await POST(req);
@@ -111,13 +120,17 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     const sessionToken = await createSessionToken(operator, testSecret);
     const csrfToken = await generateCsrfToken(operator.id, testSecret);
 
-    const promoteSpy = vi.spyOn(controlApiClient, "promoteLease").mockResolvedValueOnce({
-      lease_id: "01J9X57YTRPQ8A7F4E12345678",
-      pr_url: "https://github.com/adityapawar112/SynapseState/pull/42",
-      branch: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678",
-    });
+    const promoteSpy = vi
+      .spyOn(controlApiClient, "promoteLease")
+      .mockResolvedValueOnce({
+        lease_id: "01J9X57YTRPQ8A7F4E12345678",
+        pr_url: "https://github.com/adityapawar112/SynapseState/pull/42",
+        branch: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678",
+      });
 
-    const auditSpy = vi.spyOn(controlApiClient, "recordAuditEvent").mockResolvedValueOnce(true);
+    const auditSpy = vi
+      .spyOn(controlApiClient, "recordAuditEvent")
+      .mockResolvedValueOnce(true);
 
     const req = new NextRequest("http://localhost:3000/api/actions/promote", {
       method: "POST",
@@ -137,8 +150,12 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     const data = await res.json();
     expect(data.success).toBe(true);
     expect(data.leaseId).toBe("01J9X57YTRPQ8A7F4E12345678");
-    expect(data.prUrl).toBe("https://github.com/adityapawar112/SynapseState/pull/42");
-    expect(data.branch).toBe("synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678");
+    expect(data.prUrl).toBe(
+      "https://github.com/adityapawar112/SynapseState/pull/42",
+    );
+    expect(data.branch).toBe(
+      "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678",
+    );
     expect(data.actor).toBe(operator.login);
 
     expect(promoteSpy).toHaveBeenCalledWith("01J9X57YTRPQ8A7F4E12345678", {
@@ -162,11 +179,14 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     const csrfToken = await generateCsrfToken(operator.id, testSecret);
 
     const conflictErr = new Error("Conflict with existing PR");
-    (conflictErr as unknown as { code?: string; existingPrUrl?: string }).code = "STALE_PR_CONFLICT";
+    (conflictErr as unknown as { code?: string; existingPrUrl?: string }).code =
+      "STALE_PR_CONFLICT";
     (conflictErr as unknown as { existingPrUrl?: string }).existingPrUrl =
       "https://github.com/adityapawar112/SynapseState/pull/10";
 
-    vi.spyOn(controlApiClient, "promoteLease").mockRejectedValueOnce(conflictErr);
+    vi.spyOn(controlApiClient, "promoteLease").mockRejectedValueOnce(
+      conflictErr,
+    );
 
     const req = new NextRequest("http://localhost:3000/api/actions/promote", {
       method: "POST",
@@ -185,7 +205,9 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     expect(res.status).toBe(409);
     const data = await res.json();
     expect(data.error).toBe("STALE_PR_CONFLICT");
-    expect(data.existingPrUrl).toBe("https://github.com/adityapawar112/SynapseState/pull/10");
+    expect(data.existingPrUrl).toBe(
+      "https://github.com/adityapawar112/SynapseState/pull/10",
+    );
   });
 
   it("supports simulated promotion when SYNAPSE_MOCK_PROMOTE=true in development", async () => {
@@ -195,7 +217,7 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     const csrfToken = await generateCsrfToken(operator.id, testSecret);
 
     vi.spyOn(controlApiClient, "promoteLease").mockRejectedValueOnce(
-      new Error("Control API unreachable")
+      new Error("Control API unreachable"),
     );
 
     const req = new NextRequest("http://localhost:3000/api/actions/promote", {
@@ -227,11 +249,13 @@ describe("API Route: POST /api/actions/promote (PR 25)", () => {
     const sessionToken = await createSessionToken(operator, testSecret);
     const csrfToken = await generateCsrfToken(operator.id, testSecret);
 
-    const promoteSpy = vi.spyOn(controlApiClient, "promoteLease").mockResolvedValueOnce({
-      lease_id: "01J9X57YTRPQ8A7F4E12345678",
-      pr_url: "https://github.com/adityapawar112/SynapseState/pull/42",
-      branch: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678",
-    });
+    const promoteSpy = vi
+      .spyOn(controlApiClient, "promoteLease")
+      .mockResolvedValueOnce({
+        lease_id: "01J9X57YTRPQ8A7F4E12345678",
+        pr_url: "https://github.com/adityapawar112/SynapseState/pull/42",
+        branch: "synapse/promote-lease-01J9X57YTRPQ8A7F4E12345678",
+      });
 
     const req = new NextRequest("http://localhost:3000/api/actions/promote", {
       method: "POST",

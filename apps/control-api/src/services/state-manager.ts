@@ -50,7 +50,7 @@ export function computeStateEtag(
   activeLeases: LeaseEnvelope[],
   revocations: RevocationEnvelope[],
   keyRevocations: KeyRevocationEnvelope[],
-  registryVersion: number
+  registryVersion: number,
 ): string {
   const canonical = canonicalizeJson({
     active_leases: activeLeases,
@@ -112,58 +112,81 @@ export class StateManager {
     const client = await this.pool.connect();
     try {
       // 1. Query active leases for this environment that have not yet expired
-      const leasesRes = await client.query<{ payload: unknown; sig: string; expires_at: Date }>(
+      const leasesRes = await client.query<{
+        payload: unknown;
+        sig: string;
+        expires_at: Date;
+      }>(
         `SELECT payload, sig, expires_at 
          FROM leases 
          WHERE env = $1 AND state = 'ACTIVE' AND expires_at > NOW() 
          ORDER BY lease_id ASC`,
-        [env]
+        [env],
       );
 
       const activeLeases: LeaseEnvelope[] = leasesRes.rows.map((row) => ({
-        payload: (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) as LeaseEnvelope["payload"],
+        payload: (typeof row.payload === "string"
+          ? JSON.parse(row.payload)
+          : row.payload) as LeaseEnvelope["payload"],
         sig: row.sig,
       }));
 
       // 2. Query unexpired revocations for this environment (bounded retention per ARCHITECTURE §4.1)
-      const revocationsRes = await client.query<{ payload: unknown; sig: string; expires_at: Date }>(
+      const revocationsRes = await client.query<{
+        payload: unknown;
+        sig: string;
+        expires_at: Date;
+      }>(
         `SELECT r.payload, r.sig, r.expires_at 
          FROM revocations r
          JOIN leases l ON r.lease_id = l.lease_id
          WHERE l.env = $1 AND r.expires_at >= NOW() 
          ORDER BY r.lease_id ASC`,
-        [env]
+        [env],
       );
 
-      const revocations: RevocationEnvelope[] = revocationsRes.rows.map((row) => ({
-        payload: (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) as RevocationEnvelope["payload"],
-        sig: row.sig,
-      }));
+      const revocations: RevocationEnvelope[] = revocationsRes.rows.map(
+        (row) => ({
+          payload: (typeof row.payload === "string"
+            ? JSON.parse(row.payload)
+            : row.payload) as RevocationEnvelope["payload"],
+          sig: row.sig,
+        }),
+      );
 
       // 3. Query fast-path key revocations
       const keyRevRes = await client.query<{ payload: unknown; sig: string }>(
         `SELECT payload, sig 
          FROM key_revocations 
-         ORDER BY kid ASC`
+         ORDER BY kid ASC`,
       );
 
-      const keyRevocations: KeyRevocationEnvelope[] = keyRevRes.rows.map((row) => ({
-        payload: (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) as KeyRevocationEnvelope["payload"],
-        sig: row.sig,
-      }));
+      const keyRevocations: KeyRevocationEnvelope[] = keyRevRes.rows.map(
+        (row) => ({
+          payload: (typeof row.payload === "string"
+            ? JSON.parse(row.payload)
+            : row.payload) as KeyRevocationEnvelope["payload"],
+          sig: row.sig,
+        }),
+      );
 
       // 4. Query max registry_version for flags in this environment
       const flagRes = await client.query<{ version: string | number }>(
         `SELECT COALESCE(MAX(registry_version), 1)::bigint AS version 
          FROM flags 
          WHERE env = $1`,
-        [env]
+        [env],
       );
 
       const registryVersion = Number(flagRes.rows[0]?.version ?? 1);
 
       // Compute deterministic ETag
-      const etag = computeStateEtag(activeLeases, revocations, keyRevocations, registryVersion);
+      const etag = computeStateEtag(
+        activeLeases,
+        revocations,
+        keyRevocations,
+        registryVersion,
+      );
 
       // Determine next expiration boundary to avoid serving expired state from cache
       let minExpiresAtMs = Date.now() + 60_000; // default 60s cache ceiling
@@ -226,7 +249,10 @@ export class StateManager {
           try {
             listener(newState);
           } catch (err) {
-            console.error("[StateManager] Error dispatching waiter callback:", err);
+            console.error(
+              "[StateManager] Error dispatching waiter callback:",
+              err,
+            );
           }
         }
       }
@@ -242,7 +268,10 @@ export class StateManager {
             try {
               listener(newState);
             } catch (err) {
-              console.error("[StateManager] Error dispatching waiter callback:", err);
+              console.error(
+                "[StateManager] Error dispatching waiter callback:",
+                err,
+              );
             }
           }
         }
@@ -262,8 +291,10 @@ export class StateManager {
     env: string,
     clientEtag?: string | null,
     waitSeconds = 0,
-    signal?: AbortSignal
-  ): Promise<{ status: 200; state: CachedState } | { status: 304; state: CachedState }> {
+    signal?: AbortSignal,
+  ): Promise<
+    { status: 200; state: CachedState } | { status: 304; state: CachedState }
+  > {
     const currentState = await this.getState(env);
     const cleanClient = normalizeEtag(clientEtag);
     const cleanCurrent = normalizeEtag(currentState.etag);
@@ -342,7 +373,10 @@ export class StateManager {
           }
         })
         .catch((err) => {
-          console.error("[StateManager] Error during post-registration state re-check:", err);
+          console.error(
+            "[StateManager] Error during post-registration state re-check:",
+            err,
+          );
         });
 
       timeoutId = setTimeout(onTimeout, clampedWait * 1000);

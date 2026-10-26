@@ -258,20 +258,21 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && pathname === "/metrics") {
     const mem = process.memoryUsage();
     const prodState = getOrCreateEnvState("production");
-    const body = [
-      "# HELP process_resident_memory_bytes Resident memory size in bytes.",
-      "# TYPE process_resident_memory_bytes gauge",
-      `process_resident_memory_bytes ${mem.rss}`,
-      "# HELP process_heap_used_bytes Process heap used in bytes.",
-      "# TYPE process_heap_used_bytes gauge",
-      `process_heap_used_bytes ${mem.heapUsed}`,
-      "# HELP synapse_leases_active Number of currently active signed emergency leases.",
-      "# TYPE synapse_leases_active gauge",
-      `synapse_leases_active{env="production"} ${prodState.activeLeases.size}`,
-      "# HELP synapse_waiters_active Number of long-polling clients currently suspended.",
-      "# TYPE synapse_waiters_active gauge",
-      `synapse_waiters_active{env="production"} ${prodState.waiters.size}`,
-    ].join("\n") + "\n";
+    const body =
+      [
+        "# HELP process_resident_memory_bytes Resident memory size in bytes.",
+        "# TYPE process_resident_memory_bytes gauge",
+        `process_resident_memory_bytes ${mem.rss}`,
+        "# HELP process_heap_used_bytes Process heap used in bytes.",
+        "# TYPE process_heap_used_bytes gauge",
+        `process_heap_used_bytes ${mem.heapUsed}`,
+        "# HELP synapse_leases_active Number of currently active signed emergency leases.",
+        "# TYPE synapse_leases_active gauge",
+        `synapse_leases_active{env="production"} ${prodState.activeLeases.size}`,
+        "# HELP synapse_waiters_active Number of long-polling clients currently suspended.",
+        "# TYPE synapse_waiters_active gauge",
+        `synapse_waiters_active{env="production"} ${prodState.waiters.size}`,
+      ].join("\n") + "\n";
 
     res.writeHead(200, {
       "Content-Type": "text/plain; version=0.0.4",

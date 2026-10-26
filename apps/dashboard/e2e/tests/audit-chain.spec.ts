@@ -22,7 +22,7 @@ test.describe("Tamper-Evident Audit Ledger & Cryptographic Chain (PR 27)", () =>
     await expect(statusBadge).toBeVisible();
     await expect(statusBadge).toContainText("Hash Chain Verified");
     await expect(statusBadge).toContainText(
-      "Cryptographic SHA-256 continuity unbroken"
+      "Cryptographic SHA-256 continuity unbroken",
     );
 
     // Latest Signed Checkpoint Card Assertion
@@ -62,9 +62,12 @@ test.describe("Tamper-Evident Audit Ledger & Cryptographic Chain (PR 27)", () =>
     const authHeaders = {
       Authorization: `Bearer ${process.env.SYNAPSE_API_TOKEN || "synapse-e2e-master-token-value-2026"}`,
     };
-    const auditRes = await request.get("http://localhost:3000/v1/audit/events", {
-      headers: authHeaders,
-    });
+    const auditRes = await request.get(
+      "http://localhost:3000/v1/audit/events",
+      {
+        headers: authHeaders,
+      },
+    );
     expect(auditRes.status()).toBe(200);
     const auditData = await auditRes.json();
     const events = auditData.events || [];
@@ -93,9 +96,12 @@ test.describe("Tamper-Evident Audit Ledger & Cryptographic Chain (PR 27)", () =>
     }
 
     // Assert checkpoint matches the sealed audit hash
-    const cpRes = await request.get("http://localhost:3000/v1/audit/checkpoint/latest", {
-      headers: authHeaders,
-    });
+    const cpRes = await request.get(
+      "http://localhost:3000/v1/audit/checkpoint/latest",
+      {
+        headers: authHeaders,
+      },
+    );
     if (cpRes.status() === 200) {
       const cp = await cpRes.json();
       expect(cp.checkpoint_seq).toBe(3);
@@ -109,7 +115,8 @@ test.describe("Tamper-Evident Audit Ledger & Cryptographic Chain (PR 27)", () =>
     const validLedger = [
       {
         seq: 1,
-        prevHash: "0000000000000000000000000000000000000000000000000000000000000000",
+        prevHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
         hash: "a".repeat(64),
         eventType: "LEASE_INGESTED",
         actor: "ops-lead",

@@ -10,7 +10,9 @@ describe("formatSessionRemaining helper", () => {
   });
 
   it("formats hours, minutes, and seconds when remaining time is > 1 hour", () => {
-    const future = new Date(Date.now() + 2 * 3600 * 1000 + 15 * 60 * 1000 + 30 * 1000).toISOString();
+    const future = new Date(
+      Date.now() + 2 * 3600 * 1000 + 15 * 60 * 1000 + 30 * 1000,
+    ).toISOString();
     const res = formatSessionRemaining(future);
     expect(res.formatted).toContain("2h 15m");
     expect(res.isNearExpiry).toBe(false);

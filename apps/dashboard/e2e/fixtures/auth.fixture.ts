@@ -1,4 +1,9 @@
-import { test as base, expect, type Page, type BrowserContext } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type Page,
+  type BrowserContext,
+} from "@playwright/test";
 import {
   createSessionToken,
   generateCsrfToken,
@@ -17,7 +22,8 @@ export interface AuthFixtures {
 }
 
 export const TEST_SESSION_SECRET =
-  process.env.SESSION_SECRET || "development-only-session-secret-min-32-chars-long";
+  process.env.SESSION_SECRET ||
+  "development-only-session-secret-min-32-chars-long";
 
 /**
  * Injects signed session and CSRF cookies directly onto the Playwright browser context.
@@ -25,7 +31,7 @@ export const TEST_SESSION_SECRET =
  */
 export async function authenticateContext(
   context: BrowserContext,
-  role: UserRole
+  role: UserRole,
 ): Promise<{ token: string; csrfToken: string }> {
   const user = getDevSessionUser(role);
   const token = await createSessionToken(user, TEST_SESSION_SECRET);

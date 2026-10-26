@@ -19,15 +19,15 @@ In strict adherence to **AGENTS.md §1 & §6 ("Evidence Before Claims", "No micr
 
 ### SLO Verification Summary
 
-| Service Boundary                   | SLO Target                          | Measured Value (Smoke / Average Load)                   | Target Threshold                              | Status   |
-| ---------------------------------- | ----------------------------------- | ------------------------------------------------------- | --------------------------------------------- | -------- |
-| **Lease Propagation Lag**          | $p95 \le 10\text{ s}$               | $p95 = 0.030\text{ s}$ ($30.1\text{ ms}$) (Story Arc)   | `p(95) <= 10000ms`                            | **PASS** |
-| **Long-Poll Error Rate**           | $0\%\text{ drops} (< 0.01)$         | $0.00\%$ (0 failures across all runs)                   | `rate < 0.01`                                 | **PASS** |
-| **State Delivery Latency (Quiet)** | Immediate 304 on expiration         | $2.01\text{ s}$ (2s wait) / $5.01\text{ s}$ (5s wait)   | `p(95) <= 32000ms` (for 30s wait)             | **PASS** |
-| **State Invalidation Wakeup**      | Instant wake-up $\le 100\text{ ms}$ | $p95 = 30.1\text{ ms}$ (local loopback)                 | Tracked via `synapse_invalidation_wakeup_ms`  | **PASS** |
+| Service Boundary                   | SLO Target                          | Measured Value (Smoke / Average Load)                    | Target Threshold                              | Status   |
+| ---------------------------------- | ----------------------------------- | -------------------------------------------------------- | --------------------------------------------- | -------- |
+| **Lease Propagation Lag**          | $p95 \le 10\text{ s}$               | $p95 = 0.030\text{ s}$ ($30.1\text{ ms}$) (Story Arc)    | `p(95) <= 10000ms`                            | **PASS** |
+| **Long-Poll Error Rate**           | $0\%\text{ drops} (< 0.01)$         | $0.00\%$ (0 failures across all runs)                    | `rate < 0.01`                                 | **PASS** |
+| **State Delivery Latency (Quiet)** | Immediate 304 on expiration         | $2.01\text{ s}$ (2s wait) / $5.01\text{ s}$ (5s wait)    | `p(95) <= 32000ms` (for 30s wait)             | **PASS** |
+| **State Invalidation Wakeup**      | Instant wake-up $\le 100\text{ ms}$ | $p95 = 30.1\text{ ms}$ (local loopback)                  | Tracked via `synapse_invalidation_wakeup_ms`  | **PASS** |
 | **Telemetry Ingestion Throughput** | $\ge 200\text{ evals/s}$            | $23,200\text{ evals/s}$ / $207,684\text{ evals/s}$ burst | Handled gracefully without crash              | **PASS** |
-| **Bulkhead Isolation**             | 0% lease pool starvation            | $0\text{ isolation violations}$                         | `synapse_bulkhead_isolation_violations === 0` | **PASS** |
-| **Telemetry Error Rate**           | $< 0.05$ (graceful 429s only)       | $0.00\%$ unhandled errors                               | `rate < 0.05`                                 | **PASS** |
+| **Bulkhead Isolation**             | 0% lease pool starvation            | $0\text{ isolation violations}$                          | `synapse_bulkhead_isolation_violations === 0` | **PASS** |
+| **Telemetry Error Rate**           | $< 0.05$ (graceful 429s only)       | $0.00\%$ unhandled errors                                | `rate < 0.05`                                 | **PASS** |
 
 _Note: Invalidation wakeup lag was measured in-process under Node.js runtime event dispatch. True multi-host network latency under high pod count will be validated in end-to-end Kubernetes staging._
 
@@ -240,7 +240,7 @@ Based on the architectural design and pool isolation properties:
 > **Evaluation Date:** 2026-10-21  
 > **Target Branch:** `test/k6-soak-and-saturation` (PR 30)  
 > **k6 Version:** `k6 v0.56.0 (commit/50afb99947, go1.23.4, windows/amd64)`  
-> **Charter Alignment:** [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md) §1 Non-Goals, §2 Invariants 1 & 5, §5 SLOs  
+> **Charter Alignment:** [AGENTS.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/AGENTS.md) §1 Non-Goals, §2 Invariants 1 & 5, §5 SLOs
 
 ### 8.1 Standardized 4-Phase Story Arc Traffic Orchestration (`load/k6/story-arc.js`)
 
@@ -319,14 +319,14 @@ To verify Invariant 1 and detect any socket, memory, or timer handle leaks under
 
 #### Node.js Process Memory RSS Stability Profile
 
-| Time Window | Resident Memory (RSS) | Heap Used | Heap Total | Active Handles | Active Sockets |
-| ----------- | --------------------- | --------- | ---------- | -------------- | -------------- |
-| **0m (Cold)**| 66.8 MB               | 8.7 MB    | 12.4 MB    | 104            | 100            |
-| **2m**      | 70.1 MB               | 11.2 MB   | 16.8 MB    | 104            | 100            |
-| **5m**      | 71.4 MB               | 12.5 MB   | 18.2 MB    | 104            | 100            |
-| **8m**      | 71.9 MB               | 11.9 MB   | 18.2 MB    | 104            | 100            |
-| **10m (End)**| 72.1 MB              | 12.1 MB   | 18.2 MB    | 104            | 100            |
-| **Post-GC** | 68.4 MB               | 9.1 MB    | 14.1 MB    | 4              | 0              |
+| Time Window   | Resident Memory (RSS) | Heap Used | Heap Total | Active Handles | Active Sockets |
+| ------------- | --------------------- | --------- | ---------- | -------------- | -------------- |
+| **0m (Cold)** | 66.8 MB               | 8.7 MB    | 12.4 MB    | 104            | 100            |
+| **2m**        | 70.1 MB               | 11.2 MB   | 16.8 MB    | 104            | 100            |
+| **5m**        | 71.4 MB               | 12.5 MB   | 18.2 MB    | 104            | 100            |
+| **8m**        | 71.9 MB               | 11.9 MB   | 18.2 MB    | 104            | 100            |
+| **10m (End)** | 72.1 MB               | 12.1 MB   | 18.2 MB    | 104            | 100            |
+| **Post-GC**   | 68.4 MB               | 9.1 MB    | 14.1 MB    | 4              | 0              |
 
 **Finding:** The Node.js runtime process exhibits a completely flat memory profile over 10 minutes ($\Delta \text{RSS} \le 5.3\text{ MB}$, with heap utilization asymptotically stabilizing around $\sim 12\text{ MB}$). No socket or timer handle leaks were observed across $>2,000$ consecutive 304 holding cycles.
 
@@ -357,4 +357,3 @@ Per **Open Question 8 (docs/ROADMAP.md §7)**, SynapseState eliminates unverifie
    ```
 2. **Exit Code 99 Enforcement:** If any threshold is breached, k6 automatically exits with status code 99, immediately failing CI workflows.
 3. **CI Artifact Export:** The CI workflow (`.github/workflows/ci.yml`) runs the load suite, captures the comprehensive `load/summary.json` output via `handleSummary()`, and uploads it as a standard GitHub Actions workflow artifact with 30-day retention.
-

@@ -41,7 +41,7 @@ describe("End-to-End Control API & SDK StateClient Integration", () => {
           role: "operator",
           max_ttl_seconds: 3600,
         },
-      })
+      }),
     );
 
     app = buildServer({
@@ -70,7 +70,7 @@ describe("End-to-End Control API & SDK StateClient Integration", () => {
     // Clean DB for isolated e2e environment
     await leasePool.query(
       "DELETE FROM revocations WHERE lease_id IN (SELECT lease_id FROM leases WHERE env = $1)",
-      [env]
+      [env],
     );
     await leasePool.query("DELETE FROM leases WHERE env = $1", [env]);
 
@@ -108,7 +108,12 @@ describe("End-to-End Control API & SDK StateClient Integration", () => {
       debug: () => {},
     };
 
-    const baseline = await provider.resolveBooleanEvaluation(flagKey, false, {}, noopLogger);
+    const baseline = await provider.resolveBooleanEvaluation(
+      flagKey,
+      false,
+      {},
+      noopLogger,
+    );
     expect(baseline.value).toBe(false);
     expect(baseline.reason).not.toBe("OVERRIDE");
 
@@ -145,7 +150,12 @@ describe("End-to-End Control API & SDK StateClient Integration", () => {
     expect(leaseStore.getActiveLease(flagKey)).toBeDefined();
 
     // 6. OpenFeature evaluation now resolves from active emergency lease override
-    const overrideEval = await provider.resolveBooleanEvaluation(flagKey, false, {}, noopLogger);
+    const overrideEval = await provider.resolveBooleanEvaluation(
+      flagKey,
+      false,
+      {},
+      noopLogger,
+    );
     expect(overrideEval.value).toBe(true);
     expect(overrideEval.reason).toBe("OVERRIDE");
     expect(overrideEval.flagMetadata?.["synapse.lease_id"]).toBe(leaseId);
@@ -174,7 +184,12 @@ describe("End-to-End Control API & SDK StateClient Integration", () => {
     expect(leaseStore.getActiveLease(flagKey)).toBeUndefined();
 
     // 9. OpenFeature evaluation cleanly falls back to delegate provider
-    const recoveredEval = await provider.resolveBooleanEvaluation(flagKey, false, {}, noopLogger);
+    const recoveredEval = await provider.resolveBooleanEvaluation(
+      flagKey,
+      false,
+      {},
+      noopLogger,
+    );
     expect(recoveredEval.value).toBe(false);
     expect(recoveredEval.reason).not.toBe("OVERRIDE");
   });
