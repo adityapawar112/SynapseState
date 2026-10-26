@@ -113,7 +113,7 @@ flowchart LR
 ### Workflow 2: Evidence-Driven Flag Qualification & Scanner (`synapse-purger`)
 
 1. **Zero-Context Telemetry:** The SDK `TelemetryHook` aggregates evaluations locally, flushing `(flag_key, variant, reason)` counts in 5-minute batches with sorted keys over a dedicated bulkhead connection pool.
-2. **Staleness Qualification:** When a flag marked `release` evaluates to a single variant for $\ge 35\text{ to } 45\text{ days}$ (or has 0 evaluations), and **all evaluating consumer services** in the environment are `ACTIVE` or explicitly `RETIRED`, it is classified as a `stale_candidate`.
+2. **Staleness Qualification:** When a flag marked `release` evaluates to a single variant for ≥ 35 to 45 days (or has 0 evaluations), and **all evaluating consumer services** in the environment are `ACTIVE` or explicitly `RETIRED`, it is classified as a `stale_candidate`.
 3. **Read-Only Scanner:** `synapse-purger` scans application repositories using `ts-morph` to identify exact call sites and cross-reference them against evaluated services. To protect GitHub App credentials, the purger **never executes untrusted repository tests or build scripts**.
 4. **Candidate Reporting:** The purger publishes structured GitHub Issues or CLI reports containing call-site line numbers and `(flag_key, winning_variant)` tuples, directly compatible as input for external refactoring tools (Uber Piranha, GritQL) or human review.
 5. **Refusal by Default:** If dynamic keys, complex wrappers, or silent blocking services are encountered, the purger emits a structured **refusal report**.
@@ -195,7 +195,7 @@ All targets represent engineering hypotheses to be measured, validated, and publ
 
 | Target Metric                    | Objective                                           | Verification Method                                                           |
 | -------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------- |
-| **Lease Propagation Lag**        | $p95 \le 10\text{ s}$ under long-polling            | Calculated using server timestamps (`server_time - issued_at`) under k6 load. |
+| **Lease Propagation Lag**        | p95 ≤ 10 s under long-polling                       | Calculated using server timestamps (`server_time - issued_at`) under k6 load. |
 | **Lease Expiry Correctness**     | **Zero** leases honored past `TTL + SKEW_TOLERANCE` | Continuous property testing (`fast-check`) and chaos clock-skew injection.    |
 | **SDK Evaluation Overhead**      | Minimal added overhead vs bare delegate             | Microbenchmarks and macro benchmarks measuring `OverrideProvider` lookup.     |
 | **Evaluation Path Availability** | 100% (Zero failures caused by SynapseState)         | Injected SDK network, serialization, and control-plane failure drills.        |

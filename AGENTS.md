@@ -28,7 +28,7 @@ Every code modification and pull request MUST adhere to these non-negotiable inv
 
 1. **Fail-Safe Hot Path Delegation:** Flag evaluation occurs entirely in-memory within the application process. The `OverrideProvider` checks an in-memory map of active, valid leases. If no lease exists, or if an internal exception occurs, it **must immediately fall back to the delegate OpenFeature provider**. SynapseState must never disrupt application traffic.
 2. **Pinned Keyset Trust Root:** SDKs verify Ed25519 signatures against a locally pinned keyset file mounted from Git. **The Control API must never serve or modify the trusted keyset.** Even under total control-plane compromise, an attacker cannot forge emergency overrides.
-3. **Deterministic Dual-Clock Expiry:** Overrides enforce both monotonic relative time per process incarnation (`first_seen_mono + ttl_seconds`) and wall-clock absolute bounds (`issued_at + ttl_seconds + SKEW_TOLERANCE`). Overrides are honored for $\le \min(\text{wall\_expiry}, \text{mono\_expiry})$. **Zero leases may survive past their deadline.**
+3. **Deterministic Dual-Clock Expiry:** Overrides enforce both monotonic relative time per process incarnation (`first_seen_mono + ttl_seconds`) and wall-clock absolute bounds (`issued_at + ttl_seconds + SKEW_TOLERANCE`). Overrides are honored for `≤ min(wall_expiry, mono_expiry)`. **Zero leases may survive past their deadline.**
 4. **Git Reconciliation as Dual Control:** The 2 AM incident path requires only a single operator signature with a time-limited TTL (default 30 minutes, configurable by policy up to 24 hours). Making an override permanent requires promoting it via `synapse promote`, opening a GitHub PR against Git. **Human review and merge of that PR serves as the mandatory secondary approval.**
 5. **Zero-Context Telemetry:** The `TelemetryHook` aggregates only `(flag_key, variant, reason)` tuples and counts in memory. It must **never inspect, capture, or export evaluation context, user IDs, or targeting attributes**.
 6. **Read-Only Codebase Scanner:** `synapse-purger` operates as a read-only AST scanner and candidate qualifier. It **must never execute target repository test suites or build scripts** while holding GitHub credentials. If dynamic expressions or silent services block qualification, it emits a structured Refusal Report.
@@ -90,7 +90,7 @@ All code touching state delivery and SDK evaluation must be validated against co
 
 | Measurement Boundary             | Target SLO                        | Conditions & Verification                                                        |
 | -------------------------------- | --------------------------------- | -------------------------------------------------------------------------------- |
-| **Lease Propagation Lag**        | $p95 \le 10\text{ s}$             | Measured using server timestamps (`server_time - issued_at`) under long-polling. |
+| **Lease Propagation Lag**        | p95 ≤ 10 s                        | Measured using server timestamps (`server_time - issued_at`) under long-polling. |
 | **Lease Expiry Correctness**     | **0** past `TTL + SKEW_TOLERANCE` | Validated by property tests (`fast-check`) and chaos clock-skew injection.       |
 | **SDK Hot-Path Overhead**        | Minimal overhead vs bare delegate | Microbenchmarks measuring `OverrideProvider` resolution path.                    |
 | **Evaluation Path Availability** | 100% (Zero app crashes)           | Automatic fallback to delegate provider on any internal exception.               |

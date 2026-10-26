@@ -107,39 +107,39 @@ Production SRE dashboard structured into 4 operational domains:
    - Timeseries: `sum by (from, to) (rate(synapse_lease_transitions_total[5m]))` — lifecycle state transitions rate.
    - Table: Active leases and transition event volume breakdown. _Note on TTL countdowns:_ Per-lease remaining TTL is intentionally omitted from Prometheus metrics to adhere strictly to Invariant 5 (bounded cardinality without `lease_id` series). Operators inspect per-lease expiration and TTL status via `synapse lease list`.
 2. **SLO & Latency Performance:**
-   - Timeseries: Histogram quantiles ($p50, p95, p99$) of `synapse_lease_propagation_seconds` with a $10\text{s}$ threshold marker (Target SLO: $p95 \le 10\text{s}$).
-   - Timeseries: Dual-axis state poll request rate (req/s) and $p95$ duration (s) grouped by HTTP status code (`synapse_state_poll_duration_seconds`).
+   - Timeseries: Histogram quantiles (p50, p95, p99) of `synapse_lease_propagation_seconds` with a 10s threshold marker (Target SLO: p95 ≤ 10s).
+   - Timeseries: Dual-axis state poll request rate (req/s) and p95 duration (s) grouped by HTTP status code (`synapse_state_poll_duration_seconds`).
 3. **Audit Ledger Health:**
    - Gauge: `synapse_audit_pending_queue_size` — depth of unsealed events in `audit_pending`.
-   - Gauge / Timeseries: `synapse_audit_pending_age_seconds` — oldest unsealed event age (stall threshold: $30\text{s}$).
+   - Gauge / Timeseries: `synapse_audit_pending_age_seconds` — oldest unsealed event age (stall threshold: 30s).
    - Stat: `synapse_audit_chain_length` — monotonic SHA-256 sealed ledger height.
 4. **Client SDK Fleet Health:**
-   - Timeseries: `max(synapse_sdk_state_age_seconds)` (threshold $60\text{s}$) & `max(synapse_sdk_keyset_age_seconds)` (ceiling $900\text{s} / 15\text{m}$). Note: `max()` measures the worst-case instance across the fleet per ARCH §11.
+   - Timeseries: `max(synapse_sdk_state_age_seconds)` (threshold 60s) & `max(synapse_sdk_keyset_age_seconds)` (ceiling 900s / 15m). Note: `max()` measures the worst-case instance across the fleet per ARCH §11.
    - Timeseries: `sum(rate(synapse_sdk_poll_errors_total[5m]))` and `sum(rate(synapse_sdk_telemetry_dropped_total[5m]))`.
    - Stat: `sum(synapse_sdk_active_overrides)` — active in-memory overrides across fleet.
 
 ### Multi-Window Multi-Burn-Rate Alert Rules (`deploy/helm/alerts/synapsestate-rules.yaml`)
 
-Implements Google SRE Workbook Chapter 5 standards for State API availability SLO (99.5% over 30 days, error budget $0.005$):
+Implements Google SRE Workbook Chapter 5 standards for State API availability SLO (99.5% over 30 days, error budget 0.005):
 
 - **Fast Burn (`SynapseStateApiAvailabilityFastBurn`):**
-  - Burns 2% of 30-day budget in 1 hour ($14.4\times$ burn rate factor $\implies 7.2\%$ error rate).
+  - Burns 2% of 30-day budget in 1 hour (14.4x burn rate factor → 7.2% error rate).
   - Evaluates both short (5m) and long (1h) windows.
   - Includes a low-traffic floor guard (`sum(rate(..._count[5m])) > 0.03 req/s`) preventing false alerts on idle clusters during 304 long-poll quiet periods.
   - Severity: `critical` (Immediate on-call page).
 - **Slow Burn (`SynapseStateApiAvailabilitySlowBurn`):**
-  - Burns 5% of 30-day budget in 6 hours ($6\times$ burn rate factor $\implies 3.0\%$ error rate).
+  - Burns 5% of 30-day budget in 6 hours (6x burn rate factor → 3.0% error rate).
   - Evaluates both short (30m) and long (6h) windows with low-traffic floor guard (`> 0.03 req/s`).
   - Severity: `warning` (Business hours ticket).
 - **Lease Propagation Lag (`SynapseLeasePropagationDegraded`):**
-  - Fires when $p95$ of `synapse_lease_propagation_seconds > 10\text{s}$ for $> 5\text{m}$. Severity: `warning`.
+  - Fires when p95 of `synapse_lease_propagation_seconds` > 10s for > 5m. Severity: `warning`.
 - **Audit Sealer Stalled (`SynapseAuditSealerLagging`):**
-  - Fires when `synapse_audit_pending_age_seconds > 30` for $> 2\text{m}$. Severity: `critical`.
+  - Fires when `synapse_audit_pending_age_seconds` > 30 for > 2m. Severity: `critical`.
 - **SDK Fleet Freshness:**
-  - `SynapseStateStale`: Fires when `synapse_sdk_state_age_seconds > 60` for $> 5\text{m}$. Severity: `warning`.
-  - `SynapseKeysetStale`: Fires when `synapse_sdk_keyset_age_seconds > 900` ($15\text{m}$). Severity: `critical`.
+  - `SynapseStateStale`: Fires when `synapse_sdk_state_age_seconds` > 60 for > 5m. Severity: `warning`.
+  - `SynapseKeysetStale`: Fires when `synapse_sdk_keyset_age_seconds` > 900 (15m). Severity: `critical`.
 - **Active Emergency Leases (`SynapseActiveEmergencyLeases`):**
-  - Hygiene alert when break-glass leases remain active for $> 30\text{m}$, prompting GitOps PR promotion. Severity: `warning` (ensures Alertmanager notification routes handle the alert).
+  - Hygiene alert when break-glass leases remain active for > 30m, prompting GitOps PR promotion. Severity: `warning` (ensures Alertmanager notification routes handle the alert).
 
 ### Helm Integration Options (`values.yaml`)
 

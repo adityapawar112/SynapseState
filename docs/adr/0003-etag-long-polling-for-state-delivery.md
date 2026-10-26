@@ -7,7 +7,7 @@ Status: Accepted
 
 ## Context
 
-Emergency feature flag overrides must propagate across a cluster quickly during an incident ($p95 \le 10\text{ s}$). We evaluated four distribution mechanisms:
+Emergency feature flag overrides must propagate across a cluster quickly during an incident (p95 ≤ 10 s). We evaluated four distribution mechanisms:
 
 1. **In-Pod Sidecars over Unix Domain Sockets:** Required mutating admission webhooks, container memory bloat, and platform-specific socket clients.
 2. **Short Interval Polling (5s):** Generated continuous idle request churn (~100 req/s for 500 pods) even during zero-mutation steady states.

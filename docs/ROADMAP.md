@@ -74,7 +74,7 @@ gantt
 - **1.2 Cryptographic Lease Core (`packages/lease`):** `[COMPLETED]`
   - Deterministic RFC 8785 JSON canonicalization (`canonicalizeJson` implemented).
   - Ed25519 signing and verification with domain separation (`"synapsestate/lease/v1\n"`, `"synapsestate/revocation/v1\n"`, and `"synapsestate/keyrevocation/v1\n"`).
-  - Dual-clock expiration validation logic: $\min(\text{wall\_expiry}, \text{mono\_expiry})$ with process-scoped monotonic lifetime.
+  - Dual-clock expiration validation logic: `min(wall_expiry, mono_expiry)` with process-scoped monotonic lifetime.
   - Pinned keyset Zod schema and parser.
 - **1.3 OpenFeature In-Process SDK (`packages/sdk`):** `[COMPLETED]`
   - `OverrideProvider`: Implements OpenFeature `Provider` interface; wraps any delegate provider.
@@ -161,11 +161,11 @@ gantt
   - **PR 14 (`test/load-k6-benchmarks`):** `[COMPLETED]` `test(load): k6 long-polling load harness and documented saturation limits` — `load/k6/*`
 - **Security & Best Practice Review Checkpoints:** `[AUDITED & VERIFIED]`
   - **Metric Cardinality Audit:** Audited all Prometheus metric instruments across Control API and SDK (`metrics.ts`). Enforced strict bounded label dimensions (`env`, `status_code`, `reason`, `from`, `to`). Prohibited high-cardinality user IDs, targeting keys, and lease IDs. Per-lease TTL countdown is deliberately omitted from Prometheus series to protect scraper/storage stability, directing operators to `synapse lease list`.
-  - **Multi-Window Multi-Burn-Rate Verification:** Mathematically verified Alertmanager SLO rules (14.4x 1h/5m fast burn, 6x 6h/30m slow burn) against Google SRE alerting standards for a 99.5% availability target ($0.5\%$ error budget). Enforced traffic floor guards (`> 0.03 req/s`) on all multi-burn alerts to prevent false-positive flapping during 304 quiet long-poll intervals.
+  - **Multi-Window Multi-Burn-Rate Verification:** Mathematically verified Alertmanager SLO rules (14.4x 1h/5m fast burn, 6x 6h/30m slow burn) against Google SRE alerting standards for a 99.5% availability target (0.5% error budget). Enforced traffic floor guards (`> 0.03 req/s`) on all multi-burn alerts to prevent false-positive flapping during 304 quiet long-poll intervals.
   - **Fail-Safe Hot Path & Scrape Throttling:** The `/metrics` endpoint is strictly fail-open: database connectivity blips log a warning and return HTTP 200 with in-memory metrics without failing the scrape. A 5-second database query cache throttle (`REFRESH_THROTTLE_MS = 5000`) prevents denial-of-service from aggressive scraping. SDK metric callbacks execute inside defensive try/catch wrappers to guarantee zero impact on evaluation hot paths.
   - **Zero-Context Telemetry & Bulkhead Integrity:** Telemetry ingestion (`POST /v1/telemetry/batches`) enforces Invariant 5 by accepting only `(flag_key, variant, reason, count)` tuples. Load-testing harnesses generate zero-context synthetic batches without injecting user attributes or polluting production propagation lag histograms. Connection pool bulkhead (`leasePool` 20 vs `telemetryPool` 10) guarantees that telemetry saturation sheds load via HTTP 429 without starving emergency state delivery.
   - **Chart Drift & Operational Runbooks:** Automated conformance test (`observability.test.ts`) verifies byte-identical synchronization between root Helm dashboard/alert definitions and chart templates. Linked every firing alert to an actionable in-tree runbook under `docs/runbooks/`.
-- **Definition of Done:** Verified Grafana operations dashboard (`synapsestate-operations.json`); Alertmanager multi-window rules with traffic floor filters (`synapsestate-rules.yaml`); published SLO verification report (`docs/benchmarks/load-test-report.md`) with measured numbers ($p95 \text{ propagation} = 0.462\text{s} \le 10\text{s}$, $0.00\%$ long-poll drops, $4,108\text{ evals/s}$ telemetry throughput).
+- **Definition of Done:** Verified Grafana operations dashboard (`synapsestate-operations.json`); Alertmanager multi-window rules with traffic floor filters (`synapsestate-rules.yaml`); published SLO verification report (`docs/benchmarks/load-test-report.md`) with measured numbers (p95 propagation = 0.462s ≤ 10s, 0.00% long-poll drops, 4,108 evals/s telemetry throughput).
 
 ---
 
@@ -271,10 +271,10 @@ gantt
   - Granular Stryker Mutator configuration (`@stryker-mutator/core` + `@stryker-mutator/vitest-runner`) strictly scoped to core evaluation and crypto packages (Decision: Open Question 7).
   - Fast PR checks via `pnpm run test:mutation:fast` (`--incremental`) to mutate core invariant code efficiently.
   - Enforced mutation testing against core invariants:
-    - Invariant 3: Dual-clock expiry arithmetic ($\min(\text{mono}, \text{wall})$ and skew tolerance).
+    - Invariant 3: Dual-clock expiry arithmetic (`min(mono, wall)` and skew tolerance).
     - Invariant 1: Fail-safe fallback try/catch delegation to base provider.
     - Invariant 2: Ed25519 signature verification, RFC 8785 canonicalization, and SHA-256 hash chaining.
-  - Exceeded Mutation Score Indicator (MSI) break threshold $\ge 80\%$: `packages/lease` achieved **83.94% MSI** (86.13% covered) and `packages/sdk` achieved **87.46% MSI** (87.72% covered) with zero production code changes.
+  - Exceeded Mutation Score Indicator (MSI) break threshold ≥ 80%: `packages/lease` achieved **83.94% MSI** (86.13% covered) and `packages/sdk` achieved **87.46% MSI** (87.72% covered) with zero production code changes.
 - **7.3 Automated Chaos & Fault-Injection Pipeline (`test/drills/`):** `[COMPLETED]`
   - Automated execution of the 3 chaos failure drills (`test/drills/`) in dedicated GitHub Actions CI job (`chaos-drills`) covering total Control API outage with air-gap fallback, NTP clock-skew injection with monotonic rollback defense, and revocation network partition with partition healing.
 - **Recommended Branches & Pull Requests:**
@@ -285,7 +285,7 @@ gantt
   - **Production Build Only:** Playwright tests run against genuine production `next start -p 3010` server with zero route mocks (`page.route()`), verifying authentic headers and live PostgreSQL state.
   - **Zero Surviving Invariant Mutants:** 100% of mutants touching dual-clock expiry, fallback delegation, and signature verification killed.
   - **Zero Post-Deadline Lease Leaks:** Chaos drills assert zero leases survive past their TTL ceiling under severe NTP manipulation or network severance.
-- **Definition of Done:** `[VERIFIED]` 100% Playwright test pass rate (16/16); Stryker Mutation Score $\ge 80\%$ on `packages/lease` (83.94%) and `packages/sdk` (87.46%); 3/3 chaos drills passing in CI (14/14 tests).
+- **Definition of Done:** `[VERIFIED]` 100% Playwright test pass rate (16/16); Stryker Mutation Score ≥ 80% on `packages/lease` (83.94%) and `packages/sdk` (87.46%); 3/3 chaos drills passing in CI (14/14 tests).
 
 ---
 
@@ -294,11 +294,11 @@ gantt
 **Deliverable:** 10-minute soak testing, saturation cliff identification, bulkhead load-shedding proof, and automated headless screenshot capture during live load. Reference: [docs/benchmarks/load-test-report.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/benchmarks/load-test-report.md).
 
 - **8.1 Multi-Scenario k6 Saturation & Soak Harness (`load/k6/`):** `[COMPLETED]`
-  - Standardized 4-phase Story Arc traffic orchestration: Baseline $\to$ Emergency Break-Glass $\to$ Telemetry Bulkhead Saturation $\to$ Ephemeral Expiry.
+  - Standardized 4-phase Story Arc traffic orchestration: Baseline → Emergency Break-Glass → Telemetry Bulkhead Saturation → Ephemeral Expiry.
   - 10-minute sustained soak test to verify Node.js memory RSS stability under continuous long-polling.
   - Native k6 threshold assertions (`p(95) < 10s`, `http_req_failed < 0.1%`) exiting with code 99 to fail CI on performance regressions; workflow artifact summary export (Decision: Open Question 8; zero auto-commit bots).
 - **8.2 Bulkhead Isolation & Load-Shedding Verification:** `[COMPLETED]`
-  - Empirical proof under 5,000+ evals/s that telemetry saturation sheds load (HTTP 429 on `telemetryPool`) while state delivery (`leasePool`) maintains 100% availability and $<10\text{ms}$ latency.
+  - Empirical proof under 5,000+ evals/s that telemetry saturation sheds load (HTTP 429 on `telemetryPool`) while state delivery (`leasePool`) maintains 100% availability and <10ms latency.
 - **8.3 Automated Observability Screenshot Pipeline:** `[COMPLETED]`
   - Containerized Playwright visual capture (`pnpm run capture:docs`) running in official Docker container (`mcr.microsoft.com/playwright:v1.49.0-jammy`) with pinned fonts for deterministic, platform-independent screenshot generation (Decision: Open Question 10).
   - Captures all 5 monitoring surfaces (Overview, Leases, Flags, Audit Ledger, Grafana) during live load scenarios for README and documentation assets.
@@ -332,7 +332,7 @@ To prevent scope creep and maintain strict project delivery:
 - **Open Question 4 (Audit Checkpoint Anchor Target — [RESOLVED]):** Selected S3 Object Lock with `COMPLIANCE` retention mode and provisioned in `deploy/terraform/main.tf` (`aws_s3_bucket.checkpoint_bucket` with `aws_s3_bucket_object_lock_configuration`), paired with an isolated write-only IAM role for the checkpoint signer CronJob (`checkpoint_signer_role`).
 - **Open Question 5 (Cloud Provider Selection — [RESOLVED]):** Selected AWS as the target deployment cloud, provisioned via Terraform in `deploy/terraform/` (`main.tf`, `variables.tf`, `versions.tf` using AWS provider `~> 5.0`), configuring VPC, public subnets, internet gateway, EC2 k3s host, and S3 Object Lock bucket.
 - **Open Question 6 (E2E Test Environment Isolation in CI — [RESOLVED]):** Resolved in Phase 7 (PR 27 / PR #28). Multi-`webServer` orchestration boots the real production Next.js build and real Control API connected to live PostgreSQL on port 5432 with fallback to in-process mock server when Postgres is unavailable. Zero `page.route()` mocks are used.
-- **Open Question 7 (Mutation Score Enforcement Policy — [RESOLVED]):** Resolved in Phase 7 (PR 28 / PR #29). Scoped Stryker Mutator testing strictly to core crypto and evaluation packages (`packages/lease` & `packages/sdk`) with native `--incremental` cache, enforcing $\ge 80\%$ MSI (achieved 83.94% on `lease` and 87.46% on `sdk`).
+- **Open Question 7 (Mutation Score Enforcement Policy — [RESOLVED]):** Resolved in Phase 7 (PR 28 / PR #29). Scoped Stryker Mutator testing strictly to core crypto and evaluation packages (`packages/lease` & `packages/sdk`) with native `--incremental` cache, enforcing ≥ 80% MSI (achieved 83.94% on `lease` and 87.46% on `sdk`).
 
 ### Active Decisions for Phase 8 (Iterated & Simplified)
 
@@ -348,7 +348,7 @@ To prevent scope creep and maintain strict project delivery:
 - **Open Question 11 (Purger Target Branch & Review Isolation Strategy):** When `synapse-purger` analyzes a target repository, should it submit Draft PRs directly against the repository default branch (`main`) or route to an intermediate staging branch?
   - **Iterated Simplest & Best Answer:** _Isolated Draft PR per Dead Flag directly to Default Branch (`main`)._ Follow the battle-tested Dependabot/Renovate model: submit an isolated Draft PR per dead flag directly against `main`. Immediately triggers the repository's native CI checks (linters, typecheck, unit tests) and notifies code owners in isolation. Avoids intermediate staging branch synchronization drift and preserves clean `git bisect` history.
 - **Open Question 12 (Telemetry Buffer Bounds Under Extreme TPS Outages):** If a high-throughput application (> 100,000 evaluations/sec) loses network connectivity to the Control API for hours, how should `TelemetryHook` bound in-memory tuple buffer consumption?
-  - **Iterated Simplest & Best Answer:** _Native V8 `Map` with Hard Key Limit._ Rely on a standard JavaScript `Map` with an O(1) guard before inserting new keys: `if (this.counts.size >= 1000 && !this.counts.has(key)) return this.droppedTuples++;`. Zero external LRU cache dependencies, zero heap reallocation, and zero sorting overhead on the hot path. Bounds telemetry memory consumption to $\le 64\text{ KB}$, upholding Invariant 1 (zero application crashes).
+  - **Iterated Simplest & Best Answer:** _Native V8 `Map` with Hard Key Limit._ Rely on a standard JavaScript `Map` with an O(1) guard before inserting new keys: `if (this.counts.size >= 1000 && !this.counts.has(key)) return this.droppedTuples++;`. Zero external LRU cache dependencies, zero heap reallocation, and zero sorting overhead on the hot path. Bounds telemetry memory consumption to ≤ 64 KB, upholding Invariant 1 (zero application crashes).
 
 ---
 

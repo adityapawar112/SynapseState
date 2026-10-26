@@ -19,15 +19,15 @@ In strict adherence to **AGENTS.md §1 & §6 ("Evidence Before Claims", "No micr
 
 ### SLO Verification Summary
 
-| Service Boundary                   | SLO Target                          | Measured Value (Smoke / Average Load)                    | Target Threshold                              | Status   |
-| ---------------------------------- | ----------------------------------- | -------------------------------------------------------- | --------------------------------------------- | -------- |
-| **Lease Propagation Lag**          | $p95 \le 10\text{ s}$               | $p95 = 0.030\text{ s}$ ($30.1\text{ ms}$) (Story Arc)    | `p(95) <= 10000ms`                            | **PASS** |
-| **Long-Poll Error Rate**           | $0\%\text{ drops} (< 0.01)$         | $0.00\%$ (0 failures across all runs)                    | `rate < 0.01`                                 | **PASS** |
-| **State Delivery Latency (Quiet)** | Immediate 304 on expiration         | $2.01\text{ s}$ (2s wait) / $5.01\text{ s}$ (5s wait)    | `p(95) <= 32000ms` (for 30s wait)             | **PASS** |
-| **State Invalidation Wakeup**      | Instant wake-up $\le 100\text{ ms}$ | $p95 = 30.1\text{ ms}$ (local loopback)                  | Tracked via `synapse_invalidation_wakeup_ms`  | **PASS** |
-| **Telemetry Ingestion Throughput** | $\ge 200\text{ evals/s}$            | $23,200\text{ evals/s}$ / $207,684\text{ evals/s}$ burst | Handled gracefully without crash              | **PASS** |
-| **Bulkhead Isolation**             | 0% lease pool starvation            | $0\text{ isolation violations}$                          | `synapse_bulkhead_isolation_violations === 0` | **PASS** |
-| **Telemetry Error Rate**           | $< 0.05$ (graceful 429s only)       | $0.00\%$ unhandled errors                                | `rate < 0.05`                                 | **PASS** |
+| Service Boundary                   | SLO Target                  | Measured Value (Smoke / Average Load)  | Target Threshold                              | Status   |
+| ---------------------------------- | --------------------------- | -------------------------------------- | --------------------------------------------- | -------- |
+| **Lease Propagation Lag**          | p95 ≤ 10 s                  | p95 = 0.030 s (30.1 ms) (Story Arc)    | `p(95) <= 10000ms`                            | **PASS** |
+| **Long-Poll Error Rate**           | 0% drops (< 0.01)           | 0.00% (0 failures across all runs)     | `rate < 0.01`                                 | **PASS** |
+| **State Delivery Latency (Quiet)** | Immediate 304 on expiration | 2.01 s (2s wait) / 5.01 s (5s wait)    | `p(95) <= 32000ms` (for 30s wait)             | **PASS** |
+| **State Invalidation Wakeup**      | Instant wake-up ≤ 100 ms    | p95 = 30.1 ms (local loopback)         | Tracked via `synapse_invalidation_wakeup_ms`  | **PASS** |
+| **Telemetry Ingestion Throughput** | ≥ 200 evals/s               | 23,200 evals/s / 207,684 evals/s burst | Handled gracefully without crash              | **PASS** |
+| **Bulkhead Isolation**             | 0% lease pool starvation    | 0 isolation violations                 | `synapse_bulkhead_isolation_violations === 0` | **PASS** |
+| **Telemetry Error Rate**           | < 0.05 (graceful 429s only) | 0.00% unhandled errors                 | `rate < 0.05`                                 | **PASS** |
 
 _Note: Invalidation wakeup lag was measured in-process under Node.js runtime event dispatch. True multi-host network latency under high pod count will be validated in end-to-end Kubernetes staging._
 
@@ -78,7 +78,7 @@ Mock Control API: Pure Node.js mock server (load/k6/mock-server.ts) with 10-conn
 ### Scenario 3: Mixed Traffic & Stress Scenarios (`load/k6/mixed-stress.js`)
 
 - **Coordinated Workload:** Concurrently drives state pollers, telemetry writers, and emergency lease mutators simultaneously.
-- **Bulkhead Isolation Assertion:** Explicitly verifies that state delivery errors remain $< 0.01$ and zero poll requests fail during telemetry load-shedding windows.
+- **Bulkhead Isolation Assertion:** Explicitly verifies that state delivery errors remain < 0.01 and zero poll requests fail during telemetry load-shedding windows.
 
 ---
 
@@ -111,7 +111,7 @@ Under 5 concurrent long-polling SDK instances with background lease mutation inj
 
 1. During quiet periods, long-polling connections hold for precisely the requested wait window before returning 304 Not Modified without database overhead.
 2. Upon emergency lease submission, suspended pollers wake up immediately in memory, receiving HTTP 200 with updated ETag.
-3. Propagation lag measured strictly from server issuance timestamp to server response timestamp (`server_time - issued_at`) remained $< 500\text{ ms}$, safely within the $10\text{ s}$ SLO budget.
+3. Propagation lag measured strictly from server issuance timestamp to server response timestamp (`server_time - issued_at`) remained < 500 ms, safely within the 10 s SLO budget.
 
 ---
 
@@ -139,7 +139,7 @@ Under concurrent VUs flushing batch upserts with 4 metric tuples per batch:
 
 **Observations:**
 
-1. Average batch processing latency was $18\text{ ms}$ ($p95 = 33\text{ ms}$), including validation, deterministic sorting, and simulated database upsert.
+1. Average batch processing latency was 18 ms (p95 = 33 ms), including validation, deterministic sorting, and simulated database upsert.
 2. Payloads containing unexpected keys or context attributes were rejected with `HTTP 400 Bad Request`.
 
 ---
@@ -231,7 +231,7 @@ Based on the architectural design and pool isolation properties:
 
 1. **Client Wait Interval:** Maintain default `wait=30s`. Shorter intervals (e.g. 2s) increase HTTP connection overhead without improving invalidation speed.
 2. **Telemetry Flush Interval:** Set SDK `flushIntervalMs` to **5 minutes** (with 30s jitter) to buffer evaluations in SDK ring buffers.
-3. **Scaling Metric:** Scale Control API pods on CPU ($70\%$) and active connection count rather than request rate, as long-polling connections hold sockets open without generating high request volumes.
+3. **Scaling Metric:** Scale Control API pods on CPU (70%) and active connection count rather than request rate, as long-polling connections hold sockets open without generating high request volumes.
 
 ---
 
@@ -328,16 +328,16 @@ To verify Invariant 1 and detect any socket, memory, or timer handle leaks under
 | **10m (End)** | 72.1 MB               | 12.1 MB   | 18.2 MB    | 104            | 100            |
 | **Post-GC**   | 68.4 MB               | 9.1 MB    | 14.1 MB    | 4              | 0              |
 
-**Finding:** The Node.js runtime process exhibits a completely flat memory profile over 10 minutes ($\Delta \text{RSS} \le 5.3\text{ MB}$, with heap utilization asymptotically stabilizing around $\sim 12\text{ MB}$). No socket or timer handle leaks were observed across $>2,000$ consecutive 304 holding cycles.
+**Finding:** The Node.js runtime process exhibits a completely flat memory profile over 10 minutes (ΔRSS ≤ 5.3 MB, with heap utilization asymptotically stabilizing around ~12 MB). No socket or timer handle leaks were observed across >2,000 consecutive 304 holding cycles.
 
 ---
 
 ### 8.3 Saturation Cliff & Bulkhead Load-Shedding Proof
 
-Under intense telemetry saturation ($>5,000\text{ evals/s}$ driven by 50 concurrent flushers with `BATCH_SIZE=50`):
+Under intense telemetry saturation (>5,000 evals/s driven by 50 concurrent flushers with `BATCH_SIZE=50`):
 
 1. **Telemetry Bulkhead Behavior:** When the dedicated `telemetryPool` (10 connections) exhausts its queue limit, Control API sheds excess telemetry requests with `HTTP 429 Too Many Requests` (`"Telemetry connection pool queue exhausted; request shed"`).
-2. **State Delivery Isolation:** Throughout the entire saturation event, `GET /v1/sdk/state` continued to respond with HTTP 200/304 without latency inflation ($p95 \le 30\text{ms}$).
+2. **State Delivery Isolation:** Throughout the entire saturation event, `GET /v1/sdk/state` continued to respond with HTTP 200/304 without latency inflation (p95 ≤ 30ms).
 3. **Isolation Counter:** `synapse_bulkhead_isolation_violations` remained strictly **0** at all times, providing empirical proof of Invariant 1.
 
 ---

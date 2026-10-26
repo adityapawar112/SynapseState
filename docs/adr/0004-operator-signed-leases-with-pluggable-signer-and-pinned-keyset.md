@@ -35,7 +35,7 @@ We chose **operator-signed emergency leases validated against a Git-pinned keyse
 3. **Signed Fast-Path Key Revocation:**
    - The Control API distributes signed key revocation envelopes (`synapsestate/keyrevocation/v1\n`). These are deny-only: the Control API can distribute an emergency revocation signed by a security lead across long-poll streams to drop compromised keys immediately, but cannot add trust.
 4. **Deterministic Dual-Clock Expiry:**
-   - Overrides enforce both monotonic process duration (`first_seen_mono + ttl_seconds`) and absolute wall-clock bounds (`issued_at + ttl_seconds + SKEW_TOLERANCE`). Leases are honored for $\le \min(\text{wall\_expiry}, \text{mono\_expiry})$. Zero leases survive past their intended lifespan.
+   - Overrides enforce both monotonic process duration (`first_seen_mono + ttl_seconds`) and absolute wall-clock bounds (`issued_at + ttl_seconds + SKEW_TOLERANCE`). Leases are honored for `≤ min(wall_expiry, mono_expiry)`. Zero leases survive past their intended lifespan.
 5. **Git Reconciliation as Dual Control:**
    - A single operator issues a break-glass lease with a configurable TTL (default 30 minutes, up to 24 hours). Making an override permanent requires running `synapse promote`, which opens a GitHub PR against the Git baseline. A human peer review and merge of that PR serves as the mandatory secondary approval (dual control).
 

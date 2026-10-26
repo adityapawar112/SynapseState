@@ -34,7 +34,7 @@ Emergency overrides are strictly bound by two clocks evaluated simultaneously in
 
 - **Monotonic Relative Clock:** Evaluates duration elapsed since arrival (`first_seen_mono + ttl_seconds`), completely immune to NTP steps, VM clock smearing, or host clock adjustments.
 - **Wall-Clock Ceiling:** Evaluates absolute epoch time (`issued_at + ttl_seconds + SKEW_TOLERANCE`), ensuring multi-pod cold boots or restarts cannot resurrect expired leases.
-- Overrides are honored for $\le \min(\text{wall\_expiry}, \text{mono\_expiry})$. **Zero leases can survive past their deadline.**
+- Overrides are honored for `≤ min(wall_expiry, mono_expiry)`. **Zero leases can survive past their deadline.**
 
 ![Deterministic Dual-Clock Expiry](docs/assets/dual-clock-expiry.svg)
 
@@ -47,7 +47,7 @@ The 2 AM incident path requires only a single operator signature to mitigate out
 ![Incident Lifecycle &amp; Git Dual Control](docs/assets/git-dual-control.svg)
 
 1. **Break-Glass Override:** SRE creates a signed lease via CLI (`synapse lease create`) or Operations Portal.
-2. **In-Process Ingestion:** Control API stages the event to `audit_pending`, seals it into a SHA-256 chained PostgreSQL ledger, and SDKs ingest it via ETag long-polling in $\le 10$ seconds.
+2. **In-Process Ingestion:** Control API stages the event to `audit_pending`, seals it into a SHA-256 chained PostgreSQL ledger, and SDKs ingest it via ETag long-polling in ≤ 10 seconds.
 3. **Git Promotion:** Operator runs `synapse promote <lease_id>`. Control API generates declarative flag updates and opens a Draft Pull Request on GitHub.
 4. **Mandatory Secondary Control:** Peer engineers review the PR diff, CI tests pass, and upon merge to `main`, the baseline provider adopts the value and the emergency lease cleanly retires.
 
@@ -91,7 +91,7 @@ Tamper-evident SHA-256 hash-chained audit record inspection, displaying cryptogr
 
 ### 3.5 SRE Grafana Operations Dashboard
 
-Pre-configured production operations dashboard visualizing live override states, $p50/p95/p99$ lease propagation latencies against the 10s SLO, SHA-256 ledger heights, and SDK fleet health.
+Pre-configured production operations dashboard visualizing live override states, p50/p95/p99 lease propagation latencies against the 10s SLO, SHA-256 ledger heights, and SDK fleet health.
 
 ![Grafana Operations Dashboard](docs/assets/grafana-dashboard.png)
 
@@ -105,7 +105,7 @@ All components in the monorepo strictly enforce these architectural invariants:
 | :---: | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **1** | **Fail-Safe Hot Path Delegation**      | Resolution occurs 100% in-memory. If no lease exists or an internal exception occurs, evaluation falls back immediately to the delegate provider. |
 | **2** | **Pinned Keyset Trust Root**           | SDKs verify Ed25519 signatures against a locally pinned keyset file mounted from Git (`/etc/synapse`). The Control API never serves keys.         |
-| **3** | **Deterministic Dual-Clock Expiry**    | Leases enforce $\le \min(\text{wall\_expiry}, \text{mono\_expiry})$. Clock skew and NTP jumps cannot extend lease lifespans.                      |
+| **3** | **Deterministic Dual-Clock Expiry**    | Leases enforce `≤ min(wall_expiry, mono_expiry)`. Clock skew and NTP jumps cannot extend lease lifespans.                                         |
 | **4** | **Git Reconciliation as Dual Control** | 2 AM break-glass overrides require one signature; making an override permanent strictly requires a merged GitHub PR.                              |
 | **5** | **Zero-Context Telemetry**             | SDK telemetry hooks capture only `(flag_key, variant, reason)` tuples and counts. Zero user attributes or targeting contexts ever egress.         |
 | **6** | **Read-Only Codebase Scanner**         | `synapse-purger` operates as a read-only AST scanner. It never executes target repository test suites or build scripts.                           |
@@ -231,16 +231,16 @@ synapse lease revoke <lease-id> --env prod --key operator.key
 
 All state delivery and evaluation paths are validated against continuous benchmarks:
 
-| Measurement Boundary             | Target SLO                            | Measured Empirical Value                                                              | Reference                                                                                    |
-| -------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **Lease Propagation Lag**        | $p95 \le 10\text{ s}$                 | **$p95 = 0.462\text{ s}$**                                                            | [docs/benchmarks/load-test-report.md](docs/benchmarks/load-test-report.md)                   |
-| **SDK Hot-Path Miss Overhead**   | Minimal vs bare delegate              | **$203.6\text{ ns} \pm 3.19\%$** (delta $-1.25\text{ \mu s}$ to $+1.66\text{ \mu s}$) | [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md)                           |
-| **SDK Hot-Path Override Hit**    | Sub-microsecond execution             | **$2.17\text{ \mu s} - 3.14\text{ \mu s}$**                                           | [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md)                           |
-| **Lease Expiry Correctness**     | **0** past $\text{TTL} + \text{SKEW}$ | **0 violations**                                                                      | [test/drills/drill2-clock-skew.test.ts](test/drills/drill2-clock-skew.test.ts)               |
-| **Evaluation Path Availability** | 100% (Zero app crashes)               | **100%** (Automatic fallback)                                                         | [packages/sdk/src/provider.test.ts](packages/sdk/src/provider.test.ts)                       |
-| **Purger Refactoring Precision** | 0 incorrect removals                  | **0 false qualifications**                                                            | [apps/purger/src/qualification/engine.test.ts](apps/purger/src/qualification/engine.test.ts) |
-| **Mutation Resilience (MSI)**    | $\text{MSI} \ge 80\%$                 | **83.94%** (`lease`) / **87.46%** (`sdk`)                                             | [packages/lease/stryker.config.json](packages/lease/stryker.config.json)                     |
-| **Chaos Failure Drills**         | 100% pass (3/3 drills)                | **14/14 passed** (Airgap, Skew, Partitions)                                           | [test/drills/run-drills.sh](test/drills/run-drills.sh)                                       |
+| Measurement Boundary             | Target SLO                      | Measured Empirical Value                          | Reference                                                                                    |
+| -------------------------------- | ------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Lease Propagation Lag**        | p95 ≤ 10 s                      | **p95 = 0.462 s**                                 | [docs/benchmarks/load-test-report.md](docs/benchmarks/load-test-report.md)                   |
+| **SDK Hot-Path Miss Overhead**   | Minimal vs bare delegate        | **203.6 ns ± 3.19%** (delta -1.25 µs to +1.66 µs) | [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md)                           |
+| **SDK Hot-Path Override Hit**    | Sub-microsecond execution       | **2.17 µs – 3.14 µs**                             | [docs/benchmarks/sdk-overhead.md](docs/benchmarks/sdk-overhead.md)                           |
+| **Lease Expiry Correctness**     | **0** past TTL + SKEW_TOLERANCE | **0 violations**                                  | [test/drills/drill2-clock-skew.test.ts](test/drills/drill2-clock-skew.test.ts)               |
+| **Evaluation Path Availability** | 100% (Zero app crashes)         | **100%** (Automatic fallback)                     | [packages/sdk/src/provider.test.ts](packages/sdk/src/provider.test.ts)                       |
+| **Purger Refactoring Precision** | 0 incorrect removals            | **0 false qualifications**                        | [apps/purger/src/qualification/engine.test.ts](apps/purger/src/qualification/engine.test.ts) |
+| **Mutation Resilience (MSI)**    | MSI ≥ 80%                       | **83.94%** (`lease`) / **87.46%** (`sdk`)         | [packages/lease/stryker.config.json](packages/lease/stryker.config.json)                     |
+| **Chaos Failure Drills**         | 100% pass (3/3 drills)          | **14/14 passed** (Airgap, Skew, Partitions)       | [test/drills/run-drills.sh](test/drills/run-drills.sh)                                       |
 
 ---
 

@@ -88,7 +88,10 @@ All emergency leases are represented as JSON objects. Before signing, the payloa
 #### Domain Separation
 
 Signatures are calculated over:
-$$\text{SignatureBytes} = \text{Ed25519\_Sign}(\text{PrivateKey}, \text{"synapsestate/lease/v1\textbackslash{}n"} \parallel \text{RFC8785}(\text{payload}))$$
+
+```text
+SignatureBytes = Ed25519_Sign(PrivateKey, "synapsestate/lease/v1\n" || RFC8785(payload))
+```
 
 Revocations use domain prefix `"synapsestate/revocation/v1\n"` over canonical revocation payload:
 
@@ -120,16 +123,22 @@ Workload SDKs enforce strict monotonic and wall-clock expiry bounds:
 
 1. **Version & Keyset Lookup:** Verify `v == 1`. Reject if `kid` is present in local `key_revocations`. Lookup `kid` in locally pinned keyset. Reject if key is missing or revoked.
 2. **Signature Verification:** Verify Ed25519 signature over domain-separated canonical payload.
-3. **TTL Validation:** Verify $0 < \text{ttl\_seconds} \le \min(\text{SDK\_MAX\_TTL}, \text{key.max\_ttl\_seconds})$.
-4. **Anti-Future Skew Check:** Reject if $\text{issued\_at} > \text{now\_wall} + \text{SKEW\_TOLERANCE}$ (default 30 seconds).
+3. **TTL Validation:** Verify `0 < ttl_seconds <= min(SDK_MAX_TTL, key.max_ttl_seconds)`.
+4. **Anti-Future Skew Check:** Reject if `issued_at > now_wall + SKEW_TOLERANCE` (default 30 seconds).
 5. **Wall-Clock Expiration (Global Ceiling):**
-   $$\text{wall\_expiry} = \text{issued\_at} + \text{ttl\_seconds} + \text{SKEW\_TOLERANCE}$$
-   If $\text{now\_wall} \ge \text{wall\_expiry}$, mark lease expired.
+   ```text
+   wall_expiry = issued_at + ttl_seconds + SKEW_TOLERANCE
+   ```
+   If `now_wall >= wall_expiry`, mark lease expired.
 6. **Monotonic Expiration (Per Process Incarnation):** On first successful verification of `lease_id` within the current process:
-   $$\text{mono\_expiry} = \text{now\_mono} + \text{ttl\_seconds}$$
+   ```text
+   mono_expiry = now_mono + ttl_seconds
+   ```
 7. **Effective Expiration:**
-   $$\text{effective\_expiry} = \min(\text{wall\_expiry}, \text{mono\_expiry})$$
-8. **Evaluation Activation:** An override is applied if and only if $\text{now\_mono} < \text{mono\_expiry}$ and $\text{now\_wall} < \text{wall\_expiry}$ and `lease_id` is not present in local revocations. Conflict resolution between active leases selects `MAX(issued_at)` then `MAX(ULID)`.
+   ```text
+   effective_expiry = min(wall_expiry, mono_expiry)
+   ```
+8. **Evaluation Activation:** An override is applied if and only if `now_mono < mono_expiry` and `now_wall < wall_expiry` and `lease_id` is not present in local revocations. Conflict resolution between active leases selects `MAX(issued_at)` then `MAX(ULID)`.
 
 ---
 
@@ -472,7 +481,9 @@ A flag $f$ in environment $E$ is qualified as a `stale_candidate` over observati
    $$\text{ASTReferences}(f, \text{Repos}) \subseteq \text{Evaluators}(f, E, \tau)$$
    _(A read-only AST scan detects call sites only in known consumer services)._
 5. Quiescence:
-   $$\text{active\_lease}(f, E) = \emptyset \quad \land \quad \text{last\_promotion}(f, E) < \text{now} - \tau$$
+   ```text
+   active_lease(f, E) == null AND last_promotion(f, E) < now - tau
+   ```
 
 ### 6.2 Read-Only Scanner Scope & Candidate Reporting
 
@@ -521,6 +532,6 @@ Language-neutral JSON test suites validate:
 ### 7.2 Fault Injection Scenarios
 
 1. **Control Plane Outage:** Terminate Control API. Verify that SDK continues serving verified active leases until expiry, then seamlessly falls through to delegate provider.
-2. **Clock Skew Attack:** Inject $\pm 10\text{ minutes}$ of NTP clock skew into application container. Verify that monotonic clock ensures lease does not outlive its intended TTL.
+2. **Clock Skew Attack:** Inject ±10 minutes of NTP clock skew into application container. Verify that monotonic clock ensures lease does not outlive its intended TTL.
 3. **Partitioned Revocation:** Disconnect SDK network and issue lease revocation. Verify lease remains active until TTL expiry and then reverts.
 4. **Database Crash Recovery:** Force database reboot. Reconstruct audit hash chain and verify zero split-brain discrepancies against signed external checkpoints.

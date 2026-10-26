@@ -261,7 +261,9 @@ GitHub Webhook triggers Control API:
 3. **Sorted Key Invariant:** Batches sort metric keys deterministically by `(flag_key ASC, variant ASC, reason ASC)` prior to serialization, preventing PostgreSQL row-lock deadlocks during concurrent multi-row upserts.
 4. **Dedicated Connection Pool & Load Shedding:** Telemetry ingestion is served by an isolated PostgreSQL connection pool. Under peak load, the Control API sheds telemetry with `429 Too Many Requests` or `503 Service Unavailable`. The SDK catches these errors non-blockingly, drops the batch, and increments `dropped_total`. **Telemetry load never starves or blocks emergency lease operations.**
 5. **Propagation Lag Measurement:** Because `lease.issued_at` is synchronized via `GET /v1/time`, the client calculation:
-   $$\text{propagation\_lag\_ms} = \text{server\_time}_{\text{poll\_response}} - \text{lease.issued\_at}$$
+   ```text
+   propagation_lag_ms = server_time(poll_response) - lease.issued_at
+   ```
    is strictly based on the server clock, eliminating client clock drift.
 
 ---
@@ -647,9 +649,9 @@ flowchart TD
 A flag qualifies as a `stale_candidate` if and only if all five conditions hold:
 
 1. **Lifecycle Class:** `class == 'release'`. (`killswitch` and `permanent` flags are strictly excluded).
-2. **Invariance Window:** The flag has served a single variant continuously for $\ge 35\text{ to } 45\text{ days}$ (or had 0 evaluations across the entire window).
+2. **Invariance Window:** The flag has served a single variant continuously for ≥ 35 to 45 days (or had 0 evaluations across the entire window).
 3. **Per-Flag Consumer Coverage:** Every service $s$ that has recorded evaluations for the flag within data retention has status $\in \{\text{ACTIVE}, \text{RETIRED}\}$.
-   - If any evaluating service is `SILENT` (no heartbeat for $> 14\text{ days}$), the flag is blocked from retirement and highlighted as blocked by service $s$.
+   - If any evaluating service is `SILENT` (no heartbeat for > 14 days), the flag is blocked from retirement and highlighted as blocked by service $s$.
    - SREs unblock retirement via `synapse service retire --service <name>`.
 4. **AST Reference Consistency:** A read-only AST scan of application repositories detects call sites only in known consumer services.
 5. **Lease Quiescence:** No active emergency lease or un-finalized promotion exists.
@@ -719,15 +721,15 @@ A flag qualifies as a `stale_candidate` if and only if all five conditions hold:
 | Metric Boundary                | Target Objective                                    | Verification Strategy                                           | Runbook Reference                                                                                                                 |
 | ------------------------------ | --------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **State API Availability**     | 99.5% over 30 days (Single node)                    | Google SRE Multi-Window Multi-Burn-Rate Alerts                  | [docs/runbooks/state-api-outage.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/state-api-outage.md)       |
-| **Lease Propagation Lag**      | $p95 \le 10\text{ s}$ under long-polling            | Measured via server-clock delta under k6 load tests             | [docs/runbooks/propagation-latency.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/propagation-latency.md) |
-| **Audit Sealer Latency**       | Queue age $\le 30\text{ s}$                         | Sealer cycle timer and database gauge threshold                 | [docs/runbooks/audit-sealer-lag.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/audit-sealer-lag.md)       |
-| **SDK Keyset Freshness**       | Keyset age $\le 15\text{ m}$                        | Local disk keyset watcher staleness gauge                       | [docs/runbooks/sdk-staleness.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/sdk-staleness.md)             |
+| **Lease Propagation Lag**      | p95 ≤ 10 s under long-polling                       | Measured via server-clock delta under k6 load tests             | [docs/runbooks/propagation-latency.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/propagation-latency.md) |
+| **Audit Sealer Latency**       | Queue age ≤ 30 s                                    | Sealer cycle timer and database gauge threshold                 | [docs/runbooks/audit-sealer-lag.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/audit-sealer-lag.md)       |
+| **SDK Keyset Freshness**       | Keyset age ≤ 15 m                                   | Local disk keyset watcher staleness gauge                       | [docs/runbooks/sdk-staleness.md](file:///c:/Users/adity/Desktop/Projects/SynapseState/docs/runbooks/sdk-staleness.md)             |
 | **Lease Lifetime Correctness** | **Zero** leases honored past `TTL + SKEW_TOLERANCE` | Validated via `fast-check` property tests and clock-skew drills | Dual-clock monotonic bounds (Invariant 3)                                                                                         |
 | **Evaluation Path Safety**     | 100% Availability (0 runtime crashes)               | Automated exception handling falling through to delegate        | Fail-safe hot path (Invariant 1)                                                                                                  |
 
 #### Alertmanager Multi-Window Multi-Burn-Rate Implementation (`deploy/helm/alerts/`)
 
-To eliminate alerting fatigue and false alarms from single-window spikes, SynapseState implements Google SRE standard multi-window multi-burn-rate alerting for its 99.5% availability SLO ($0.5\%$ error budget):
+To eliminate alerting fatigue and false alarms from single-window spikes, SynapseState implements Google SRE standard multi-window multi-burn-rate alerting for its 99.5% availability SLO (0.5% error budget):
 
 - **Critical Burn Alert (14.4x rate, consumes 2% error budget in 1 hour):**
   - Requires simultaneous burn over both a 1-hour long window and a 5-minute short window:
@@ -753,9 +755,9 @@ SynapseState validates its operational boundaries and concurrency limits via a G
 ```
 
 1. **Measured Performance vs SLO Targets:**
-   - **Lease Propagation Lag:** Measured $p95 = 0.462\text{ s}$ ($462\text{ ms}$), well within the $p95 \le 10\text{ s}$ SLO requirement.
-   - **Long-Polling Reliability:** $0.00\%$ request drop rate across all quiet-period 304 timeouts and instant 200 wake-up invalidations.
-   - **Telemetry Ingestion Throughput:** Sustained $4,108\text{ evals/sec}$ ($79\text{ batches/sec}$) with $0.00\%$ unhandled errors.
+   - **Lease Propagation Lag:** Measured p95 = 0.462 s (462 ms), well within the p95 ≤ 10 s SLO requirement.
+   - **Long-Polling Reliability:** 0.00% request drop rate across all quiet-period 304 timeouts and instant 200 wake-up invalidations.
+   - **Telemetry Ingestion Throughput:** Sustained 4,108 evals/sec (79 batches/sec) with 0.00% unhandled errors.
 2. **Bulkhead Pool Isolation:**
    - Under extreme telemetry ingestion stress, the dedicated `telemetryPool` gracefully sheds load via `HTTP 429 Too Many Requests`.
    - The primary `leasePool` remains completely unstarved: `synapse_bulkhead_isolation_violations` remains strictly **0**, ensuring emergency lease operations and state delivery never degrade during telemetry surges.

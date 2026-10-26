@@ -25,7 +25,7 @@ We chose a **read-only codebase scanner** coupled with **per-flag consumer cover
 2. **Per-Flag Consumer Coverage:**
    - To qualify as a `stale_candidate`, a release flag must serve an invariant variant for 35–45 days.
    - Coverage requires active or retired status **only from microservices that recorded evaluations for that specific flag** within the data retention window.
-   - If an evaluating service becomes `SILENT` (no telemetry for $> 14\text{ days}$), the flag is blocked from qualification until an SRE explicitly retires the service via `synapse service retire` (or the 90-day auto-retirement sweep transitions it).
+   - If an evaluating service becomes `SILENT` (no telemetry for > 14 days), the flag is blocked from qualification until an SRE explicitly retires the service via `synapse service retire` (or the 90-day auto-retirement sweep transitions it).
 3. **Refusal by Default:**
    - If the AST scanner encounters dynamic keys (`client.getBooleanValue(prefix + key)`), custom wrappers, or undeclared consumer services, it **refuses** to qualify the flag and emits a structured `Refusal Report`.
 4. **Structured Candidate Reporting:**

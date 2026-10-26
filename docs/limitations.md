@@ -70,7 +70,7 @@ SynapseState adheres to an **evidence-based claims policy**: we document our arc
 ### 4.1 Telemetry Coverage Dependency & Service Lifecycle
 
 - **Limitation:** A flag qualifies as a `stale_candidate` only if all services that recorded evaluations for that flag within data retention are in `ACTIVE` or `RETIRED` status.
-- **Implication:** If an evaluating service goes `SILENT` (no heartbeat for $> 14\text{ days}$), stale qualification for its flags is paused to prevent deleting code prematurely from scaled-to-zero or monthly batch services.
+- **Implication:** If an evaluating service goes `SILENT` (no heartbeat for > 14 days), stale qualification for its flags is paused to prevent deleting code prematurely from scaled-to-zero or monthly batch services.
 - **Escape Valve:** SREs explicitly unblock flags by retiring decommissioned services via database update (`status = 'RETIRED'`), or allowing the 90-day auto-retirement sweep to transition them.
 
 ### 4.2 Zero Context Invisibility
@@ -116,7 +116,7 @@ SynapseState adheres to an **evidence-based claims policy**: we document our arc
 ### 8.2 Load Benchmark Environment Boundaries
 
 - **Limitation:** Phase 3 k6 benchmarks were conducted against local mock servers and single-node Control API instances under loopback networking.
-- **Boundary:** Measured wake-up and propagation latencies ($p95 \approx 462\text{ms}$) reflect server-side event dispatch and local I/O. In geographically distributed Kubernetes clusters, cross-node network latency and ingress proxy hops will add baseline RTT, while remaining well within the $p95 \le 10\text{s}$ SLO.
+- **Boundary:** Measured wake-up and propagation latencies (p95 ≈ 462ms) reflect server-side event dispatch and local I/O. In geographically distributed Kubernetes clusters, cross-node network latency and ingress proxy hops will add baseline RTT, while remaining well within the p95 ≤ 10s SLO.
 
 ### 8.3 Telemetry Pool Load-Shedding Trade-Off
 

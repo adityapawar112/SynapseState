@@ -1,2 +1,5 @@
 # Ensure shell scripts always retain Unix LF line endings across all platforms
 *.sh text eol=lf
+
+# Exclude agent customization skills, diagram templates, and scripts from repository language statistics
+.agents/** linguist-vendored

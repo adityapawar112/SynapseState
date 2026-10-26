@@ -28,7 +28,7 @@ We formally rejected all four architectures across the initial pivot:
    - _Operational Friction:_ Mutating admission webhooks are notoriously difficult to configure, debug, and secure in enterprise Kubernetes clusters.
    - _Resource Waste:_ Sidecars add memory overhead per pod, startup delays, and readiness probe coordination complexity.
    - _Cross-Platform Incompatibility:_ Sockets required named pipe fallbacks and platform-specific client libraries on Windows developer machines.
-   - _SLO Reality:_ The target propagation latency ($p95 \le 10\text{ s}$) does not require sub-millisecond local Unix socket streaming.
+   - _SLO Reality:_ The target propagation latency (p95 ≤ 10 s) does not require sub-millisecond local Unix socket streaming.
 3. **Rejection of Custom Flag Evaluation:**
    - Re-implementing flag evaluation adds zero novel value: mature evaluation engines already exist in the CNCF OpenFeature ecosystem (flagd, Unleash, Flipt).
    - SynapseState's unique value is incident safety (signed, auto-expiring emergency overrides) and lifecycle governance (evidence-driven flag retirement).

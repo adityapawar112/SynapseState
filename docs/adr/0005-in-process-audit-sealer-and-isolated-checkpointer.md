@@ -50,4 +50,4 @@ We chose an **asynchronous in-process audit sealer** combined with **transaction
 
 ### Negative
 
-- Audit events experience a slight sealing lag ($\approx 1\text{ second}$), during which unsealed records reside in `audit_pending` before entering `audit_events`.
+- Audit events experience a slight sealing lag (≈ 1 second), during which unsealed records reside in `audit_pending` before entering `audit_events`.
